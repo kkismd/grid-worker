@@ -97,6 +97,26 @@ export class Lexer {
             }
 
             // 演算子
+            if (char === '+') {
+                tokens.push({ type: TokenType.PLUS, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '-') {
+                tokens.push({ type: TokenType.MINUS, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '*') {
+                tokens.push({ type: TokenType.ASTERISK, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '/') {
+                tokens.push({ type: TokenType.SLASH, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
             if (char === '=') {
                 tokens.push({ type: TokenType.EQUALS, value: char, line: lineNumber, column: cursor });
                 cursor++;

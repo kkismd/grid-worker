@@ -55,3 +55,26 @@ describe('Lexer (TDD Cycle 1.1)', () => {
   });
 });
 
+describe('Lexer (TDD Cycle 1.2)', () => {
+  let lexer: Lexer;
+
+  beforeEach(() => {
+    lexer = new Lexer();
+  });
+
+  // TDDサイクル 1.2: 演算子、文字列リテラル、ラベルのトークン化
+  test('should tokenize arithmetic operators (+, -, *, /)', () => {
+    const line = 'A+B-C*D/E';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+      { type: TokenType.PLUS, value: '+', line: 0, column: 1 },
+      { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 2 },
+      { type: TokenType.MINUS, value: '-', line: 0, column: 3 },
+      { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 4 },
+      { type: TokenType.ASTERISK, value: '*', line: 0, column: 5 },
+      { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 6 },
+      { type: TokenType.SLASH, value: '/', line: 0, column: 7 },
+      { type: TokenType.IDENTIFIER, value: 'E', line: 0, column: 8 },
+    ]);
+  });
+});
