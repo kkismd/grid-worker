@@ -8,7 +8,7 @@
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
     "module": "es2022",
-    "target": "es2016",
+    "target": "es2022",
     "lib": ["es2016", "dom"],
     "types": ["jest"],
 
