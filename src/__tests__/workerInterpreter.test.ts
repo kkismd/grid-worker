@@ -77,4 +77,34 @@ describe('Lexer (TDD Cycle 1.2)', () => {
       { type: TokenType.IDENTIFIER, value: 'E', line: 0, column: 8 },
     ]);
   });
+
+  test('should tokenize comparison operators (>, <, >=, <=, <>)', () => {
+    const line = 'A>B<C>=D<=E<>F';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+      { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 1 },
+      { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 2 },
+      { type: TokenType.LESS_THAN, value: '<', line: 0, column: 3 },
+      { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 4 },
+      { type: TokenType.GREATER_THAN_OR_EQUAL, value: '>=', line: 0, column: 5 },
+      { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 7 },
+      { type: TokenType.LESS_THAN_OR_EQUAL, value: '<=', line: 0, column: 8 },
+      { type: TokenType.IDENTIFIER, value: 'E', line: 0, column: 10 },
+      { type: TokenType.NOT_EQUAL, value: '<>', line: 0, column: 11 },
+      { type: TokenType.IDENTIFIER, value: 'F', line: 0, column: 13 },
+    ]);
+  });
+
+  test('should tokenize logical operators (&, |, !)', () => {
+    const line = 'A&B|C!D';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+      { type: TokenType.AMPERSAND, value: '&', line: 0, column: 1 },
+      { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 2 },
+      { type: TokenType.PIPE, value: '|', line: 0, column: 3 },
+      { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 4 },
+      { type: TokenType.BANG, value: '!', line: 0, column: 5 },
+      { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 6 },
+    ]);
+  });
 });

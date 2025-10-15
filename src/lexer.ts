@@ -122,6 +122,47 @@ export class Lexer {
                 cursor++;
                 continue;
             }
+            // 比較演算子
+            if (char === '>') {
+                if (lineText[cursor + 1] === '=') {
+                    tokens.push({ type: TokenType.GREATER_THAN_OR_EQUAL, value: '>=', line: lineNumber, column: cursor });
+                    cursor += 2;
+                } else {
+                    tokens.push({ type: TokenType.GREATER_THAN, value: '>', line: lineNumber, column: cursor });
+                    cursor++;
+                }
+                continue;
+            }
+            if (char === '<') {
+                if (lineText[cursor + 1] === '=') {
+                    tokens.push({ type: TokenType.LESS_THAN_OR_EQUAL, value: '<=', line: lineNumber, column: cursor });
+                    cursor += 2;
+                } else if (lineText[cursor + 1] === '>') {
+                    tokens.push({ type: TokenType.NOT_EQUAL, value: '<>', line: lineNumber, column: cursor });
+                    cursor += 2;
+                } else {
+                    tokens.push({ type: TokenType.LESS_THAN, value: '<', line: lineNumber, column: cursor });
+                    cursor++;
+                }
+                continue;
+            }
+
+            // 論理演算子
+            if (char === '&') {
+                tokens.push({ type: TokenType.AMPERSAND, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '|') {
+                tokens.push({ type: TokenType.PIPE, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '!') {
+                tokens.push({ type: TokenType.BANG, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
 
             // TODO: その他のトークンタイプをここに追加
 
