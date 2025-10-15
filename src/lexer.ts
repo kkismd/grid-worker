@@ -1,0 +1,113 @@
+/**
+ * 字句解析で識別されるトークンの種類を定義します。
+ */
+export enum TokenType {
+    // リテラル
+    NUMBER = 'NUMBER',
+    STRING = 'STRING',
+    IDENTIFIER = 'IDENTIFIER', // 変数名 (A-Z) やラベル名
+    LABEL_DEFINITION = 'LABEL_DEFINITION', // ^MY_LABEL
+    COMMENT = 'COMMENT',
+
+    // 演算子
+    PLUS = 'PLUS', // +
+    MINUS = 'MINUS', // -
+    ASTERISK = 'ASTERISK', // *
+    SLASH = 'SLASH', // /
+    EQUALS = 'EQUALS', // =
+    GREATER_THAN = 'GREATER_THAN', // >
+    LESS_THAN = 'LESS_THAN', // <
+    GREATER_THAN_OR_EQUAL = 'GREATER_THAN_OR_EQUAL', // >=
+    LESS_THAN_OR_EQUAL = 'LESS_THAN_OR_EQUAL', // <=
+    NOT_EQUAL = 'NOT_EQUAL', // <>
+    AMPERSAND = 'AMPERSAND', // &
+    PIPE = 'PIPE', // |
+    BANG = 'BANG', // !
+
+    // 特殊記号
+    QUESTION = 'QUESTION', // ?
+    SEMICOLON = 'SEMICOLON', // ;
+    HASH = 'HASH', // #
+    RIGHT_BRACKET = 'RIGHT_BRACKET', // ]
+    AT = 'AT', // @
+    COMMA = 'COMMA', // ,
+    LEFT_PAREN = 'LEFT_PAREN', // (
+    RIGHT_PAREN = 'RIGHT_PAREN', // )
+
+    // 予約語 (現時点ではなし、将来的に追加される可能性)
+
+    EOF = 'EOF', // End Of File (または行の終わり)
+}
+
+/**
+ * 字句解析によって生成されるトークンを表すインターフェースです。
+ */
+export interface Token {
+    type: TokenType; // トークンの種類
+    value: string;   // トークンの元の文字列値
+    line: number;    // トークンが存在する行番号
+    column: number;  // トークンが存在する列番号
+}
+
+export class Lexer {
+    /**
+     * 単一の行をトークンに分割します。
+     * @param lineText 字句解析する行のテキスト。
+     * @param lineNumber 行番号 (0-indexed)。
+     * @returns Token[] トークンの配列。
+     * @throws {Error} 未知のトークンが見つかった場合。
+     */
+    tokenizeLine(lineText: string, lineNumber: number): Token[] {
+        const tokens: Token[] = [];
+        let cursor = 0;
+
+        while (cursor < lineText.length) {
+            const char = lineText[cursor];
+
+            // コメント行
+            if (char === ':') {
+                const value = lineText.substring(cursor);
+                tokens.push({ type: TokenType.COMMENT, value, line: lineNumber, column: cursor });
+                cursor = lineText.length; // コメント行の残りをスキップ
+                continue;
+            }
+
+            // 空白をスキップ
+            if (/\s/.test(char)) {
+                cursor++;
+                continue;
+            }
+
+            // 数値リテラル
+            if (/[0-9]/.test(char)) {
+                let value = '';
+                while (cursor < lineText.length && /[0-9]/.test(lineText[cursor])) {
+                    value += lineText[cursor];
+                    cursor++;
+                }
+                tokens.push({ type: TokenType.NUMBER, value, line: lineNumber, column: cursor - value.length });
+                continue;
+            }
+
+            // 変数名 (A-Z)
+            if (/[A-Z]/.test(char)) {
+                tokens.push({ type: TokenType.IDENTIFIER, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+
+            // 演算子
+            if (char === '=') {
+                tokens.push({ type: TokenType.EQUALS, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+
+            // TODO: その他のトークンタイプをここに追加
+
+            throw new Error(`未知の文字 '${char}'`);
+        }
+
+        return tokens;
+    }
+}

@@ -1,5 +1,9 @@
 // src/workerInterpreter.ts
 
+
+import { Lexer } from './lexer';
+import { TokenType, Token } from './lexer';
+
 /**
  * インタプリタの実行状態を保持するインターフェース。
  * Generator Function内で状態を管理するために使用されます。
@@ -31,6 +35,7 @@ interface LoopInfo {
 class WorkerInterpreter {
     private scriptLines: string[] = []; // 解析済みのスクリプト行
     private labels: Map<string, number> = new Map(); // ラベル名と行番号のマッピング
+    private tokens: Token[][] = []; // 各行のトークンリストを保持
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
@@ -40,12 +45,15 @@ class WorkerInterpreter {
      * @param pokeFn gridDataに値を書き込み、再描画をトリガーする関数。
      * @param logFn トランスクリプトエリアに出力する関数。
      */
+    private lexer: Lexer; // Lexerのインスタンス
+
     constructor(
         private gridData: number[],
         private peekFn: (index: number) => number,
         private pokeFn: (index: number, value: number) => void,
         private logFn: (...args: any[]) => void
     ) {
+        this.lexer = new Lexer(); // Lexerのインスタンスを初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
     }
@@ -57,101 +65,43 @@ class WorkerInterpreter {
      * @throws {Error} 構文エラーや重複ラベルなどの問題が見つかった場合。
      */
     loadScript(script: string): void {
-        // TODO: 実際の字句解析、構文解析、ラベルの抽出、エラーチェックを実装
-        // 現時点では、単純に行に分割するのみ
         this.scriptLines = script.split('\n');
         this.labels.clear(); // 既存のラベルをクリア
+        this.tokens = []; // トークンリストをクリア
 
-        // 仮のラベル抽出ロジック（実際の実装ではより堅牢な解析が必要）
         this.scriptLines.forEach((line, index) => {
             const trimmedLine = line.trim();
+            if (trimmedLine.startsWith(':')) {
+                // コメント行は単一のコメントトークンとして扱う
+                this.tokens.push([{ type: TokenType.COMMENT, value: trimmedLine, line: index, column: 0 }]);
+                return;
+            }
+            if (trimmedLine === '') {
+                // 空行は空のトークンリストとして扱う
+                this.tokens.push([]);
+                return;
+            }
+
+            // ラベル定義の処理
             if (trimmedLine.startsWith('^')) {
                 const labelName = trimmedLine.split(/\s/)[0]; // スペースまでをラベル名とする
                 if (this.labels.has(labelName)) {
                     throw new Error(`構文エラー: ラベル '${labelName}' が重複して定義されています。`);
                 }
                 this.labels.set(labelName, index);
+                this.tokens.push([{ type: TokenType.LABEL_DEFINITION, value: labelName, line: index, column: 0 }]);
+                return;
+            }
+
+            // その他の行の字句解析
+            try {
+                this.tokens.push(this.lexer.tokenizeLine(trimmedLine, index));
+            } catch (error: any) {
+                throw new Error(`字句解析エラー (行: ${index + 1}): ${error.message}`);
             }
         });
 
-        // TODO: その他の構文エラーチェック（例: 未定義コマンド、不正な式など）
         this.logFn("スクリプトがロードされました。");
-    }
-
-    /**
-     * WorkerScriptの実行を制御するGenerator Functionを返します。
-     * Generatorのnext()が呼び出されるたびに、1つのステートメントが実行されます。
-     * @returns Generator<boolean, void, unknown> Generatorオブジェクト。
-     *          yieldされるbooleanは、実行が継続可能かどうかを示します。
-     *          実行完了時はdone: trueとなります。
-     */
-    *run(): Generator<boolean, void, unknown> {
-        const state: InterpreterState = {
-            programCounter: 0,
-            variables: new Map<string, number>(),
-            systemVariables: new Map<string, number>([
-                ['#', 0], // プログラム開始位置を指す
-                ['%', 0],
-                ['X', 0],
-                ['Y', 0],
-            ]),
-            callStack: [],
-            loopStack: [],
-        };
-
-        // ユーザー変数の初期化 (A-Zを0に)
-        for (let i = 0; i < 26; i++) {
-            const charCode = 'A'.charCodeAt(0) + i;
-            state.variables.set(String.fromCharCode(charCode), 0);
-        }
-
-        while (state.programCounter < this.scriptLines.length) {
-            const currentLine = this.scriptLines[state.programCounter];
-            const trimmedLine = currentLine.trim();
-
-            // コメント行や空行、ラベル定義行はスキップ
-            if (trimmedLine.startsWith(':') || trimmedLine === '' || trimmedLine.startsWith('^')) {
-                state.programCounter++;
-                continue;
-            }
-
-            try {
-                // 1ステートメントの実行
-                this.executeStatement(trimmedLine, state);
-            } catch (error: any) {
-                this.logFn(`実行時エラー: ${error.message} (行: ${state.programCounter + 1})`);
-                state.systemVariables.set('#', -1); // エラーで停止
-            }
-
-            // プログラム停止コマンド (#=-1) が実行された場合
-            if (state.systemVariables.get('#') === -1) {
-                this.logFn("プログラムが停止しました。");
-                return; // 実行完了
-            }
-
-            // 実行が継続可能であることを外部に通知
-            yield true; // true は「まだ実行中」を示す
-        }
-
-        this.logFn("プログラムが終了しました。");
-        return; // 実行完了
-    }
-
-    /**
-     * 単一のステートメントを実行します。
-     * このメソッドはGenerator Functionの内部から呼び出されます。
-     * @param line 実行するステートメントの文字列。
-     * @param state 現在のインタプリタの状態。
-     * @throws {Error} 実行時エラーが発生した場合。
-     */
-    private executeStatement(line: string, state: InterpreterState): void {
-        // TODO: ここにWorkerScriptの各コマンドの実行ロジックを実装
-        // 例: 代入、出力、条件分岐、制御フロー、メモリ操作など
-
-        // 仮の処理: 何も実行せず、プログラムカウンタを進めるだけ
-        // 実際のインタプリタでは、lineを解析し、適切なアクションを実行します。
-        this.logFn(`実行: ${line}`); // デバッグ用
-        state.programCounter++; // 次のステートメントへ
     }
 
     // TODO: 必要に応じて、式評価、変数解決などのヘルパーメソッドを追加
