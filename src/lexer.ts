@@ -113,6 +113,18 @@ export class Lexer {
                 continue;
             }
 
+            // ラベル定義
+            if (char === '^') {
+                let value = char;
+                cursor++;
+                while (cursor < lineText.length && /[a-zA-Z0-9_]/.test(lineText[cursor])) {
+                    value += lineText[cursor];
+                    cursor++;
+                }
+                tokens.push({ type: TokenType.LABEL_DEFINITION, value, line: lineNumber, column: cursor - value.length });
+                continue;
+            }
+
             // 演算子
             if (char === '+') {
                 tokens.push({ type: TokenType.PLUS, value: char, line: lineNumber, column: cursor });

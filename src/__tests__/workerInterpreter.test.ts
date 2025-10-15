@@ -114,4 +114,11 @@ describe('Lexer (TDD Cycle 1.2)', () => {
       { type: TokenType.STRING, value: 'Hello World' , line: 0, column: 0 },
     ]);
   });
+
+  test('should tokenize a label definition', () => {
+    const line = '^MY_LABEL';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.LABEL_DEFINITION, value: '^MY_LABEL', line: 0, column: 0 },
+    ]);
+  });
 });
