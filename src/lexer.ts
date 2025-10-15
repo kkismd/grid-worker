@@ -193,6 +193,23 @@ export class Lexer {
                 continue;
             }
 
+            // 特殊記号
+            if (char === ';') {
+                tokens.push({ type: TokenType.SEMICOLON, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '?') {
+                tokens.push({ type: TokenType.QUESTION, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '#') {
+                tokens.push({ type: TokenType.HASH, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+
             // TODO: その他のトークンタイプをここに追加
 
             throw new Error(`未知の文字 '${char}'`);

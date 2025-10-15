@@ -122,3 +122,40 @@ describe('Lexer (TDD Cycle 1.2)', () => {
     ]);
   });
 });
+
+describe('Lexer (TDD Cycle 1.3)', () => {
+  let lexer: Lexer;
+
+  beforeEach(() => {
+    lexer = new Lexer();
+  });
+
+  test('should tokenize multiple statements on the same line', () => {
+    const line = 'A=10 B=20';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+      { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+      { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+      { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
+      { type: TokenType.EQUALS, value: '=', line: 0, column: 6 },
+      { type: TokenType.NUMBER, value: '20', line: 0, column: 7 },
+    ]);
+  });
+
+  test('should tokenize a complex IF statement', () => {
+    const line = ';=A>100 ?=100 #=^END';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+        { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
+        { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+        { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+        { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
+        { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
+        { type: TokenType.QUESTION, value: '?', line: 0, column: 8 },
+        { type: TokenType.EQUALS, value: '=', line: 0, column: 9 },
+        { type: TokenType.NUMBER, value: '100', line: 0, column: 10 },
+        { type: TokenType.HASH, value: '#', line: 0, column: 14 },
+        { type: TokenType.EQUALS, value: '=', line: 0, column: 15 },
+        { type: TokenType.LABEL_DEFINITION, value: '^END', line: 0, column: 16 },
+    ]);
+  });
+});
