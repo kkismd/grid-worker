@@ -142,34 +142,37 @@ class WorkerInterpreter {
             }
 
             // 出力ステートメント (?=)
-            if (token.type === TokenType.QUESTION && index + 2 < tokens.length) {
+            if (token.type === TokenType.QUESTION) {
                 const nextToken = tokens[index + 1];
-                const valueToken = tokens[index + 2];
                 
-                if (nextToken && valueToken && nextToken.type === TokenType.EQUALS) {
-                    const expression = this.parseExpression(valueToken);
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // ?= の後の全トークンを式として解析
+                    const exprTokens = tokens.slice(index + 2);
+                    const expression = this.parseExpressionFromTokens(exprTokens);
                     
                     body.push({
                         type: 'OutputStatement',
                         expression,
                     });
                     
-                    index += 3;
+                    // すべてのトークンを消費
+                    index = tokens.length;
                     continue;
                 }
             }
 
             // 代入ステートメントの解析
-            if (token.type === TokenType.IDENTIFIER && index + 2 < tokens.length) {
+            if (token.type === TokenType.IDENTIFIER) {
                 const nextToken = tokens[index + 1];
-                const valueToken = tokens[index + 2];
                 
-                if (nextToken && valueToken && nextToken.type === TokenType.EQUALS) {
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
                     const variable: Identifier = {
                         type: 'Identifier',
                         name: token.value,
                     };
-                    const value = this.parseExpression(valueToken);
+                    // = の後の全トークンを式として解析
+                    const exprTokens = tokens.slice(index + 2);
+                    const value = this.parseExpressionFromTokens(exprTokens);
                     
                     body.push({
                         type: 'AssignmentStatement',
@@ -177,7 +180,8 @@ class WorkerInterpreter {
                         value,
                     });
                     
-                    index += 3;
+                    // すべてのトークンを消費
+                    index = tokens.length;
                     continue;
                 }
             }
@@ -220,6 +224,132 @@ class WorkerInterpreter {
         }
 
         throw new Error(`構文エラー: 無効な式トークン '${token.value}' (行: ${token.line + 1})`);
+    }
+
+    /**
+     * トークンの配列から式を解析します（複数トークンの式をサポート）。
+     * VTL系言語の仕様に従い、左から右へ評価します（括弧は優先順位を変更）。
+     * @param tokens 式のトークン配列
+     * @returns Expression ASTノード
+     */
+    private parseExpressionFromTokens(tokens: Token[]): Expression {
+        if (tokens.length === 0) {
+            throw new Error('構文エラー: 式が空です');
+        }
+
+        // 単一トークンの場合
+        if (tokens.length === 1) {
+            return this.parseExpression(tokens[0]!);
+        }
+
+        // 括弧がある場合の処理
+        return this.parseBinaryExpression(tokens, 0).expr;
+    }
+
+    /**
+     * 二項演算式を再帰的に解析します（左から右への評価）。
+     * @param tokens トークン配列
+     * @param start 開始インデックス
+     * @returns 解析された式と次のインデックス
+     */
+    private parseBinaryExpression(tokens: Token[], start: number): { expr: Expression; nextIndex: number } {
+        // 左辺を解析
+        let left = this.parsePrimaryExpression(tokens, start);
+        let index = left.nextIndex;
+
+        // 演算子がある限り続ける
+        while (index < tokens.length) {
+            const token = tokens[index];
+            if (!token) break;
+
+            // 演算子かどうかチェック
+            if (this.isBinaryOperator(token.type)) {
+                const operator = token.value;
+                index++;
+
+                // 右辺を解析
+                const right = this.parsePrimaryExpression(tokens, index);
+                index = right.nextIndex;
+
+                // 左結合で二項演算式を構築
+                left.expr = {
+                    type: 'BinaryExpression',
+                    operator,
+                    left: left.expr,
+                    right: right.expr,
+                };
+            } else {
+                // 演算子でない場合は終了
+                break;
+            }
+        }
+
+        return { expr: left.expr, nextIndex: index };
+    }
+
+    /**
+     * 基本式（リテラル、識別子、括弧式）を解析します。
+     * @param tokens トークン配列
+     * @param start 開始インデックス
+     * @returns 解析された式と次のインデックス
+     */
+    private parsePrimaryExpression(tokens: Token[], start: number): { expr: Expression; nextIndex: number } {
+        const token = tokens[start];
+        if (!token) {
+            throw new Error('構文エラー: 式が不完全です');
+        }
+
+        // 括弧式
+        if (token.type === TokenType.LEFT_PAREN) {
+            // 対応する閉じ括弧を見つける
+            let depth = 1;
+            let endIndex = start + 1;
+            while (endIndex < tokens.length && depth > 0) {
+                if (tokens[endIndex]?.type === TokenType.LEFT_PAREN) {
+                    depth++;
+                } else if (tokens[endIndex]?.type === TokenType.RIGHT_PAREN) {
+                    depth--;
+                }
+                if (depth > 0) {
+                    endIndex++;
+                }
+            }
+
+            if (depth !== 0) {
+                throw new Error(`構文エラー: 括弧が閉じられていません (行: ${token.line + 1})`);
+            }
+
+            // 括弧内の式を再帰的に解析
+            const innerTokens = tokens.slice(start + 1, endIndex);
+            const innerExpr = this.parseBinaryExpression(innerTokens, 0);
+
+            return { expr: innerExpr.expr, nextIndex: endIndex + 1 };
+        }
+
+        // 単純な値（数値、文字列、識別子）
+        const expr = this.parseExpression(token);
+        return { expr, nextIndex: start + 1 };
+    }
+
+    /**
+     * トークンタイプが二項演算子かどうかを判定します。
+     * @param tokenType トークンタイプ
+     * @returns 二項演算子の場合true
+     */
+    private isBinaryOperator(tokenType: TokenType): boolean {
+        return [
+            TokenType.PLUS,
+            TokenType.MINUS,
+            TokenType.ASTERISK,
+            TokenType.SLASH,
+            TokenType.GREATER_THAN,
+            TokenType.LESS_THAN,
+            TokenType.GREATER_THAN_OR_EQUAL,
+            TokenType.LESS_THAN_OR_EQUAL,
+            TokenType.NOT_EQUAL,
+            TokenType.AMPERSAND,
+            TokenType.PIPE,
+        ].includes(tokenType);
     }
 
     // TODO: 必要に応じて、式評価、変数解決などのヘルパーメソッドを追加

@@ -256,3 +256,111 @@ describe('Parser (TDD Cycle 2.2)', () => {
     });
 });
 
+describe('Parser (TDD Cycle 2.3)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse a simple arithmetic expression (C=A+B)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'C' },
+                    value: {
+                        type: 'BinaryExpression',
+                        operator: '+',
+                        left: { type: 'Identifier', name: 'A' },
+                        right: { type: 'Identifier', name: 'B' },
+                    },
+                },
+            ],
+        });
+    });
+
+    test('should parse a complex arithmetic expression (D=10*5-2)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 4 },
+            { type: TokenType.NUMBER, value: '5', line: 0, column: 5 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 6 },
+            { type: TokenType.NUMBER, value: '2', line: 0, column: 7 },
+        ];
+        const ast = interpreter.parse(tokens);
+        // VTL系言語は左から右へ評価するため: ((10*5)-2)
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'D' },
+                    value: {
+                        type: 'BinaryExpression',
+                        operator: '-',
+                        left: {
+                            type: 'BinaryExpression',
+                            operator: '*',
+                            left: { type: 'NumericLiteral', value: 10 },
+                            right: { type: 'NumericLiteral', value: 5 },
+                        },
+                        right: { type: 'NumericLiteral', value: 2 },
+                    },
+                },
+            ],
+        });
+    });
+
+    test('should parse an expression with parentheses (E=(A+B)*C)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'E', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.LEFT_PAREN, value: '(', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 3 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 4 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
+            { type: TokenType.RIGHT_PAREN, value: ')', line: 0, column: 6 },
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 7 },
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 8 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'E' },
+                    value: {
+                        type: 'BinaryExpression',
+                        operator: '*',
+                        left: {
+                            type: 'BinaryExpression',
+                            operator: '+',
+                            left: { type: 'Identifier', name: 'A' },
+                            right: { type: 'Identifier', name: 'B' },
+                        },
+                        right: { type: 'Identifier', name: 'C' },
+                    },
+                },
+            ],
+        });
+    });
+});
+

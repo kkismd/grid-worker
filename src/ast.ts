@@ -56,7 +56,8 @@ export interface NewlineStatement extends ASTNode {
 export type Expression = 
     | NumericLiteral 
     | StringLiteral 
-    | Identifier; // 他の式型も追加予定
+    | Identifier
+    | BinaryExpression; // 他の式型も追加予定
 
 /**
  * 数値リテラル
@@ -80,4 +81,14 @@ export interface StringLiteral extends ASTNode {
 export interface Identifier extends ASTNode {
     type: 'Identifier';
     name: string;
+}
+
+/**
+ * 二項演算式 (例: A+B, 10*5)
+ */
+export interface BinaryExpression extends ASTNode {
+    type: 'BinaryExpression';
+    operator: string; // '+', '-', '*', '/', '>', '<', '>=', '<=', '=', '<>', '&', '|'
+    left: Expression;
+    right: Expression;
 }
