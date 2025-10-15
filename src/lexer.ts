@@ -63,6 +63,11 @@ export class Lexer {
 
         while (cursor < lineText.length) {
             const char = lineText[cursor];
+            
+            // charがundefinedの場合は終了
+            if (!char) {
+                break;
+            }
 
             // コメント行
             if (char === ':') {
@@ -81,9 +86,14 @@ export class Lexer {
             // 数値リテラル
             if (/[0-9]/.test(char)) {
                 let value = '';
-                while (cursor < lineText.length && /[0-9]/.test(lineText[cursor])) {
-                    value += lineText[cursor];
-                    cursor++;
+                while (cursor < lineText.length) {
+                    const currentChar = lineText[cursor];
+                    if (currentChar && /[0-9]/.test(currentChar)) {
+                        value += currentChar;
+                        cursor++;
+                    } else {
+                        break;
+                    }
                 }
                 tokens.push({ type: TokenType.NUMBER, value, line: lineNumber, column: cursor - value.length });
                 continue;
@@ -117,9 +127,14 @@ export class Lexer {
             if (char === '^') {
                 let value = char;
                 cursor++;
-                while (cursor < lineText.length && /[a-zA-Z0-9_]/.test(lineText[cursor])) {
-                    value += lineText[cursor];
-                    cursor++;
+                while (cursor < lineText.length) {
+                    const currentChar = lineText[cursor];
+                    if (currentChar && /[a-zA-Z0-9_]/.test(currentChar)) {
+                        value += currentChar;
+                        cursor++;
+                    } else {
+                        break;
+                    }
                 }
                 tokens.push({ type: TokenType.LABEL_DEFINITION, value, line: lineNumber, column: cursor - value.length });
                 continue;
