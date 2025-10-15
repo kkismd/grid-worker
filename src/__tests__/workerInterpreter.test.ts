@@ -107,4 +107,11 @@ describe('Lexer (TDD Cycle 1.2)', () => {
       { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 6 },
     ]);
   });
+
+  test('should tokenize a string literal', () => {
+    const line = '"Hello World"'
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.STRING, value: 'Hello World' , line: 0, column: 0 },
+    ]);
+  });
 });

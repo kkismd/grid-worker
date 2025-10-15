@@ -96,6 +96,23 @@ export class Lexer {
                 continue;
             }
 
+            // 文字列リテラル
+            if (char === '"') {
+                let value = '';
+                cursor++; // 開始の " をスキップ
+                while (cursor < lineText.length && lineText[cursor] !== '"') {
+                    value += lineText[cursor];
+                    cursor++;
+                }
+                if (cursor === lineText.length) {
+                    // 文字列が閉じていない
+                    throw new Error(`Unterminated string literal at line ${lineNumber + 1}`);
+                }
+                cursor++; // 終了の " をスキップ
+                tokens.push({ type: TokenType.STRING, value, line: lineNumber, column: cursor - value.length - 2 });
+                continue;
+            }
+
             // 演算子
             if (char === '+') {
                 tokens.push({ type: TokenType.PLUS, value: char, line: lineNumber, column: cursor });
