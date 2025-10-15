@@ -21,7 +21,10 @@ export interface Program extends ASTNode {
 /**
  * ステートメントを表すASTノード
  */
-export type Statement = AssignmentStatement; // 他のステートメント型も追加予定
+export type Statement = 
+    | AssignmentStatement 
+    | OutputStatement 
+    | NewlineStatement; // 他のステートメント型も追加予定
 
 /**
  * 代入ステートメント (例: A=10)
@@ -33,9 +36,27 @@ export interface AssignmentStatement extends ASTNode {
 }
 
 /**
+ * 出力ステートメント (例: ?=10, ?="Hello")
+ */
+export interface OutputStatement extends ASTNode {
+    type: 'OutputStatement';
+    expression: Expression;
+}
+
+/**
+ * 改行ステートメント (/)
+ */
+export interface NewlineStatement extends ASTNode {
+    type: 'NewlineStatement';
+}
+
+/**
  * 式を表すASTノード
  */
-export type Expression = NumericLiteral | Identifier; // 他の式型も追加予定
+export type Expression = 
+    | NumericLiteral 
+    | StringLiteral 
+    | Identifier; // 他の式型も追加予定
 
 /**
  * 数値リテラル
@@ -43,6 +64,14 @@ export type Expression = NumericLiteral | Identifier; // 他の式型も追加�
 export interface NumericLiteral extends ASTNode {
     type: 'NumericLiteral';
     value: number;
+}
+
+/**
+ * 文字列リテラル
+ */
+export interface StringLiteral extends ASTNode {
+    type: 'StringLiteral';
+    value: string;
 }
 
 /**

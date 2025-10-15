@@ -1,7 +1,7 @@
 // src/workerInterpreter.ts
 
 import { Lexer, TokenType, type Token } from './lexer';
-import type { Program, Statement, Expression, Identifier, NumericLiteral } from './ast';
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral } from './ast';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。
@@ -132,6 +132,33 @@ class WorkerInterpreter {
                 continue;
             }
 
+            // 改行ステートメント (/)
+            if (token.type === TokenType.SLASH) {
+                body.push({
+                    type: 'NewlineStatement',
+                });
+                index++;
+                continue;
+            }
+
+            // 出力ステートメント (?=)
+            if (token.type === TokenType.QUESTION && index + 2 < tokens.length) {
+                const nextToken = tokens[index + 1];
+                const valueToken = tokens[index + 2];
+                
+                if (nextToken && valueToken && nextToken.type === TokenType.EQUALS) {
+                    const expression = this.parseExpression(valueToken);
+                    
+                    body.push({
+                        type: 'OutputStatement',
+                        expression,
+                    });
+                    
+                    index += 3;
+                    continue;
+                }
+            }
+
             // 代入ステートメントの解析
             if (token.type === TokenType.IDENTIFIER && index + 2 < tokens.length) {
                 const nextToken = tokens[index + 1];
@@ -175,6 +202,13 @@ class WorkerInterpreter {
             return {
                 type: 'NumericLiteral',
                 value: parseInt(token.value, 10),
+            };
+        }
+        
+        if (token.type === TokenType.STRING) {
+            return {
+                type: 'StringLiteral',
+                value: token.value,
             };
         }
         

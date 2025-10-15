@@ -1,7 +1,7 @@
 // src/__tests__/workerInterpreter.test.ts
 
 import WorkerInterpreter from '../workerInterpreter';
-import { Lexer, TokenType, Token } from '../lexer';
+import { Lexer, TokenType, type Token } from '../lexer';
 
 // モック関数
 const mockLogFn = jest.fn();
@@ -191,3 +191,68 @@ describe('Parser (TDD Cycle 2.1)', () => {
         });
     });
 });
+
+describe('Parser (TDD Cycle 2.2)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse a numeric output statement (?=10)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'OutputStatement',
+                    expression: { type: 'NumericLiteral', value: 10 },
+                },
+            ],
+        });
+    });
+
+    test('should parse a string output statement (?="Hello")', () => {
+        const tokens: Token[] = [
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.STRING, value: 'Hello', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'OutputStatement',
+                    expression: { type: 'StringLiteral', value: 'Hello' },
+                },
+            ],
+        });
+    });
+
+    test('should parse a newline statement (/)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.SLASH, value: '/', line: 0, column: 0 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'NewlineStatement',
+                },
+            ],
+        });
+    });
+});
+
