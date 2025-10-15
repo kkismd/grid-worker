@@ -159,3 +159,35 @@ describe('Lexer (TDD Cycle 1.3)', () => {
     ]);
   });
 });
+
+describe('Parser (TDD Cycle 2.1)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse a simple assignment statement', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'A' },
+                    value: { type: 'NumericLiteral', value: 10 },
+                },
+            ],
+        });
+    });
+});

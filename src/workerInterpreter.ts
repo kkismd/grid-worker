@@ -1,8 +1,7 @@
 // src/workerInterpreter.ts
 
-
-import { Lexer } from './lexer';
-import { TokenType, Token } from './lexer';
+import { Lexer, TokenType, type Token } from './lexer';
+import type { Program, Statement, Expression, Identifier, NumericLiteral } from './ast';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。
@@ -36,23 +35,27 @@ class WorkerInterpreter {
     private scriptLines: string[] = []; // 解析済みのスクリプト行
     private labels: Map<string, number> = new Map(); // ラベル名と行番号のマッピング
     private tokens: Token[][] = []; // 各行のトークンリストを保持
+    private lexer: Lexer; // Lexerのインスタンス
+    private gridData: number[];
+    private peekFn: (index: number) => number;
+    private pokeFn: (index: number, value: number) => void;
+    private logFn: (...args: any[]) => void;
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
      * 外部APIやグリッドデータは依存性注入されます。
-     * @param gridData グリッドデータを保持する数値配列。
-     * @param peekFn gridDataから値を読み出す関数。
-     * @param pokeFn gridDataに値を書き込み、再描画をトリガーする関数。
-     * @param logFn トランスクリプトエリアに出力する関数。
+     * @param config 設定オブジェクト
      */
-    private lexer: Lexer; // Lexerのインスタンス
-
-    constructor(
-        private gridData: number[],
-        private peekFn: (index: number) => number,
-        private pokeFn: (index: number, value: number) => void,
-        private logFn: (...args: any[]) => void
-    ) {
+    constructor(config: {
+        gridData: number[];
+        peekFn: (index: number) => number;
+        pokeFn: (index: number, value: number) => void;
+        logFn: (...args: any[]) => void;
+    }) {
+        this.gridData = config.gridData;
+        this.peekFn = config.peekFn;
+        this.pokeFn = config.pokeFn;
+        this.logFn = config.logFn;
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
@@ -85,6 +88,9 @@ class WorkerInterpreter {
             // ラベル定義の処理
             if (trimmedLine.startsWith('^')) {
                 const labelName = trimmedLine.split(/\s/)[0]; // スペースまでをラベル名とする
+                if (!labelName) {
+                    throw new Error(`構文エラー: 無効なラベル定義 (行: ${index + 1})`);
+                }
                 if (this.labels.has(labelName)) {
                     throw new Error(`構文エラー: ラベル '${labelName}' が重複して定義されています。`);
                 }
@@ -102,6 +108,84 @@ class WorkerInterpreter {
         });
 
         this.logFn("スクリプトがロードされました。");
+    }
+
+    /**
+     * トークンのリストからASTを構築します。
+     * @param tokens トークンの配列
+     * @returns Program ASTノード
+     */
+    parse(tokens: Token[]): Program {
+        const body: Statement[] = [];
+        let index = 0;
+
+        while (index < tokens.length) {
+            const token = tokens[index];
+            
+            if (!token) {
+                break;
+            }
+
+            // コメントや空行をスキップ
+            if (token.type === TokenType.COMMENT) {
+                index++;
+                continue;
+            }
+
+            // 代入ステートメントの解析
+            if (token.type === TokenType.IDENTIFIER && index + 2 < tokens.length) {
+                const nextToken = tokens[index + 1];
+                const valueToken = tokens[index + 2];
+                
+                if (nextToken && valueToken && nextToken.type === TokenType.EQUALS) {
+                    const variable: Identifier = {
+                        type: 'Identifier',
+                        name: token.value,
+                    };
+                    const value = this.parseExpression(valueToken);
+                    
+                    body.push({
+                        type: 'AssignmentStatement',
+                        variable,
+                        value,
+                    });
+                    
+                    index += 3;
+                    continue;
+                }
+            }
+
+            // その他のトークンがあればエラー
+            throw new Error(`構文エラー: 予期しないトークン '${token.value}' (行: ${token.line + 1}, 列: ${token.column + 1})`);
+        }
+
+        return {
+            type: 'Program',
+            body,
+        };
+    }
+
+    /**
+     * 式を解析します（現時点では単純なリテラルと識別子のみ）。
+     * @param token 式のトークン
+     * @returns Expression ASTノード
+     */
+    private parseExpression(token: Token): Expression {
+        if (token.type === TokenType.NUMBER) {
+            return {
+                type: 'NumericLiteral',
+                value: parseInt(token.value, 10),
+            };
+        }
+        
+        if (token.type === TokenType.IDENTIFIER) {
+            return {
+                type: 'Identifier',
+                name: token.value,
+            };
+        }
+
+        throw new Error(`構文エラー: 無効な式トークン '${token.value}' (行: ${token.line + 1})`);
     }
 
     // TODO: 必要に応じて、式評価、変数解決などのヘルパーメソッドを追加
