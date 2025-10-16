@@ -70,7 +70,7 @@
             gap: 10px;
             margin-top: 10px;
         }
-        .add-worker-btn, .start-all-btn, .clear-btn {
+        .add-worker-btn, .clone-btn, .start-all-btn, .clear-btn {
             flex: 1;
             padding: 12px;
             color: white;
@@ -84,6 +84,12 @@
         }
         .add-worker-btn:hover {
             background: #45a049;
+        }
+        .clone-btn {
+            background: #9C27B0;
+        }
+        .clone-btn:hover {
+            background: #7B1FA2;
         }
         .start-all-btn {
             background: #2196F3;
@@ -269,6 +275,7 @@
                 </div>
                 <div class="global-buttons">
                     <button class="add-worker-btn" id="add-worker-btn">+ Add New Worker</button>
+                    <button class="clone-btn" id="clone-btn">📋 Clone 1st Worker</button>
                     <button class="start-all-btn" id="start-all-btn">▶ Start All</button>
                     <button class="clear-btn" id="clear-btn">🗑 Clear Grid</button>
                 </div>

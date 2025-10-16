@@ -38,6 +38,7 @@ let currentStepsPerFrame = 1000; // Default to "Fast"
 const canvas = document.getElementById('grid-canvas') as HTMLCanvasElement;
 const workersContainer = document.getElementById('workers-container') as HTMLDivElement;
 const addWorkerButton = document.getElementById('add-worker-btn') as HTMLButtonElement;
+const cloneButton = document.getElementById('clone-btn') as HTMLButtonElement;
 const startAllButton = document.getElementById('start-all-btn') as HTMLButtonElement;
 const clearButton = document.getElementById('clear-btn') as HTMLButtonElement;
 const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
@@ -378,6 +379,61 @@ I=0,99
     log(`Worker ${workerId} added.`);
 }
 
+/**
+ * Clones the first worker's script and creates a new worker with it.
+ */
+function cloneFirstWorker() {
+    // Get worker 1
+    const firstWorker = workers.get(1);
+    if (!firstWorker) {
+        log('Worker 1 が存在しないため、クローンできません。');
+        return;
+    }
+    
+    // Get worker 1's script
+    const firstScript = document.getElementById('script-1') as HTMLTextAreaElement;
+    if (!firstScript) {
+        log('Worker 1 のスクリプトが見つかりません。');
+        return;
+    }
+    
+    const scriptContent = firstScript.value;
+    const workerId = nextWorkerId++;
+    
+    // Create worker object
+    const worker: Worker = {
+        id: workerId,
+        interpreter: null,
+        generator: null,
+        status: 'stopped',
+        stepCount: 0,
+    };
+    
+    workers.set(workerId, worker);
+    
+    // Create card HTML with cloned script
+    const card = document.createElement('div');
+    card.className = 'worker-card';
+    card.id = `worker-${workerId}`;
+    card.innerHTML = `
+        <div class="worker-header">
+            <span class="worker-title">Worker ${workerId}</span>
+            <button class="remove-btn" data-worker-id="${workerId}">×</button>
+        </div>
+        <textarea class="worker-script" id="script-${workerId}" placeholder="Enter WorkerScript here...">${scriptContent}</textarea>
+        <div class="worker-controls">
+            <button class="start-btn" data-worker-id="${workerId}">Start</button>
+            <button class="pause-btn" data-worker-id="${workerId}">Pause</button>
+            <button class="resume-btn" data-worker-id="${workerId}">Resume</button>
+            <button class="stop-btn" data-worker-id="${workerId}">Stop</button>
+        </div>
+        <div class="worker-status status-stopped" id="status-${workerId}">stopped (0 steps)</div>
+    `;
+    
+    workersContainer.appendChild(card);
+    log(`Worker ${workerId} created (Worker 1 からクローン).`);
+}
+
 // --- Event Handlers ---
 
 // Speed slider
@@ -392,6 +448,9 @@ speedSlider.addEventListener('input', () => {
 
 // Add worker button
 addWorkerButton.addEventListener('click', addWorker);
+
+// Clone first worker button
+cloneButton.addEventListener('click', cloneFirstWorker);
 
 // Start all button
 startAllButton.addEventListener('click', startAllWorkers);
