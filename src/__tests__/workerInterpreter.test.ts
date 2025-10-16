@@ -2371,3 +2371,185 @@ describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
         expect(interpreter.getVariable('B')).toBe(2);
     });
 });
+
+// ============================================================
+// Phase 3.6: FOR/NEXTループの実行テスト
+// ============================================================
+describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPeekFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+    let mockGridData: number[];
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPeekFn = jest.fn(() => 0);
+        mockPokeFn = jest.fn();
+        mockGridData = new Array(100).fill(0);
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should execute basic FOR loop with default step', () => {
+        interpreter.loadScript('S=0 I=1,3\nS=S+I @=I\n?=S');
+        const gen = interpreter.run();
+        
+        gen.next(); // S=0
+        gen.next(); // FOR I=1,3 (I=1)
+        // Iteration 1: I=1
+        gen.next(); // S=S+I → S=1
+        gen.next(); // NEXT I → I=2, continue
+        // Iteration 2: I=2
+        gen.next(); // S=S+I → S=3
+        gen.next(); // NEXT I → I=3, continue
+        // Iteration 3: I=3
+        gen.next(); // S=S+I → S=6
+        gen.next(); // NEXT I → I=4, exit loop
+        // After loop
+        gen.next(); // ?=S
+        
+        expect(interpreter.getVariable('S')).toBe(6); // 1+2+3
+        expect(mockLogFn).toHaveBeenCalledWith(6);
+    });
+
+    test('should execute FOR loop with negative step', () => {
+        interpreter.loadScript('S=0 I=3,1,-1\nS=S+I @=I\n?=S');
+        const gen = interpreter.run();
+        
+        gen.next(); // S=0
+        gen.next(); // FOR I=3,1,-1 (I=3)
+        // Iteration 1: I=3
+        gen.next(); // S=S+I → S=3
+        gen.next(); // NEXT I → I=2, continue
+        // Iteration 2: I=2
+        gen.next(); // S=S+I → S=5
+        gen.next(); // NEXT I → I=1, continue
+        // Iteration 3: I=1
+        gen.next(); // S=S+I → S=6
+        gen.next(); // NEXT I → I=0, exit loop
+        // After loop
+        gen.next(); // ?=S
+        
+        expect(interpreter.getVariable('S')).toBe(6); // 3+2+1
+        expect(mockLogFn).toHaveBeenCalledWith(6);
+    });
+
+    test('should execute FOR loop with step 2', () => {
+        interpreter.loadScript('S=0 I=1,5,2\nS=S+I @=I\n?=S');
+        const gen = interpreter.run();
+        
+        gen.next(); // S=0
+        gen.next(); // FOR I=1,5,2 (I=1)
+        gen.next(); // S=S+I → S=1
+        gen.next(); // NEXT I → I=3, continue
+        gen.next(); // S=S+I → S=4
+        gen.next(); // NEXT I → I=5, continue
+        gen.next(); // S=S+I → S=9
+        gen.next(); // NEXT I → I=7, exit loop
+        gen.next(); // ?=S
+        
+        expect(interpreter.getVariable('S')).toBe(9); // 1+3+5
+        expect(mockLogFn).toHaveBeenCalledWith(9);
+    });
+
+    test('should handle nested FOR loops', () => {
+        interpreter.loadScript('S=0 I=1,2\nJ=1,2\nS=S+I*10+J @=J\n@=I\n?=S');
+        const gen = interpreter.run();
+        
+        gen.next(); // S=0
+        gen.next(); // FOR I=1,2 (I=1)
+        // I=1
+        gen.next(); // FOR J=1,2 (J=1)
+        gen.next(); // S=S+11 → S=11
+        gen.next(); // NEXT J → J=2
+        gen.next(); // S=S+12 → S=23
+        gen.next(); // NEXT J → J=3, exit inner loop
+        gen.next(); // NEXT I → I=2
+        // I=2
+        gen.next(); // FOR J=1,2 (J=1)
+        gen.next(); // S=S+21 → S=44
+        gen.next(); // NEXT J → J=2
+        gen.next(); // S=S+22 → S=66
+        gen.next(); // NEXT J → J=3, exit inner loop
+        gen.next(); // NEXT I → I=3, exit outer loop
+        gen.next(); // ?=S
+        
+        expect(interpreter.getVariable('S')).toBe(66); // 11+12+21+22
+        expect(mockLogFn).toHaveBeenCalledWith(66);
+    });
+
+    test('should skip FOR loop if start > end with positive step', () => {
+        interpreter.loadScript('A=5 I=10,1\nA=A+1 @=I\n?=A');
+        const gen = interpreter.run();
+        
+        gen.next(); // A=5
+        gen.next(); // FOR I=10,1 (I=10, 10>1, skip loop)
+        gen.next(); // ?=A
+        
+        expect(interpreter.getVariable('A')).toBe(5); // Loop not executed
+        expect(mockLogFn).toHaveBeenCalledWith(5);
+    });
+
+    test('should skip FOR loop if start < end with negative step', () => {
+        interpreter.loadScript('A=5 I=1,10,-1\nA=A+1 @=I\n?=A');
+        const gen = interpreter.run();
+        
+        gen.next(); // A=5
+        gen.next(); // FOR I=1,10,-1 (I=1, 1<10 with step -1, skip loop)
+        gen.next(); // ?=A
+        
+        expect(interpreter.getVariable('A')).toBe(5); // Loop not executed
+        expect(mockLogFn).toHaveBeenCalledWith(5);
+    });
+
+    test('should throw error on NEXT without FOR', () => {
+        interpreter.loadScript('@=I');
+        const gen = interpreter.run();
+        
+        expect(() => gen.next()).toThrow('NEXT文に対応するFORループがありません');
+    });
+
+    test('should throw error on NEXT with wrong variable', () => {
+        interpreter.loadScript('I=1,3\n@=J');
+        const gen = interpreter.run();
+        gen.next(); // FOR I=1,3
+        
+        expect(() => gen.next()).toThrow('NEXT文のループ変数Jが現在のFORループの変数Iと一致しません');
+    });
+
+    test('should throw error on step value of 0', () => {
+        interpreter.loadScript('I=1,10,0');
+        const gen = interpreter.run();
+        
+        expect(() => gen.next()).toThrow('FORループのステップ値は0にできません');
+    });
+
+    test('should throw error on nested loop with same variable', () => {
+        interpreter.loadScript('I=1,3\nI=1,2\n@=I\n@=I');
+        const gen = interpreter.run();
+        gen.next(); // FOR I=1,3
+        
+        expect(() => gen.next()).toThrow('ループ変数Iは既に使用されています');
+    });
+
+    test('should allow FOR loop variable reuse after loop ends', () => {
+        interpreter.loadScript('I=1,2\n@=I\nI=5,6\n@=I\n?=I');
+        const gen = interpreter.run();
+        
+        gen.next(); // FOR I=1,2 (I=1)
+        gen.next(); // NEXT I → I=2
+        gen.next(); // NEXT I → I=3, exit
+        gen.next(); // FOR I=5,6 (I=5)
+        gen.next(); // NEXT I → I=6
+        gen.next(); // NEXT I → I=7, exit
+        gen.next(); // ?=I
+        
+        expect(interpreter.getVariable('I')).toBe(7);
+        expect(mockLogFn).toHaveBeenCalledWith(7);
+    });
+});

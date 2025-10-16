@@ -24,7 +24,7 @@ interface LoopInfo {
     start: number;    // 開始値
     end: number;      // 終了値
     step: number;     // ステップ値
-    nextStatementIndex: number; // NEXTステートメントの次の実行位置 (ループの先頭に戻るためのPC)
+    forLineIndex: number; // FORステートメントの行番号（ループの先頭に戻るため）
 }
 
 /**
@@ -44,6 +44,7 @@ class WorkerInterpreter {
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック
+    private loopStack: LoopInfo[] = []; // FORループの状態スタック
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
@@ -1130,6 +1131,7 @@ class WorkerInterpreter {
         this.variables.clear();
         this.currentLineIndex = 0;
         this.callStack = [];
+        this.loopStack = [];
 
         // プログラム実行ループ
         while (this.currentLineIndex < this.program.body.length) {
@@ -1256,10 +1258,148 @@ class WorkerInterpreter {
                     return { jump: false, halt: true, skipRemaining: false };
                 }
             
+            case 'ForStatement':
+                {
+                    // FOR文: I=start,end[,step]
+                    const varName = statement.variable.name;
+                    const startValue = this.evaluateExpression(statement.start);
+                    const endValue = this.evaluateExpression(statement.end);
+                    const stepValue = statement.step 
+                        ? this.evaluateExpression(statement.step) 
+                        : 1;
+                    
+                    // 型チェック
+                    if (typeof startValue === 'string' || typeof endValue === 'string' || typeof stepValue === 'string') {
+                        throw new Error('FORループのパラメータは数値でなければなりません');
+                    }
+                    
+                    // ステップ値が0の場合はエラー
+                    if (stepValue === 0) {
+                        throw new Error('FORループのステップ値は0にできません');
+                    }
+                    
+                    // ネストチェック: 同じ変数が既にループスタックにあるか
+                    if (this.loopStack.some(loop => loop.variable === varName)) {
+                        throw new Error(`ループ変数${varName}は既に使用されています`);
+                    }
+                    
+                    // ネストの最大深度チェック
+                    if (this.loopStack.length >= 256) {
+                        throw new Error('FORループのネストが最大深度256を超えました');
+                    }
+                    
+                    // ループ変数に開始値を設定
+                    this.variables.set(varName, startValue);
+                    
+                    // 初回のループ条件チェック
+                    const shouldExecute = stepValue > 0 
+                        ? startValue <= endValue 
+                        : startValue >= endValue;
+                    
+                    // ループ情報をスタックにpush
+                    this.loopStack.push({
+                        variable: varName,
+                        start: startValue,
+                        end: endValue,
+                        step: stepValue,
+                        forLineIndex: this.currentLineIndex,
+                    });
+                    
+                    if (!shouldExecute) {
+                        // ループをスキップ: NEXTを検索してその次の行にジャンプ
+                        const nextLineIndex = this.findMatchingNext(varName, this.currentLineIndex);
+                        if (nextLineIndex !== -1) {
+                            this.currentLineIndex = nextLineIndex + 1;
+                            // NEXTはスキップするので、ループ情報をpop
+                            this.loopStack.pop();
+                            return { jump: true, halt: false, skipRemaining: false };
+                        }
+                        // NEXTが見つからない場合は続行（NEXTでpopされる）
+                    }
+                }
+                break;
+            
+            case 'NextStatement':
+                {
+                    // NEXT文: @=I
+                    const varName = statement.variable.name;
+                    
+                    // ループスタックが空の場合はエラー
+                    if (this.loopStack.length === 0) {
+                        throw new Error('NEXT文に対応するFORループがありません');
+                    }
+                    
+                    // 最新のループ情報を取得
+                    const currentLoop = this.loopStack[this.loopStack.length - 1];
+                    if (!currentLoop) {
+                        throw new Error('NEXT文に対応するFORループがありません');
+                    }
+                    
+                    // ループ変数が一致するかチェック
+                    if (currentLoop.variable !== varName) {
+                        throw new Error(`NEXT文のループ変数${varName}が現在のFORループの変数${currentLoop.variable}と一致しません`);
+                    }
+                    
+                    // ループ変数をインクリメント
+                    const currentValue = this.variables.get(varName) || 0;
+                    const newValue = currentValue + currentLoop.step;
+                    this.variables.set(varName, newValue);
+                    
+                    // 次の値で条件チェック
+                    const shouldContinue = currentLoop.step > 0 
+                        ? newValue <= currentLoop.end 
+                        : newValue >= currentLoop.end;
+                    
+                    if (shouldContinue) {
+                        // ループ継続: FORステートメントの次の行にジャンプ
+                        this.currentLineIndex = currentLoop.forLineIndex + 1;
+                        return { jump: true, halt: false, skipRemaining: false };
+                    } else {
+                        // ループ終了: ループ情報をスタックからpop
+                        this.loopStack.pop();
+                        // 次のステートメントに進む（jump: false）
+                    }
+                }
+                break;
+            
             default:
                 throw new Error(`未実装のステートメント: ${statement.type}`);
         }
         return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * 指定された変数名に対応するNEXT文の行番号を検索します。
+     * @param varName ループ変数名
+     * @param startLine 検索開始行番号
+     * @returns NEXT文の行番号。見つからない場合は-1
+     */
+    private findMatchingNext(varName: string, startLine: number): number {
+        if (!this.program) return -1;
+        
+        let nestLevel = 1; // 現在のFORのネストレベル
+        
+        for (let i = startLine + 1; i < this.program.body.length; i++) {
+            const line = this.program.body[i];
+            if (!line) continue;
+            
+            for (const statement of line.statements) {
+                // 同じ変数のFORが見つかったらネストレベルを上げる
+                if (statement.type === 'ForStatement' && statement.variable.name === varName) {
+                    nestLevel++;
+                }
+                // 同じ変数のNEXTが見つかった
+                if (statement.type === 'NextStatement' && statement.variable.name === varName) {
+                    nestLevel--;
+                    if (nestLevel === 0) {
+                        // 対応するNEXTが見つかった
+                        return i;
+                    }
+                }
+            }
+        }
+        
+        return -1; // 見つからなかった
     }
 
     /**
