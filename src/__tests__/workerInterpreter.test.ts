@@ -1333,3 +1333,92 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
         expect(ast.body[0]?.statements[3]?.type).toBe('AssignmentStatement');
     });
 });
+
+// ==================== Phase 3: インタプリタ実装 ====================
+
+describe('WorkerInterpreter - Execution (Phase 3.1)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        mockLogFn.mockClear();
+        mockPeekFn.mockClear();
+        mockPokeFn.mockClear();
+        
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should execute simple assignment (A=10)', () => {
+        const script = 'A=10';
+        interpreter.loadScript(script);
+        
+        // Generator を完全に実行
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // 変数Aの値が10になっていることを確認
+        expect(interpreter.getVariable('A')).toBe(10);
+    });
+
+    test('should execute assignment with expression (B=5+3)', () => {
+        const script = 'B=5+3';
+        interpreter.loadScript(script);
+        
+        // Generator を完全に実行
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        expect(interpreter.getVariable('B')).toBe(8);
+    });
+
+    test('should execute multiple assignments (A=10 B=20 C=A+B)', () => {
+        const script = 'A=10 B=20 C=A+B';
+        interpreter.loadScript(script);
+        
+        // Generator を完全に実行
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        expect(interpreter.getVariable('A')).toBe(10);
+        expect(interpreter.getVariable('B')).toBe(20);
+        expect(interpreter.getVariable('C')).toBe(30);
+    });
+
+    test('should execute one statement per next() call', () => {
+        const script = 'A=1 B=2 C=3';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        
+        // 最初のnext()でA=1が実行される
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(0); // まだ未実行
+        expect(interpreter.getVariable('C')).toBe(0); // まだ未実行
+        
+        // 2回目のnext()でB=2が実行される
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(2);
+        expect(interpreter.getVariable('C')).toBe(0); // まだ未実行
+        
+        // 3回目のnext()でC=3が実行される
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(2);
+        expect(interpreter.getVariable('C')).toBe(3);
+    });
+});

@@ -41,6 +41,7 @@ class WorkerInterpreter {
     private peekFn: (index: number) => number;
     private pokeFn: (index: number, value: number) => void;
     private logFn: (...args: any[]) => void;
+    private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
@@ -769,6 +770,102 @@ class WorkerInterpreter {
         const rightParts = this.extractCommaExpressionParts(expr.right);
         
         return [...leftParts, ...rightParts];
+    }
+
+    // ==================== Phase 3: インタプリタ実装 ====================
+
+    /**
+     * ロードされたスクリプトを実行します（Generator Functionとして実装）。
+     * 外部からのクロック（next()呼び出し）ごとに1ステートメントを実行します。
+     * @yields 実行状態（継続可能かどうか）
+     */
+    public *run(): Generator<void, void, unknown> {
+        if (!this.program) {
+            throw new Error('スクリプトがロードされていません。loadScript()を先に呼び出してください。');
+        }
+
+        // 変数をリセット
+        this.variables.clear();
+
+        // 各行のステートメントを順次実行
+        for (const line of this.program.body) {
+            for (const statement of line.statements) {
+                this.executeStatement(statement);
+                // 1ステートメント実行後にyieldして制御を返す
+                yield;
+            }
+        }
+    }
+
+    /**
+     * 単一のステートメントを実行します。
+     * @param statement 実行するステートメント
+     */
+    private executeStatement(statement: Statement): void {
+        switch (statement.type) {
+            case 'AssignmentStatement':
+                {
+                    const value = this.evaluateExpression(statement.value);
+                    this.variables.set(statement.variable.name, value);
+                }
+                break;
+            
+            default:
+                throw new Error(`未実装のステートメント: ${statement.type}`);
+        }
+    }
+
+    /**
+     * 式を評価して数値を返します。
+     * @param expr 評価する式
+     * @returns 評価結果の数値
+     */
+    private evaluateExpression(expr: Expression): number {
+        switch (expr.type) {
+            case 'NumericLiteral':
+                return expr.value;
+            
+            case 'Identifier':
+                {
+                    const value = this.variables.get(expr.name);
+                    if (value === undefined) {
+                        // 未初期化の変数は0として扱う
+                        return 0;
+                    }
+                    return value;
+                }
+            
+            case 'BinaryExpression':
+                {
+                    const left = this.evaluateExpression(expr.left);
+                    const right = this.evaluateExpression(expr.right);
+                    
+                    switch (expr.operator) {
+                        case '+': return left + right;
+                        case '-': return left - right;
+                        case '*': return left * right;
+                        case '/': 
+                            if (right === 0) {
+                                throw new Error('ゼロ除算エラー');
+                            }
+                            return Math.floor(left / right); // 整数除算
+                        default:
+                            throw new Error(`未実装の演算子: ${expr.operator}`);
+                    }
+                }
+            
+            default:
+                throw new Error(`未実装の式タイプ: ${(expr as any).type}`);
+        }
+    }
+
+    /**
+     * 変数の現在値を取得します（テスト用）。
+     * @param name 変数名 (A-Z)
+     * @returns 変数の値（未初期化の場合は0）
+     */
+    public getVariable(name: string): number {
+        return this.variables.get(name) ?? 0;
     }
 }
 
