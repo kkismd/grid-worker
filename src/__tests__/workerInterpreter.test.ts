@@ -1647,8 +1647,16 @@ describe('Phase 2C.1: String literal protection in whitespace splitting', () => 
     beforeEach(() => {
         mockLogFn = jest.fn();
         mockPokeFn = jest.fn();
-        const gridData = new Int16Array(10000);
-        interpreter = new WorkerInterpreter(gridData, mockLogFn, mockPokeFn);
+        const gridData = Array.from(new Int16Array(10000));
+        interpreter = new WorkerInterpreter({
+            gridData,
+            peekFn: (index) => gridData[index] ?? 0,
+            pokeFn: (index, value) => {
+                gridData[index] = value;
+                mockPokeFn(index, value);
+            },
+            logFn: mockLogFn,
+        });
     });
 
     test('should split simple statements by whitespace', () => {
@@ -1704,5 +1712,182 @@ describe('Phase 2C.1: String literal protection in whitespace splitting', () => 
     test('should handle line with only spaces', () => {
         const result = interpreter.splitLineByWhitespace('   ');
         expect(result).toEqual([]);
+    });
+});
+
+// ========================================
+// Phase 3.3: 比較演算子・論理演算子
+// ========================================
+
+describe('Phase 3.3: Comparison and logical operators', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPokeFn = jest.fn();
+        const gridData = Array.from(new Int16Array(10000));
+        interpreter = new WorkerInterpreter({
+            gridData,
+            peekFn: (index) => gridData[index] ?? 0,
+            pokeFn: (index, value) => {
+                gridData[index] = value;
+                mockPokeFn(index, value);
+            },
+            logFn: mockLogFn,
+        });
+    });
+
+    // 比較演算子のテスト
+    test('should evaluate > (greater than) as 1 when true', () => {
+        interpreter.loadScript('A=5>3');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+    });
+
+    test('should evaluate > (greater than) as 0 when false', () => {
+        interpreter.loadScript('A=2>5');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(0);
+    });
+
+    test('should evaluate < (less than) as 1 when true', () => {
+        interpreter.loadScript('A=2<5');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+    });
+
+    test('should evaluate < (less than) as 0 when false', () => {
+        interpreter.loadScript('A=5<2');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(0);
+    });
+
+    test('should evaluate >= (greater than or equal) correctly', () => {
+        interpreter.loadScript('A=5>=5');
+        let gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        
+        interpreter.loadScript('B=5>=3');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('B')).toBe(1);
+        
+        interpreter.loadScript('C=2>=5');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    test('should evaluate <= (less than or equal) correctly', () => {
+        interpreter.loadScript('A=3<=3');
+        let gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        
+        interpreter.loadScript('B=2<=5');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('B')).toBe(1);
+        
+        interpreter.loadScript('C=5<=2');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    test('should evaluate = (equal) correctly', () => {
+        interpreter.loadScript('A=5=5 B=3=5');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(0);
+    });
+
+    test('should evaluate <> (not equal) correctly', () => {
+        interpreter.loadScript('A=5<>3 B=5<>5');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(0);
+    });
+
+    // 論理演算子のテスト
+    test('should evaluate & (AND) correctly', () => {
+        interpreter.loadScript('A=1&1 B=1&0 C=0&0');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(0);
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    test('should evaluate | (OR) correctly', () => {
+        interpreter.loadScript('A=1|1');
+        let gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        
+        interpreter.loadScript('B=1|0');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('B')).toBe(1);
+        
+        interpreter.loadScript('C=0|0');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    test('should evaluate ! (NOT) correctly', () => {
+        interpreter.loadScript('A=!0 B=!1 C=!5');
+        const gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1);
+        expect(interpreter.getVariable('B')).toBe(0);
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    // 複合式のテスト
+    test('should handle comparison with arithmetic', () => {
+        interpreter.loadScript('A=1+2>2');
+        let gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1); // 3>2
+        
+        interpreter.loadScript('B=3*2<10');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('B')).toBe(1); // 6<10
+    });
+
+    test('should handle logical operators with comparison', () => {
+        interpreter.loadScript('A=5>3&2<4');
+        let gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1); // 1&1
+        
+        interpreter.loadScript('B=1>2|3<5');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('B')).toBe(1); // 0|1
+    });
+
+    test('should treat non-zero values as true in logical operations', () => {
+        interpreter.loadScript('A=5&3');
+        let gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('A')).toBe(1); // both non-zero
+        
+        interpreter.loadScript('B=5|0');
+        gen = interpreter.run();
+        gen.next();
+        expect(interpreter.getVariable('B')).toBe(1); // at least one non-zero
     });
 });

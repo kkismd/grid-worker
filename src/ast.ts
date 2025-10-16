@@ -199,7 +199,7 @@ export interface BinaryExpression extends ASTNode {
  */
 export interface UnaryExpression extends ASTNode {
     type: 'UnaryExpression';
-    operator: '-';  // 将来的に他の単項演算子を追加する可能性
+    operator: '-' | '+' | '!';  // 単項マイナス、単項プラス、NOT演算子
     operand: Expression;
 }
 

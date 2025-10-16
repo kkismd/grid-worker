@@ -611,6 +611,36 @@ class WorkerInterpreter {
             };
         }
 
+        // 単項プラス演算子
+        if (token.type === TokenType.PLUS) {
+            const result = this.parsePrimaryExpression(tokens, start + 1);
+            return {
+                expr: {
+                    type: 'UnaryExpression',
+                    operator: '+',
+                    operand: result.expr,
+                    line: token.line,
+                    column: token.column,
+                },
+                nextIndex: result.nextIndex,
+            };
+        }
+
+        // NOT演算子 (!)
+        if (token.type === TokenType.BANG) {
+            const result = this.parsePrimaryExpression(tokens, start + 1);
+            return {
+                expr: {
+                    type: 'UnaryExpression',
+                    operator: '!',
+                    operand: result.expr,
+                    line: token.line,
+                    column: token.column,
+                },
+                nextIndex: result.nextIndex,
+            };
+        }
+
         // 括弧式
         if (token.type === TokenType.LEFT_PAREN) {
             // 対応する閉じ括弧を見つける
@@ -1128,6 +1158,25 @@ class WorkerInterpreter {
                     return value;
                 }
             
+            case 'UnaryExpression':
+                {
+                    const operand = this.evaluateExpression(expr.operand);
+                    
+                    // 文字列を含む演算は未サポート
+                    if (typeof operand === 'string') {
+                        throw new Error('文字列演算はサポートされていません');
+                    }
+                    
+                    switch (expr.operator) {
+                        case '!': return operand === 0 ? 1 : 0; // NOT演算子
+                        case '-': return -operand; // 単項マイナス
+                        case '+': return operand; // 単項プラス
+                        default:
+                            // TypeScriptのexhaustive checkのため、到達不可能
+                            throw new Error(`未実装の単項演算子`);
+                    }
+                }
+            
             case 'BinaryExpression':
                 {
                     const left = this.evaluateExpression(expr.left);
@@ -1147,6 +1196,19 @@ class WorkerInterpreter {
                                 throw new Error('ゼロ除算エラー');
                             }
                             return Math.floor(left / right); // 整数除算
+                        
+                        // 比較演算子（真=1, 偽=0）
+                        case '>': return left > right ? 1 : 0;
+                        case '<': return left < right ? 1 : 0;
+                        case '>=': return left >= right ? 1 : 0;
+                        case '<=': return left <= right ? 1 : 0;
+                        case '=': return left === right ? 1 : 0;
+                        case '<>': return left !== right ? 1 : 0;
+                        
+                        // 論理演算子（0=偽, 非0=真）
+                        case '&': return (left !== 0 && right !== 0) ? 1 : 0;
+                        case '|': return (left !== 0 || right !== 0) ? 1 : 0;
+                        
                         default:
                             throw new Error(`未実装の演算子: ${expr.operator}`);
                     }
