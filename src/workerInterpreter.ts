@@ -359,8 +359,8 @@ class WorkerInterpreter {
                 }
             }
 
-            // POKEステートメント (*=expression)
-            if (token.type === TokenType.ASTERISK) {
+            // POKEステートメント ($=expression)
+            if (token.type === TokenType.DOLLAR) {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
@@ -511,7 +511,7 @@ class WorkerInterpreter {
             };
         }
 
-        if (token.type === TokenType.ASTERISK) {
+        if (token.type === TokenType.DOLLAR) {
             return {
                 type: 'PeekExpression',
                 line: token.line,

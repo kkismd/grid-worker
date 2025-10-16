@@ -1049,11 +1049,11 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         });
     });
 
-    test('should parse PEEK expression (A=*)', () => {
+    test('should parse PEEK expression (A=$)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 2 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 2 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1065,9 +1065,9 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(assignStmt.value.type).toBe('PeekExpression');
     });
 
-    test('should parse POKE statement (*=A)', () => {
+    test('should parse POKE statement ($=A)', () => {
         const tokens: Token[] = [
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 0 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
         ];
@@ -1081,9 +1081,9 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(pokeStmt.value.name).toBe('A');
     });
 
-    test('should parse POKE with numeric literal (*=42)', () => {
+    test('should parse POKE with numeric literal ($=42)', () => {
         const tokens: Token[] = [
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 0 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.NUMBER, value: '42', line: 0, column: 2 },
         ];
@@ -1097,9 +1097,9 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(pokeStmt.value.value).toBe(42);
     });
 
-    test('should parse POKE with expression (*=A+10)', () => {
+    test('should parse POKE with expression ($=A+10)', () => {
         const tokens: Token[] = [
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 0 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
             { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
@@ -1114,13 +1114,13 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(pokeStmt.value.type).toBe('BinaryExpression');
     });
 
-    test('should parse PEEK in expression (B=A+*)', () => {
+    test('should parse PEEK in expression (B=A+$)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
             { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 4 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 4 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1134,11 +1134,11 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(binaryExpr.right.type).toBe('PeekExpression');
     });
 
-    test('should parse PEEK in subtraction (C=*-2)', () => {
+    test('should parse PEEK in subtraction (C=$-2)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 2 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 2 },
             { type: TokenType.MINUS, value: '-', line: 0, column: 3 },
             { type: TokenType.NUMBER, value: '2', line: 0, column: 4 },
         ];

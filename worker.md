@@ -113,12 +113,12 @@ RVTLのコマンドをベースに、WorkerScript独自の仕様に合わせて�
 
 システム変数 `*` を用いた `gridData` へのアクセスにおいて、現在の `X` (行) と `Y` (列) の値はそれぞれ `0` から `99` の範囲にラップアラウンドされて使用されます。グリッド幅は100と仮定され、インデックスは `(X % 100) * 100 + (Y % 100)` で計算されます。
 
-*   **PEEK:** システム変数 `*` を使用して、計算されたグリッドデータ (`gridData`) のインデックスにある値を参照し、変数に代入します。
-    *   **構文:** `<variable> = *`
-    *   **例:** `A = *`
-*   **POKE:** システム変数 `*` を使用して、計算されたグリッドデータ (`gridData`) のインデックスに値を書き込みます。
-    *   **構文:** `* = <value_expression>`
-    *   **例:** `* = A`
+*   **PEEK:** システム変数 `$` を使用して、計算されたグリッドデータ (`gridData`) のインデックスにある値を参照し、変数に代入します。
+    *   **構文:** `<variable> = $`
+    *   **例:** `A = $`
+*   **POKE:** システム変数 `$` を使用して、計算されたグリッドデータ (`gridData`) のインデックスに値を書き込みます。
+    *   **構文:** `$ = <value_expression>`
+    *   **例:** `$ = A`
 
 ### 6.9. コメント
 
@@ -173,10 +173,10 @@ C=A+B
     ?="C is greater than 25." /
     : Example of PEEK/POKE using grid coordinates X and Y
     X=5 Y=10
-    A = * : Read value from grid cell (X, Y)
+    A = $ : Read value from grid cell (X, Y)
     ?="Value from grid cell (" + X + "," + Y + "): " /
     ?=A /
-    * = C : Write value C to grid cell (X, Y)
+    $ = C : Write value C to grid cell (X, Y)
 
 ^GREETING_ROUTINE
     ?="Hello, world!" /
