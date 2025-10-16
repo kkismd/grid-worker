@@ -39,7 +39,7 @@ class WorkerInterpreter {
     private lexer: Lexer; // Lexerのインスタンス
     private gridData: number[];
     private peekFn: (index: number) => number;
-    private pokeFn: (index: number, value: number) => void;
+    private pokeFn: (x: number, y: number, value: number) => void;
     private logFn: (...args: any[]) => void;
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
@@ -54,7 +54,7 @@ class WorkerInterpreter {
     constructor(config: {
         gridData: number[];
         peekFn: (index: number) => number;
-        pokeFn: (index: number, value: number) => void;
+        pokeFn: (x: number, y: number, value: number) => void;
         logFn: (...args: any[]) => void;
     }) {
         this.gridData = config.gridData;
@@ -1362,8 +1362,27 @@ class WorkerInterpreter {
                 }
                 break;
             
-            default:
-                throw new Error(`未実装のステートメント: ${statement.type}`);
+            case 'PokeStatement': {
+                // POKE: グリッドに書き込み
+                // X, Y 変数を使ってgridDataに書き込む
+                const x = this.variables.get('X') ?? 0;
+                const y = this.variables.get('Y') ?? 0;
+                
+                // 値を評価
+                const value = this.evaluateExpression(statement.value);
+                
+                // 文字列は不可
+                if (typeof value === 'string') {
+                    throw new Error('POKEには数値が必要です');
+                }
+                
+                // 値を0-255の範囲にクランプ
+                const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+                
+                // pokeFnを呼び出し（X, Y座標と値を渡す）
+                this.pokeFn(Math.floor(x), Math.floor(y), clampedValue);
+                break;
+            }
         }
         return { jump: false, halt: false, skipRemaining: false };
     }
@@ -1479,6 +1498,24 @@ class WorkerInterpreter {
                         default:
                             throw new Error(`未実装の演算子: ${expr.operator}`);
                     }
+                }
+            
+            case 'PeekExpression':
+                {
+                    // PEEK: グリッドから読み取り
+                    // $の値は、X, Y システム変数を使ってgridDataから取得
+                    const x = this.variables.get('X') ?? 0;
+                    const y = this.variables.get('Y') ?? 0;
+                    
+                    // X, Yを0-99の範囲に正規化（負の値も対応）
+                    const xMod = ((Math.floor(x) % 100) + 100) % 100;
+                    const yMod = ((Math.floor(y) % 100) + 100) % 100;
+                    
+                    // グリッドインデックスを計算: x * 100 + y
+                    const index = xMod * 100 + yMod;
+                    
+                    // gridDataから値を読み取り
+                    return this.peekFn(index);
                 }
             
             default:

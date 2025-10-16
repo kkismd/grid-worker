@@ -2553,3 +2553,193 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
         expect(mockLogFn).toHaveBeenCalledWith(7);
     });
 });
+
+describe('Phase 3.7: PEEK/POKE execution', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+    let gridData: Uint8Array;
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPokeFn = jest.fn();
+        gridData = new Uint8Array(10000);
+        interpreter = new WorkerInterpreter({
+            gridData: Array.from(gridData),
+            peekFn: (index: number) => gridData[index] ?? 0,
+            pokeFn: (x: number, y: number, value: number) => {
+                mockPokeFn(x, y, value);
+                const xMod = ((x % 100) + 100) % 100;
+                const yMod = ((y % 100) + 100) % 100;
+                const index = xMod * 100 + yMod;
+                gridData[index] = Math.max(0, Math.min(255, value));
+            },
+            logFn: mockLogFn,
+        });
+    });
+
+    test('should read from grid using PEEK with X, Y system variables', () => {
+        // gridData[0] = 42 (X=0, Y=0)
+        gridData[0] = 42;
+        interpreter.loadScript('X=0 Y=0\nA=$\n?=A');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=0
+        gen.next(); // Y=0
+        gen.next(); // A=$ (PEEK)
+        gen.next(); // ?=A
+        
+        expect(interpreter.getVariable('A')).toBe(42);
+        expect(mockLogFn).toHaveBeenCalledWith(42);
+    });
+
+    test('should write to grid using POKE with X, Y system variables', () => {
+        interpreter.loadScript('X=5 Y=3\n$=99');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=5
+        gen.next(); // Y=3
+        gen.next(); // $=99 (POKE)
+        
+        // Grid index = (5 % 100) * 100 + (3 % 100) = 500 + 3 = 503
+        expect(gridData[503]).toBe(99);
+        expect(mockPokeFn).toHaveBeenCalledWith(5, 3, 99);
+    });
+
+    test('should calculate grid index with X, Y modulo 100', () => {
+        interpreter.loadScript('X=250 Y=175\n$=77\nA=$');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=250
+        gen.next(); // Y=175
+        gen.next(); // $=77 (POKE)
+        gen.next(); // A=$ (PEEK)
+        
+        // X % 100 = 50, Y % 100 = 75
+        // Grid index = 50 * 100 + 75 = 5075
+        expect(gridData[5075]).toBe(77);
+        expect(interpreter.getVariable('A')).toBe(77);
+        expect(mockPokeFn).toHaveBeenCalledWith(250, 175, 77);
+    });
+
+    test('should handle negative X, Y coordinates', () => {
+        interpreter.loadScript('X=0-5 Y=0-3\n$=55\nB=$');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=0-5
+        gen.next(); // Y=0-3
+        gen.next(); // $=55 (POKE)
+        gen.next(); // B=$ (PEEK)
+        
+        // JavaScript modulo for negative: -5 % 100 = -5 → need to wrap to 95
+        // -3 % 100 = -3 → need to wrap to 97
+        const xMod = ((-5 % 100) + 100) % 100; // 95
+        const yMod = ((-3 % 100) + 100) % 100; // 97
+        const index = xMod * 100 + yMod; // 9597
+        
+        expect(gridData[index]).toBe(55);
+        expect(interpreter.getVariable('B')).toBe(55);
+        expect(mockPokeFn).toHaveBeenCalledWith(-5, -3, 55);
+    });
+
+    test('should PEEK and POKE at different grid positions', () => {
+        interpreter.loadScript('X=10 Y=20\n$=100\nX=11 Y=21\n$=101\nX=10 Y=20\nA=$\nX=11 Y=21\nB=$');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=10
+        gen.next(); // Y=20
+        gen.next(); // $=100 (POKE at 10,20)
+        gen.next(); // X=11
+        gen.next(); // Y=21
+        gen.next(); // $=101 (POKE at 11,21)
+        gen.next(); // X=10
+        gen.next(); // Y=20
+        gen.next(); // A=$ (PEEK at 10,20)
+        gen.next(); // X=11
+        gen.next(); // Y=21
+        gen.next(); // B=$ (PEEK at 11,21)
+        
+        expect(interpreter.getVariable('A')).toBe(100);
+        expect(interpreter.getVariable('B')).toBe(101);
+        expect(mockPokeFn).toHaveBeenCalledWith(10, 20, 100);
+        expect(mockPokeFn).toHaveBeenCalledWith(11, 21, 101);
+    });
+
+    test('should clamp POKE value to 0-255 range', () => {
+        interpreter.loadScript('X=0 Y=0\n$=300\nA=$');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=0
+        gen.next(); // Y=0
+        gen.next(); // $=300 (POKE, should clamp to 255)
+        gen.next(); // A=$ (PEEK)
+        
+        // Uint8Array automatically clamps 300 to 44 (300 % 256)
+        // But we should clamp to 255
+        expect(gridData[0]).toBe(255);
+        expect(interpreter.getVariable('A')).toBe(255);
+    });
+
+    test('should clamp negative POKE value to 0', () => {
+        interpreter.loadScript('X=0 Y=0\n$=0-10\nB=$');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=0
+        gen.next(); // Y=0
+        gen.next(); // $=-10 (POKE, should clamp to 0)
+        gen.next(); // B=$ (PEEK)
+        
+        expect(gridData[0]).toBe(0);
+        expect(interpreter.getVariable('B')).toBe(0);
+    });
+
+    test('should use system variables X, Y for grid access', () => {
+        interpreter.loadScript('X=7 Y=8\n$=88\n?=X\n?=Y\nC=$');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=7
+        gen.next(); // Y=8
+        gen.next(); // $=88 (POKE)
+        gen.next(); // ?=X
+        gen.next(); // ?=Y
+        gen.next(); // C=$ (PEEK)
+        
+        expect(interpreter.getVariable('X')).toBe(7);
+        expect(interpreter.getVariable('Y')).toBe(8);
+        expect(interpreter.getVariable('C')).toBe(88);
+        expect(mockLogFn).toHaveBeenCalledWith(7);
+        expect(mockLogFn).toHaveBeenCalledWith(8);
+    });
+
+    test('should handle PEEK in expression', () => {
+        gridData[0] = 10;
+        gridData[1] = 20;
+        interpreter.loadScript('X=0 Y=0\nA=$+5\nX=0 Y=1\nB=$*2');
+        const gen = interpreter.run();
+        
+        gen.next(); // X=0
+        gen.next(); // Y=0
+        gen.next(); // A=$+5 (PEEK 10 + 5)
+        gen.next(); // X=0
+        gen.next(); // Y=1
+        gen.next(); // B=$*2 (PEEK 20 * 2)
+        
+        expect(interpreter.getVariable('A')).toBe(15);
+        expect(interpreter.getVariable('B')).toBe(40);
+    });
+
+    test('should handle POKE with expression', () => {
+        interpreter.loadScript('A=10 B=20\nX=5 Y=5\n$=A+B');
+        const gen = interpreter.run();
+        
+        gen.next(); // A=10
+        gen.next(); // B=20
+        gen.next(); // X=5
+        gen.next(); // Y=5
+        gen.next(); // $=A+B (POKE 30)
+        
+        // Grid index = 5 * 100 + 5 = 505
+        expect(gridData[505]).toBe(30);
+        expect(mockPokeFn).toHaveBeenCalledWith(5, 5, 30);
+    });
+});
