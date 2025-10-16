@@ -118,14 +118,16 @@ export type Expression =
     | NumericLiteral 
     | StringLiteral 
     | Identifier
-    | BinaryExpression; // 他の式型も追加予定
+    | BinaryExpression; // UnaryExpression など、他の式型も追加予定
 
 /**
  * 数値リテラル
+ * WorkerScriptの数値は16bit符号付き整数 (-32768 ~ 32767)
+ * 演算結果がこの範囲を超える場合はラップアラウンド
  */
 export interface NumericLiteral extends ASTNode {
     type: 'NumericLiteral';
-    value: number;
+    value: number;  // -32768 ~ 32767 の範囲
 }
 
 /**
