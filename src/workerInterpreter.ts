@@ -119,6 +119,9 @@ class WorkerInterpreter {
         const body: Statement[] = [];
         let index = 0;
 
+        // プログラムの行番号は最初のトークンから取得、なければ0
+        const programLine = tokens[0]?.line ?? 0;
+
         while (index < tokens.length) {
             const token = tokens[index];
             
@@ -136,6 +139,8 @@ class WorkerInterpreter {
             if (token.type === TokenType.SLASH) {
                 body.push({
                     type: 'NewlineStatement',
+                    line: token.line,
+                    column: token.column,
                 });
                 index++;
                 continue;
@@ -165,6 +170,8 @@ class WorkerInterpreter {
                     
                     body.push({
                         type: 'OutputStatement',
+                        line: token.line,
+                        column: token.column,
                         expression,
                     });
                     
@@ -182,6 +189,8 @@ class WorkerInterpreter {
                     const variable: Identifier = {
                         type: 'Identifier',
                         name: token.value,
+                        line: token.line,
+                        column: token.column,
                     };
                     // = の後の全トークンを式として解析
                     const exprTokens = tokens.slice(index + 2);
@@ -189,6 +198,8 @@ class WorkerInterpreter {
                     
                     body.push({
                         type: 'AssignmentStatement',
+                        line: token.line,
+                        column: token.column,
                         variable,
                         value,
                     });
@@ -205,6 +216,7 @@ class WorkerInterpreter {
 
         return {
             type: 'Program',
+            line: programLine,
             body,
         };
     }
@@ -219,6 +231,8 @@ class WorkerInterpreter {
             return {
                 type: 'NumericLiteral',
                 value: parseInt(token.value, 10),
+                line: token.line,
+                column: token.column,
             };
         }
         
@@ -226,6 +240,8 @@ class WorkerInterpreter {
             return {
                 type: 'StringLiteral',
                 value: token.value,
+                line: token.line,
+                column: token.column,
             };
         }
         
@@ -233,6 +249,8 @@ class WorkerInterpreter {
             return {
                 type: 'Identifier',
                 name: token.value,
+                line: token.line,
+                column: token.column,
             };
         }
 
@@ -290,6 +308,7 @@ class WorkerInterpreter {
                     operator,
                     left: left.expr,
                     right: right.expr,
+                    line: left.expr.line, // 左辺の行番号を使用
                 };
             } else {
                 // 演算子でない場合は終了
@@ -396,6 +415,9 @@ class WorkerInterpreter {
         const conditionTokens = tokens.slice(start, conditionEnd);
         const condition = this.parseExpressionFromTokens(conditionTokens);
         
+        // IFステートメントの行番号は最初のトークンから
+        const ifLine = tokens[0]?.line ?? 0;
+        
         // 後続のステートメントを解析
         const consequent: Statement[] = [];
         let index = conditionEnd;
@@ -419,6 +441,8 @@ class WorkerInterpreter {
                     const expression = this.parseExpressionFromTokens(exprTokens);
                     consequent.push({
                         type: 'OutputStatement',
+                        line: token.line,
+                        column: token.column,
                         expression,
                     });
                     index = exprEnd;
@@ -441,7 +465,14 @@ class WorkerInterpreter {
                     const value = this.parseExpressionFromTokens(exprTokens);
                     consequent.push({
                         type: 'AssignmentStatement',
-                        variable: { type: 'Identifier', name: token.value },
+                        line: token.line,
+                        column: token.column,
+                        variable: { 
+                            type: 'Identifier', 
+                            name: token.value,
+                            line: token.line,
+                            column: token.column,
+                        },
                         value,
                     });
                     index = exprEnd;
@@ -456,6 +487,7 @@ class WorkerInterpreter {
         return {
             statement: {
                 type: 'IfStatement',
+                line: ifLine,
                 condition,
                 consequent,
             },

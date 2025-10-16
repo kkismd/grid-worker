@@ -172,7 +172,7 @@ describe('Parser (TDD Cycle 2.1)', () => {
         });
     });
 
-    test('should parse a simple assignment statement', () => {
+    test('should parse a simple assignment statement (A=10)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
@@ -181,11 +181,14 @@ describe('Parser (TDD Cycle 2.1)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'A' },
-                    value: { type: 'NumericLiteral', value: 10 },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'A', line: 0, column: 0 },
+                    value: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
                 },
             ],
         });
@@ -213,10 +216,13 @@ describe('Parser (TDD Cycle 2.2)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'OutputStatement',
-                    expression: { type: 'NumericLiteral', value: 10 },
+                    line: 0,
+                    column: 0,
+                    expression: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
                 },
             ],
         });
@@ -231,10 +237,13 @@ describe('Parser (TDD Cycle 2.2)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'OutputStatement',
-                    expression: { type: 'StringLiteral', value: 'Hello' },
+                    line: 0,
+                    column: 0,
+                    expression: { type: 'StringLiteral', value: 'Hello', line: 0, column: 2 },
                 },
             ],
         });
@@ -247,9 +256,12 @@ describe('Parser (TDD Cycle 2.2)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'NewlineStatement',
+                    line: 0,
+                    column: 0,
                 },
             ],
         });
@@ -279,15 +291,19 @@ describe('Parser (TDD Cycle 2.3)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'C' },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'C', line: 0, column: 0 },
                     value: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '+',
-                        left: { type: 'Identifier', name: 'A' },
-                        right: { type: 'Identifier', name: 'B' },
+                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                        right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
                     },
                 },
             ],
@@ -308,20 +324,25 @@ describe('Parser (TDD Cycle 2.3)', () => {
         // VTL系言語は左から右へ評価するため: ((10*5)-2)
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'D' },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'D', line: 0, column: 0 },
                     value: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '-',
                         left: {
                             type: 'BinaryExpression',
+                            line: 0,
                             operator: '*',
-                            left: { type: 'NumericLiteral', value: 10 },
-                            right: { type: 'NumericLiteral', value: 5 },
+                            left: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
+                            right: { type: 'NumericLiteral', value: 5, line: 0, column: 5 },
                         },
-                        right: { type: 'NumericLiteral', value: 2 },
+                        right: { type: 'NumericLiteral', value: 2, line: 0, column: 7 },
                     },
                 },
             ],
@@ -343,20 +364,25 @@ describe('Parser (TDD Cycle 2.3)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'E' },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'E', line: 0, column: 0 },
                     value: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '*',
                         left: {
                             type: 'BinaryExpression',
+                            line: 0,
                             operator: '+',
-                            left: { type: 'Identifier', name: 'A' },
-                            right: { type: 'Identifier', name: 'B' },
+                            left: { type: 'Identifier', name: 'A', line: 0, column: 3 },
+                            right: { type: 'Identifier', name: 'B', line: 0, column: 5 },
                         },
-                        right: { type: 'Identifier', name: 'C' },
+                        right: { type: 'Identifier', name: 'C', line: 0, column: 8 },
                     },
                 },
             ],
@@ -387,15 +413,19 @@ describe('Parser (TDD Cycle 2.4)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'F' },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'F', line: 0, column: 0 },
                     value: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '>',
-                        left: { type: 'Identifier', name: 'A' },
-                        right: { type: 'Identifier', name: 'B' },
+                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                        right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
                     },
                 },
             ],
@@ -413,15 +443,19 @@ describe('Parser (TDD Cycle 2.4)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'G' },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'G', line: 0, column: 0 },
                     value: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '=',
-                        left: { type: 'Identifier', name: 'X' },
-                        right: { type: 'Identifier', name: 'Y' },
+                        left: { type: 'Identifier', name: 'X', line: 0, column: 2 },
+                        right: { type: 'Identifier', name: 'Y', line: 0, column: 4 },
                     },
                 },
             ],
@@ -442,20 +476,25 @@ describe('Parser (TDD Cycle 2.4)', () => {
         // 左から右へ評価: ((A&B)|C)
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'AssignmentStatement',
-                    variable: { type: 'Identifier', name: 'H' },
+                    line: 0,
+                    column: 0,
+                    variable: { type: 'Identifier', name: 'H', line: 0, column: 0 },
                     value: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '|',
                         left: {
                             type: 'BinaryExpression',
+                            line: 0,
                             operator: '&',
-                            left: { type: 'Identifier', name: 'A' },
-                            right: { type: 'Identifier', name: 'B' },
+                            left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                            right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
                         },
-                        right: { type: 'Identifier', name: 'C' },
+                        right: { type: 'Identifier', name: 'C', line: 0, column: 6 },
                     },
                 },
             ],
@@ -489,19 +528,24 @@ describe('Parser (TDD Cycle 2.5)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'IfStatement',
+                    line: 0,
                     condition: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '>',
-                        left: { type: 'Identifier', name: 'A' },
-                        right: { type: 'NumericLiteral', value: 100 },
+                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                        right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
                     },
                     consequent: [
                         {
                             type: 'OutputStatement',
-                            expression: { type: 'NumericLiteral', value: 100 },
+                            line: 0,
+                            column: 8,
+                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
                         },
                     ],
                 },
@@ -526,24 +570,31 @@ describe('Parser (TDD Cycle 2.5)', () => {
         const ast = interpreter.parse(tokens);
         expect(ast).toEqual({
             type: 'Program',
+            line: 0,
             body: [
                 {
                     type: 'IfStatement',
+                    line: 0,
                     condition: {
                         type: 'BinaryExpression',
+                        line: 0,
                         operator: '>',
-                        left: { type: 'Identifier', name: 'A' },
-                        right: { type: 'NumericLiteral', value: 100 },
+                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                        right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
                     },
                     consequent: [
                         {
                             type: 'OutputStatement',
-                            expression: { type: 'NumericLiteral', value: 100 },
+                            line: 0,
+                            column: 8,
+                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
                         },
                         {
                             type: 'AssignmentStatement',
-                            variable: { type: 'Identifier', name: 'B' },
-                            value: { type: 'NumericLiteral', value: 200 },
+                            line: 0,
+                            column: 14,
+                            variable: { type: 'Identifier', name: 'B', line: 0, column: 14 },
+                            value: { type: 'NumericLiteral', value: 200, line: 0, column: 16 },
                         },
                     ],
                 },

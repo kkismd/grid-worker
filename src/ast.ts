@@ -8,6 +8,8 @@
  */
 export interface ASTNode {
     type: string;
+    line: number;      // ソースコードの行番号（0-indexed）
+    column?: number;   // オプション：列番号
 }
 
 /**
