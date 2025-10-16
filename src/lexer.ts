@@ -110,17 +110,34 @@ export class Lexer {
             // 文字列リテラル
             if (char === '"') {
                 let value = '';
+                const startColumn = cursor;
                 cursor++; // 開始の " をスキップ
-                while (cursor < lineText.length && lineText[cursor] !== '"') {
-                    value += lineText[cursor];
-                    cursor++;
+                
+                while (cursor < lineText.length) {
+                    const currentChar = lineText[cursor];
+                    
+                    if (currentChar === '"') {
+                        // ダブルクォートを発見
+                        if (lineText[cursor + 1] === '"') {
+                            // "" はエスケープされたダブルクォート
+                            value += '"';  // 1つのダブルクォートとして値に追加
+                            cursor += 2;   // "" の2文字分進める
+                        } else {
+                            // 文字列の終了
+                            cursor++; // 終了の " をスキップ
+                            tokens.push({ type: TokenType.STRING, value, line: lineNumber, column: startColumn });
+                            break;
+                        }
+                    } else {
+                        value += currentChar;
+                        cursor++;
+                    }
                 }
-                if (cursor === lineText.length) {
+                
+                if (cursor > lineText.length || (cursor === lineText.length && lineText[cursor - 1] !== '"')) {
                     // 文字列が閉じていない
                     throw new Error(`Unterminated string literal at line ${lineNumber + 1}`);
                 }
-                cursor++; // 終了の " をスキップ
-                tokens.push({ type: TokenType.STRING, value, line: lineNumber, column: cursor - value.length - 2 });
                 continue;
             }
 
@@ -227,6 +244,31 @@ export class Lexer {
             }
             if (char === '$') {
                 tokens.push({ type: TokenType.DOLLAR, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === ',') {
+                tokens.push({ type: TokenType.COMMA, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '(') {
+                tokens.push({ type: TokenType.LEFT_PAREN, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === ')') {
+                tokens.push({ type: TokenType.RIGHT_PAREN, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '@') {
+                tokens.push({ type: TokenType.AT, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === ']') {
+                tokens.push({ type: TokenType.RIGHT_BRACKET, value: char, line: lineNumber, column: cursor });
                 cursor++;
                 continue;
             }

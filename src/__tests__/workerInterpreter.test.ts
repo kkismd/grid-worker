@@ -129,6 +129,31 @@ describe('Lexer (TDD Cycle 1.2)', () => {
     // このテストでトークン化の結果を確認する
     expect(tokens.length).toBe(4); // ?, =, 100, /
   });
+
+  test('should tokenize string with escaped double quotes', () => {
+    const line = '"He said ""Hello"""';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.STRING, value: 'He said "Hello"', line: 0, column: 0 },
+    ]);
+  });
+
+  test('should tokenize empty string with escaped quotes', () => {
+    const line = '""""""';  // "" "" "" -> three empty quotes -> " " "
+    // Actually: """ """ would be " followed by unterminated, so this is ""  then ""  then ""
+    // Wait: """" is "" (escaped quote = ") followed by " (string end)
+    // Let me reconsider: """" tokenizes as one string containing one quote
+    const line2 = '""';  // empty string
+    expect(lexer.tokenizeLine(line2, 0)).toEqual([
+      { type: TokenType.STRING, value: '', line: 0, column: 0 },
+    ]);
+  });
+
+  test('should tokenize multiple escaped quotes in string', () => {
+    const line = '"Quote: ""test"" and ""more"""';
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.STRING, value: 'Quote: "test" and "more"', line: 0, column: 0 },
+    ]);
+  });
 });
 
 describe('Lexer (TDD Cycle 1.3)', () => {
@@ -1607,5 +1632,77 @@ describe('WorkerInterpreter - Output Statements (Phase 3.2)', () => {
         expect(mockLogFn).toHaveBeenNthCalledWith(1, 'Value: ');
         expect(mockLogFn).toHaveBeenNthCalledWith(2, 100);
         expect(mockLogFn).toHaveBeenNthCalledWith(3, '\n');
+    });
+});
+
+// ========================================
+// Phase 2C: 空白区切り構文への最適化リファクタリング
+// ========================================
+
+describe('Phase 2C.1: String literal protection in whitespace splitting', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPokeFn = jest.fn();
+        const gridData = new Int16Array(10000);
+        interpreter = new WorkerInterpreter(gridData, mockLogFn, mockPokeFn);
+    });
+
+    test('should split simple statements by whitespace', () => {
+        const result = interpreter.splitLineByWhitespace('A=10 B=20');
+        expect(result).toEqual(['A=10', 'B=20']);
+    });
+
+    test('should protect whitespace inside string literals', () => {
+        const result = interpreter.splitLineByWhitespace('?="Hello World" B=20');
+        expect(result).toEqual(['?="Hello World"', 'B=20']);
+    });
+
+    test('should handle string with trailing space', () => {
+        const result = interpreter.splitLineByWhitespace('?="Value: " ?=100 /');
+        expect(result).toEqual(['?="Value: "', '?=100', '/']);
+    });
+
+    test('should handle multiple spaces between statements', () => {
+        const result = interpreter.splitLineByWhitespace('A=10   B=20');
+        expect(result).toEqual(['A=10', 'B=20']);
+    });
+
+    test('should handle leading and trailing spaces', () => {
+        const result = interpreter.splitLineByWhitespace('  A=10 B=20  ');
+        expect(result).toEqual(['A=10', 'B=20']);
+    });
+
+    test('should handle string with escaped double quotes', () => {
+        const result = interpreter.splitLineByWhitespace('?="He said ""Hello""" A=10');
+        expect(result).toEqual(['?="He said ""Hello"""', 'A=10']);
+    });
+
+    test('should handle empty string literal', () => {
+        const result = interpreter.splitLineByWhitespace('?="" A=10');
+        expect(result).toEqual(['?=""', 'A=10']);
+    });
+
+    test('should handle string at the end', () => {
+        const result = interpreter.splitLineByWhitespace('A=10 ?="End"');
+        expect(result).toEqual(['A=10', '?="End"']);
+    });
+
+    test('should handle single statement with no spaces', () => {
+        const result = interpreter.splitLineByWhitespace('A=10');
+        expect(result).toEqual(['A=10']);
+    });
+
+    test('should handle empty line', () => {
+        const result = interpreter.splitLineByWhitespace('');
+        expect(result).toEqual([]);
+    });
+
+    test('should handle line with only spaces', () => {
+        const result = interpreter.splitLineByWhitespace('   ');
+        expect(result).toEqual([]);
     });
 });

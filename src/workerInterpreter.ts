@@ -154,18 +154,24 @@ class WorkerInterpreter {
 
             // 通常の行をパース
             try {
-                const parsedProgram = this.parse(lineTokens);
-                // parse()は常に1つのLineを含むProgramを返す
-                const parsedLine = parsedProgram.body[0];
-                if (parsedLine) {
+                // 新しいアプローチ: 行を空白で分割してから各ステートメントをパース
+                const sourceText = this.scriptLines[i];
+                if (sourceText) {
+                    const stmtStrings = this.splitLineByWhitespace(sourceText);
+                    const parsedStatements: Statement[] = [];
+                    
+                    for (const stmtString of stmtStrings) {
+                        const stmt = this.parseStatementString(stmtString, i);
+                        if (stmt) {
+                            parsedStatements.push(stmt);
+                        }
+                    }
+                    
                     const line: Line = {
                         lineNumber: i,
-                        statements: parsedLine.statements,
+                        statements: parsedStatements,
+                        sourceText: sourceText,
                     };
-                    const sourceText = this.scriptLines[i];
-                    if (sourceText !== undefined) {
-                        line.sourceText = sourceText;
-                    }
                     lines.push(line);
                 }
             } catch (error: any) {
@@ -181,305 +187,276 @@ class WorkerInterpreter {
     }
 
     /**
-     * トークンのリストからASTを構築します。
+     * トークンのリストからASTを構築します（テスト用の互換性メソッド）。
+     * 新しい実装ではloadScript()内で自動的にparseStatementString()が呼ばれます。
      * @param tokens トークンの配列
      * @returns Program ASTノード
      */
     parse(tokens: Token[]): Program {
-        const statements: Statement[] = [];
-        let index = 0;
-
-        // プログラムの行番号は最初のトークンから取得、なければ0
+        const stmts: Statement[] = [];
+        let i = 0;
+        
+        while (i < tokens.length) {
+            const result = this.parseStatementFromTokens(tokens, i);
+            if (result.statement) {
+                stmts.push(result.statement);
+            }
+            i = result.nextIndex;
+        }
+        
         const programLine = tokens[0]?.line ?? 0;
+        return {
+            type: 'Program',
+            line: programLine,
+            body: [{
+                lineNumber: programLine,
+                statements: stmts,
+            }],
+        };
+    }
 
-        while (index < tokens.length) {
-            const token = tokens[index];
-            
-            if (!token) {
-                break;
-            }
+    /**
+     * トークン列から単一のステートメントをパースします。
+     * @param tokens トークン配列
+     * @param startIndex 開始位置
+     * @returns パースされたStatementと次のインデックス
+     */
+    private parseStatementFromTokens(tokens: Token[], startIndex: number): { statement: Statement | null; nextIndex: number } {
+        const token = tokens[startIndex];
+        
+        if (!token) {
+            return { statement: null, nextIndex: startIndex + 1 };
+        }
 
-            // コメントや空行をスキップ
-            if (token.type === TokenType.COMMENT) {
-                index++;
-                continue;
-            }
-
-            // 改行ステートメント (/)
-            if (token.type === TokenType.SLASH) {
-                statements.push({
+        // 改行ステートメント (/)
+        if (token.type === TokenType.SLASH) {
+            return {
+                statement: {
                     type: 'NewlineStatement',
                     line: token.line,
                     column: token.column,
-                });
-                index++;
-                continue;
-            }
+                },
+                nextIndex: startIndex + 1
+            };
+        }
 
-            // RETURNステートメント (])
-            if (token.type === TokenType.RIGHT_BRACKET) {
-                statements.push({
+        // RETURNステートメント (])
+        if (token.type === TokenType.RIGHT_BRACKET) {
+            return {
+                statement: {
                     type: 'ReturnStatement',
                     line: token.line,
                     column: token.column,
-                });
-                index++;
-                continue;
+                },
+                nextIndex: startIndex + 1
+            };
+        }
+
+        const secondToken = tokens[startIndex + 1];
+        if (!secondToken || secondToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: 予期しないトークン "${token.value}"`);
+        }
+
+        // GOTOステートメント (#=^LABEL) と HALTステートメント (#=-1)
+        if (token.type === TokenType.HASH) {
+            const thirdToken = tokens[startIndex + 2];
+            
+            if (!thirdToken) {
+                throw new Error(`GOTO/HALTステートメントが不完全です`);
             }
 
-            // GOTOステートメント (#=^LABEL) と HALTステートメント (#=-1)
-            if (token.type === TokenType.HASH) {
-                const nextToken = tokens[index + 1];
-                
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    const thirdToken = tokens[index + 2];
-                    
-                    // #=-1 の場合はHALTステートメント（特殊ケース）
-                    if (thirdToken && thirdToken.type === TokenType.MINUS) {
-                        const fourthToken = tokens[index + 3];
-                        if (fourthToken && fourthToken.type === TokenType.NUMBER && 
-                            fourthToken.value === '1') {
-                            statements.push({
-                                type: 'HaltStatement',
-                                line: token.line,
-                                column: token.column,
-                            });
-                            // #=-1 は4トークン消費
-                            index += 4;
-                            continue;
-                        }
-                    }
-                    
-                    // #=^LABEL パターン（通常のGOTO）
-                    if (thirdToken && thirdToken.type === TokenType.LABEL_DEFINITION) {
-                        const labelName = thirdToken.value.substring(1); // ^ を除去
-                        statements.push({
-                            type: 'GotoStatement',
+            // #=-1 の場合はHALTステートメント
+            if (thirdToken.type === TokenType.MINUS) {
+                const fourthToken = tokens[startIndex + 3];
+                if (fourthToken && fourthToken.type === TokenType.NUMBER && fourthToken.value === '1') {
+                    return {
+                        statement: {
+                            type: 'HaltStatement',
                             line: token.line,
                             column: token.column,
-                            target: labelName,
-                        });
-                        // #=^LABEL は3トークン消費
-                        index += 3;
-                        continue;
-                    }
-                    
-                    // ラベル以外が指定された場合はエラー
-                    throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です (行: ${token.line + 1}, 列: ${token.column + 1})`);
+                        },
+                        nextIndex: startIndex + 4
+                    };
                 }
             }
 
-            // GOSUBステートメント (!=^LABEL)
-            if (token.type === TokenType.BANG) {
-                const nextToken = tokens[index + 1];
-                
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    const thirdToken = tokens[index + 2];
-                    
-                    // !=^LABEL パターン
-                    if (thirdToken && thirdToken.type === TokenType.LABEL_DEFINITION) {
-                        const labelName = thirdToken.value.substring(1); // ^ を除去
-                        statements.push({
-                            type: 'GosubStatement',
-                            line: token.line,
-                            column: token.column,
-                            target: labelName,
-                        });
-                        // !=^LABEL は3トークン消費
-                        index += 3;
-                        continue;
-                    }
-                    
-                    // ラベル以外が指定された場合はエラー
-                    throw new Error(`構文エラー: GOSUBにはラベル（^LABEL形式）が必要です (行: ${token.line + 1}, 列: ${token.column + 1})`);
-                }
-            }
-
-            // IFステートメント (;=)
-            if (token.type === TokenType.SEMICOLON) {
-                const nextToken = tokens[index + 1];
-                
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // ;= の後の条件式を解析
-                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
-                    
-                    statements.push({
-                        type: 'IfStatement',
+            // #=^LABEL パターン（通常のGOTO）
+            if (thirdToken.type === TokenType.LABEL_DEFINITION) {
+                const labelName = thirdToken.value.substring(1);
+                return {
+                    statement: {
+                        type: 'GotoStatement',
                         line: token.line,
                         column: token.column,
-                        condition: exprResult.expr,
-                    });
-                    
-                    index += 2 + exprResult.consumed; // ;= + 式
-                    continue;
-                }
+                        target: labelName,
+                    },
+                    nextIndex: startIndex + 3
+                };
             }
 
-            // 出力ステートメント (?=)
-            if (token.type === TokenType.QUESTION) {
-                const nextToken = tokens[index + 1];
-                
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // ?= の後から次のステートメント開始位置まで式を解析
-                    const exprStart = index + 2;
-                    let exprEnd = exprStart;
-                    while (exprEnd < tokens.length) {
-                        const t = tokens[exprEnd];
-                        if (!t) break;
-                        
-                        // IDENTIFIERの後に=がある場合は代入ステートメント
-                        if (t.type === TokenType.IDENTIFIER) {
-                            const nextT = tokens[exprEnd + 1];
-                            if (nextT && nextT.type === TokenType.EQUALS) {
-                                break; // 代入ステートメントなので式の終わり
-                            }
-                        } else if (this.isStatementStart(t.type)) {
-                            break; // 他のステートメント開始
-                        }
-                        
-                        exprEnd++;
-                    }
-                    
-                    const exprTokens = tokens.slice(exprStart, exprEnd);
-                    const exprResult = this.parseExpressionFromTokens(exprTokens);
-                    
-                    statements.push({
-                        type: 'OutputStatement',
-                        line: token.line,
-                        column: token.column,
-                        expression: exprResult.expr,
-                    });
-                    
-                    // ?= + 式
-                    index += 2 + exprResult.consumed;
-                    continue;
-                }
+            throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+        }
+
+        // GOSUBステートメント (!=^LABEL)
+        if (token.type === TokenType.BANG) {
+            const thirdToken = tokens[startIndex + 2];
+            
+            if (!thirdToken || thirdToken.type !== TokenType.LABEL_DEFINITION) {
+                throw new Error(`構文エラー: GOSUBにはラベル（^LABEL形式）が必要です`);
             }
 
-            // NEXTステートメント (@=I)
-            if (token.type === TokenType.AT) {
-                const nextToken = tokens[index + 1];
+            const labelName = thirdToken.value.substring(1);
+            return {
+                statement: {
+                    type: 'GosubStatement',
+                    line: token.line,
+                    column: token.column,
+                    target: labelName,
+                },
+                nextIndex: startIndex + 3
+            };
+        }
+
+        // IFステートメント (;=)
+        if (token.type === TokenType.SEMICOLON) {
+            const exprTokens = tokens.slice(startIndex + 2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                statement: {
+                    type: 'IfStatement',
+                    line: token.line,
+                    column: token.column,
+                    condition: exprResult.expr,
+                },
+                nextIndex: startIndex + 2 + exprResult.consumed
+            };
+        }
+
+        // 出力ステートメント (?=)
+        if (token.type === TokenType.QUESTION) {
+            const exprTokens = tokens.slice(startIndex + 2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                statement: {
+                    type: 'OutputStatement',
+                    line: token.line,
+                    column: token.column,
+                    expression: exprResult.expr,
+                },
+                nextIndex: startIndex + 2 + exprResult.consumed
+            };
+        }
+
+        // NEXTステートメント (@=I)
+        if (token.type === TokenType.AT) {
+            const thirdToken = tokens[startIndex + 2];
+            
+            if (!thirdToken || thirdToken.type !== TokenType.IDENTIFIER) {
+                throw new Error(`構文エラー: NEXTにはループ変数が必要です`);
+            }
+
+            return {
+                statement: {
+                    type: 'NextStatement',
+                    line: token.line,
+                    column: token.column,
+                    variable: {
+                        type: 'Identifier',
+                        name: thirdToken.value,
+                        line: thirdToken.line,
+                        column: thirdToken.column,
+                    },
+                },
+                nextIndex: startIndex + 3
+            };
+        }
+
+        // POKEステートメント ($=expression)
+        if (token.type === TokenType.DOLLAR) {
+            const exprTokens = tokens.slice(startIndex + 2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                statement: {
+                    type: 'PokeStatement',
+                    line: token.line,
+                    column: token.column,
+                    value: exprResult.expr,
+                },
+                nextIndex: startIndex + 2 + exprResult.consumed
+            };
+        }
+
+        // 代入ステートメント または FORループ
+        if (token.type === TokenType.IDENTIFIER) {
+            const exprTokens = tokens.slice(startIndex + 2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+
+            // カンマ式かどうかでFORループか代入かを判定
+            if (this.isCommaExpression(exprResult.expr)) {
+                const parts = this.extractCommaExpressionParts(exprResult.expr);
                 
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    const thirdToken = tokens[index + 2];
-                    
-                    if (thirdToken && thirdToken.type === TokenType.IDENTIFIER) {
-                        statements.push({
-                            type: 'NextStatement',
+                if (parts.length === 2) {
+                    return {
+                        statement: {
+                            type: 'ForStatement',
                             line: token.line,
                             column: token.column,
                             variable: {
                                 type: 'Identifier',
-                                name: thirdToken.value,
-                                line: thirdToken.line,
-                                column: thirdToken.column,
+                                name: token.value,
+                                line: token.line,
+                                column: token.column,
                             },
-                        });
-                        // @=I は3トークン消費
-                        index += 3;
-                        continue;
-                    }
-                    
-                    throw new Error(`構文エラー: NEXTには変数が必要です (行: ${token.line + 1}, 列: ${token.column + 1})`);
-                }
-            }
-
-            // POKEステートメント ($=expression)
-            if (token.type === TokenType.DOLLAR) {
-                const nextToken = tokens[index + 1];
-                
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // = の後から式を解析
-                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
-                    
-                    statements.push({
-                        type: 'PokeStatement',
-                        line: token.line,
-                        column: token.column,
-                        value: exprResult.expr,
-                    });
-                    
-                    // $= + 式
-                    index += 2 + exprResult.consumed;
-                    continue;
-                }
-            }
-
-            // 代入ステートメント または FORループの解析
-            if (token.type === TokenType.IDENTIFIER) {
-                const nextToken = tokens[index + 1];
-                
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    const variable: Identifier = {
-                        type: 'Identifier',
-                        name: token.value,
-                        line: token.line,
-                        column: token.column,
+                            start: parts[0]!,
+                            end: parts[1]!,
+                            // stepは省略（デフォルト1）
+                        },
+                        nextIndex: startIndex + 2 + exprResult.consumed
                     };
-                    
-                    // = の後の式を解析（カンマも演算子として解析される）
-                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
-                    
-                    // 式がカンマを含むBinaryExpressionかチェック（FORループ判定）
-                    if (this.isCommaExpression(exprResult.expr)) {
-                        // FORループ: I=start,end[,step]
-                        const parts = this.extractCommaExpressionParts(exprResult.expr);
-                        
-                        if (parts.length === 2) {
-                            // I=start,end（ステップ省略）
-                            statements.push({
-                                type: 'ForStatement',
-                                line: token.line,
-                                column: token.column,
-                                variable,
-                                start: parts[0]!,
-                                end: parts[1]!,
-                            });
-                        } else if (parts.length === 3) {
-                            // I=start,end,step
-                            statements.push({
-                                type: 'ForStatement',
-                                line: token.line,
-                                column: token.column,
-                                variable,
-                                start: parts[0]!,
-                                end: parts[1]!,
-                                step: parts[2]!,
-                            });
-                        } else {
-                            throw new Error(`構文エラー: FORループの式が不正です (行: ${token.line + 1}, 列: ${token.column + 1})`);
-                        }
-                    } else {
-                        // 通常の代入ステートメント
-                        statements.push({
-                            type: 'AssignmentStatement',
+                } else if (parts.length === 3) {
+                    return {
+                        statement: {
+                            type: 'ForStatement',
                             line: token.line,
                             column: token.column,
-                            variable,
-                            value: exprResult.expr,
-                        });
-                    }
-                    index += 2 + exprResult.consumed; // variable= + 式
-                    
-                    continue;
+                            variable: {
+                                type: 'Identifier',
+                                name: token.value,
+                                line: token.line,
+                                column: token.column,
+                            },
+                            start: parts[0]!,
+                            end: parts[1]!,
+                            step: parts[2]!,
+                        },
+                        nextIndex: startIndex + 2 + exprResult.consumed
+                    };
+                } else {
+                    throw new Error(`構文エラー: FORループの形式が不正です`);
                 }
+            } else {
+                return {
+                    statement: {
+                        type: 'AssignmentStatement',
+                        line: token.line,
+                        column: token.column,
+                        variable: {
+                            type: 'Identifier',
+                            name: token.value,
+                            line: token.line,
+                            column: token.column,
+                        },
+                        value: exprResult.expr,
+                    },
+                    nextIndex: startIndex + 2 + exprResult.consumed
+                };
             }
-
-            // その他のトークンがあればエラー
-            throw new Error(`構文エラー: 予期しないトークン '${token.value}' (行: ${token.line + 1}, 列: ${token.column + 1})`);
         }
 
-        // Statement[]をLine[]でラップする
-        const body: Line[] = [{
-            lineNumber: programLine,
-            statements: statements,
-        }];
-
-        return {
-            type: 'Program',
-            line: programLine,
-            body,
-        };
+        throw new Error(`構文エラー: 未知のステートメント形式: ${token.value}`);
     }
 
     /**
@@ -700,40 +677,302 @@ class WorkerInterpreter {
     }
 
     /**
+     * 行を空白で分割し、文字列リテラル内の空白を保護します。
+     * ダブルクォートの二重化 ("") もサポートします。
+     * @param line 分割する行の文字列
+     * @returns ステートメント文字列の配列
+     */
+    splitLineByWhitespace(line: string): string[] {
+        const statements: string[] = [];
+        let current = '';
+        let inString = false;
+        let i = 0;
+
+        while (i < line.length) {
+            const char = line[i];
+            
+            // charがundefinedの場合は終了
+            if (!char) {
+                break;
+            }
+
+            if (char === '"') {
+                // ダブルクォートの処理
+                if (inString) {
+                    // 文字列内でダブルクォートを発見
+                    if (line[i + 1] === '"') {
+                        // "" はエスケープされたダブルクォート
+                        current += '""';
+                        i += 2;
+                        continue;
+                    } else {
+                        // 文字列の終了
+                        current += char;
+                        inString = false;
+                        i++;
+                        continue;
+                    }
+                } else {
+                    // 文字列の開始
+                    current += char;
+                    inString = true;
+                    i++;
+                    continue;
+                }
+            }
+
+            if (!inString && /\s/.test(char)) {
+                // 文字列外の空白
+                if (current.length > 0) {
+                    statements.push(current);
+                    current = '';
+                }
+                i++;
+                continue;
+            }
+
+            // 通常の文字
+            current += char;
+            i++;
+        }
+
+        // 最後のステートメントを追加
+        if (current.length > 0) {
+            statements.push(current);
+        }
+
+        return statements;
+    }
+
+    /**
+     * 単一のステートメント文字列をパースしてStatementに変換します。
+     * @param stmtString ステートメント文字列（例: "A=10", "?=100", "/"）
+     * @param lineNumber 行番号（エラーメッセージ用）
+     * @returns Statement ASTノード、またはnull（空文字列の場合）
+     */
+    private parseStatementString(stmtString: string, lineNumber: number): Statement | null {
+        if (stmtString.trim() === '') {
+            return null;
+        }
+
+        // ステートメント文字列をトークン化
+        const tokens = this.lexer.tokenizeLine(stmtString, lineNumber);
+        
+        if (tokens.length === 0) {
+            return null;
+        }
+
+        // 単一トークンのステートメント
+        const firstToken = tokens[0];
+        if (!firstToken) {
+            return null;
+        }
+
+        // 改行ステートメント (/)
+        if (firstToken.type === TokenType.SLASH && tokens.length === 1) {
+            return {
+                type: 'NewlineStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+            };
+        }
+
+        // RETURNステートメント (])
+        if (firstToken.type === TokenType.RIGHT_BRACKET && tokens.length === 1) {
+            return {
+                type: 'ReturnStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+            };
+        }
+
+        // 2トークン以上必要なステートメント
+        const secondToken = tokens[1];
+        if (!secondToken) {
+            throw new Error(`不完全なステートメント: ${stmtString}`);
+        }
+
+        // GOTOステートメント (#=^LABEL) と HALTステートメント (#=-1)
+        if (firstToken.type === TokenType.HASH && secondToken.type === TokenType.EQUALS) {
+            const thirdToken = tokens[2];
+            
+            if (!thirdToken) {
+                throw new Error(`GOTO/HALTステートメントが不完全です`);
+            }
+
+            // #=-1 の場合はHALTステートメント
+            if (thirdToken.type === TokenType.MINUS) {
+                const fourthToken = tokens[3];
+                if (fourthToken && fourthToken.type === TokenType.NUMBER && fourthToken.value === '1') {
+                    return {
+                        type: 'HaltStatement',
+                        line: firstToken.line,
+                        column: firstToken.column,
+                    };
+                }
+            }
+
+            // #=^LABEL パターン（通常のGOTO）
+            if (thirdToken.type === TokenType.LABEL_DEFINITION) {
+                const labelName = thirdToken.value.substring(1); // ^ を除去
+                return {
+                    type: 'GotoStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                    target: labelName,
+                };
+            }
+
+            throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+        }
+
+        // GOSUBステートメント (!=^LABEL)
+        if (firstToken.type === TokenType.BANG && secondToken.type === TokenType.EQUALS) {
+            const thirdToken = tokens[2];
+            
+            if (!thirdToken) {
+                throw new Error(`GOSUBステートメントが不完全です`);
+            }
+
+            if (thirdToken.type === TokenType.LABEL_DEFINITION) {
+                const labelName = thirdToken.value.substring(1); // ^ を除去
+                return {
+                    type: 'GosubStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                    target: labelName,
+                };
+            }
+
+            throw new Error(`構文エラー: GOSUBにはラベル（^LABEL形式）が必要です`);
+        }
+
+        // IFステートメント (;=)
+        if (firstToken.type === TokenType.SEMICOLON && secondToken.type === TokenType.EQUALS) {
+            const exprTokens = tokens.slice(2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                type: 'IfStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                condition: exprResult.expr,
+            };
+        }
+
+        // 出力ステートメント (?=)
+        if (firstToken.type === TokenType.QUESTION && secondToken.type === TokenType.EQUALS) {
+            const exprTokens = tokens.slice(2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                type: 'OutputStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                expression: exprResult.expr,
+            };
+        }
+
+        // NEXTステートメント (@=I)
+        if (firstToken.type === TokenType.AT && secondToken.type === TokenType.EQUALS) {
+            const thirdToken = tokens[2];
+            
+            if (!thirdToken || thirdToken.type !== TokenType.IDENTIFIER) {
+                throw new Error(`構文エラー: NEXTにはループ変数が必要です`);
+            }
+
+            return {
+                type: 'NextStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                variable: {
+                    type: 'Identifier',
+                    name: thirdToken.value,
+                    line: thirdToken.line,
+                    column: thirdToken.column,
+                },
+            };
+        }
+
+        // POKEステートメント ($=expression)
+        if (firstToken.type === TokenType.DOLLAR && secondToken.type === TokenType.EQUALS) {
+            const exprTokens = tokens.slice(2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                type: 'PokeStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                value: exprResult.expr,
+            };
+        }
+
+        // 代入ステートメント または FORループ
+        if (firstToken.type === TokenType.IDENTIFIER && secondToken.type === TokenType.EQUALS) {
+            const exprTokens = tokens.slice(2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+
+            // カンマ式かどうかでFORループか代入かを判定
+            if (this.isCommaExpression(exprResult.expr)) {
+                const parts = this.extractCommaExpressionParts(exprResult.expr);
+                
+                if (parts.length === 2) {
+                    return {
+                        type: 'ForStatement',
+                        line: firstToken.line,
+                        column: firstToken.column,
+                        variable: {
+                            type: 'Identifier',
+                            name: firstToken.value,
+                            line: firstToken.line,
+                            column: firstToken.column,
+                        },
+                        start: parts[0]!,
+                        end: parts[1]!,
+                        // stepは省略（デフォルト1）
+                    };
+                } else if (parts.length === 3) {
+                    return {
+                        type: 'ForStatement',
+                        line: firstToken.line,
+                        column: firstToken.column,
+                        variable: {
+                            type: 'Identifier',
+                            name: firstToken.value,
+                            line: firstToken.line,
+                            column: firstToken.column,
+                        },
+                        start: parts[0]!,
+                        end: parts[1]!,
+                        step: parts[2]!,
+                    };
+                } else {
+                    throw new Error(`構文エラー: FORループの形式が不正です`);
+                }
+            } else {
+                return {
+                    type: 'AssignmentStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                    variable: {
+                        type: 'Identifier',
+                        name: firstToken.value,
+                        line: firstToken.line,
+                        column: firstToken.column,
+                    },
+                    value: exprResult.expr,
+                };
+            }
+        }
+
+        throw new Error(`構文エラー: 未知のステートメント形式: ${stmtString}`);
+    }
+
+    /**
      * トークンがステートメントの開始を示すかどうかを判定します。
      * @param tokenType トークンタイプ
      * @returns ステートメント開始の場合true
      */
-    private isStatementStart(tokenType: TokenType): boolean {
-        return [
-            TokenType.QUESTION,      // ?= (出力)
-            TokenType.IDENTIFIER,    // 変数名 (代入の可能性)
-            TokenType.SEMICOLON,     // ;= (IF)
-            TokenType.HASH,          // #= (GOTO/停止)
-            TokenType.BANG,          // != (GOSUB)
-            TokenType.RIGHT_BRACKET, // ] (RETURN)
-            TokenType.AT,            // @= (NEXT)
-            TokenType.SLASH,         // / (改行)
-            TokenType.DOLLAR,        // $= (POKE)
-        ].includes(tokenType);
-    }
-
-    /**
-     * 次のステートメントの開始位置を見つけます
-     * @param tokens トークン配列
-     * @param startIndex 検索開始位置
-     * @returns 次のステートメントの開始インデックス、見つからなければtokens.length
-     */
-    private findNextStatementStart(tokens: Token[], startIndex: number): number {
-        for (let i = startIndex; i < tokens.length; i++) {
-            const token = tokens[i];
-            if (token && this.isStatementStart(token.type)) {
-                return i;
-            }
-        }
-        return tokens.length;
-    }
-
     // TODO: 必要に応じて、式評価、変数解決などのヘルパーメソッドを追加
     // private evaluateExpression(expression: string, state: InterpreterState): number | string { ... }
     // private getVariableValue(name: string, state: InterpreterState): number { ... }
