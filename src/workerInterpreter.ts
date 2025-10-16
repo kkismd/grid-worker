@@ -228,64 +228,71 @@ class WorkerInterpreter {
                 continue;
             }
 
-            // GOTOステートメント (#=) と HALTステートメント (#=-1)
+            // GOTOステートメント (#=^LABEL) と HALTステートメント (#=-1)
             if (token.type === TokenType.HASH) {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // #=-1 の場合はHALTステートメント
                     const thirdToken = tokens[index + 2];
-                    const fourthToken = tokens[index + 3];
                     
-                    if (thirdToken && thirdToken.type === TokenType.MINUS &&
-                        fourthToken && fourthToken.type === TokenType.NUMBER && 
-                        fourthToken.value === '1') {
+                    // #=-1 の場合はHALTステートメント（特殊ケース）
+                    if (thirdToken && thirdToken.type === TokenType.MINUS) {
+                        const fourthToken = tokens[index + 3];
+                        if (fourthToken && fourthToken.type === TokenType.NUMBER && 
+                            fourthToken.value === '1') {
+                            statements.push({
+                                type: 'HaltStatement',
+                                line: token.line,
+                                column: token.column,
+                            });
+                            // すべてのトークンを消費
+                            index = tokens.length;
+                            continue;
+                        }
+                    }
+                    
+                    // #=^LABEL パターン（通常のGOTO）
+                    if (thirdToken && thirdToken.type === TokenType.LABEL_DEFINITION) {
+                        const labelName = thirdToken.value.substring(1); // ^ を除去
                         statements.push({
-                            type: 'HaltStatement',
+                            type: 'GotoStatement',
                             line: token.line,
                             column: token.column,
+                            target: labelName,
                         });
                         // すべてのトークンを消費
                         index = tokens.length;
                         continue;
                     }
                     
-                    // #= の後の式を解析（通常のGOTO）
-                    const exprTokens = tokens.slice(index + 2);
-                    const target = this.parseExpressionFromTokens(exprTokens);
-                    
-                    statements.push({
-                        type: 'GotoStatement',
-                        line: token.line,
-                        column: token.column,
-                        target,
-                    });
-                    
-                    // すべてのトークンを消費
-                    index = tokens.length;
-                    continue;
+                    // ラベル以外が指定された場合はエラー
+                    throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です (行: ${token.line + 1}, 列: ${token.column + 1})`);
                 }
             }
 
-            // GOSUBステートメント (!=)
+            // GOSUBステートメント (!=^LABEL)
             if (token.type === TokenType.BANG) {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // != の後の式を解析
-                    const exprTokens = tokens.slice(index + 2);
-                    const target = this.parseExpressionFromTokens(exprTokens);
+                    const thirdToken = tokens[index + 2];
                     
-                    statements.push({
-                        type: 'GosubStatement',
-                        line: token.line,
-                        column: token.column,
-                        target,
-                    });
+                    // !=^LABEL パターン
+                    if (thirdToken && thirdToken.type === TokenType.LABEL_DEFINITION) {
+                        const labelName = thirdToken.value.substring(1); // ^ を除去
+                        statements.push({
+                            type: 'GosubStatement',
+                            line: token.line,
+                            column: token.column,
+                            target: labelName,
+                        });
+                        // すべてのトークンを消費
+                        index = tokens.length;
+                        continue;
+                    }
                     
-                    // すべてのトークンを消費
-                    index = tokens.length;
-                    continue;
+                    // ラベル以外が指定された場合はエラー
+                    throw new Error(`構文エラー: GOSUBにはラベル（^LABEL形式）が必要です (行: ${token.line + 1}, 列: ${token.column + 1})`);
                 }
             }
 

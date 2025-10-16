@@ -739,11 +739,11 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
         });
     });
 
-    test('should parse GOTO statement (#=100)', () => {
+    test('should parse GOTO statement with label (#=^START)', () => {
         const tokens: Token[] = [
             { type: TokenType.HASH, value: '#', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 2 },
+            { type: TokenType.LABEL_DEFINITION, value: '^START', line: 0, column: 2 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -752,15 +752,14 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
         expect(stmt?.type).toBe('GotoStatement');
         expect(stmt).toHaveProperty('target');
         const gotoStmt = stmt as any;
-        expect(gotoStmt.target.type).toBe('NumericLiteral');
-        expect(gotoStmt.target.value).toBe(100);
+        expect(gotoStmt.target).toBe('START'); // ラベル名（^なし）
     });
 
-    test('should parse GOSUB statement (!=200)', () => {
+    test('should parse GOSUB statement with label (!=^MYSUB)', () => {
         const tokens: Token[] = [
             { type: TokenType.BANG, value: '!', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '200', line: 0, column: 2 },
+            { type: TokenType.LABEL_DEFINITION, value: '^MYSUB', line: 0, column: 2 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -769,8 +768,7 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
         expect(stmt?.type).toBe('GosubStatement');
         expect(stmt).toHaveProperty('target');
         const gosubStmt = stmt as any;
-        expect(gosubStmt.target.type).toBe('NumericLiteral');
-        expect(gosubStmt.target.value).toBe(200);
+        expect(gosubStmt.target).toBe('MYSUB'); // ラベル名（^なし）
     });
 
     test('should parse RETURN statement (])', () => {
@@ -798,23 +796,25 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
         expect(stmt?.type).toBe('HaltStatement');
     });
 
-    test('should parse GOTO with variable target (#=A)', () => {
+    test('should reject GOTO with number (#=100)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 2 },
+        ];
+        expect(() => interpreter.parse(tokens)).toThrow('GOTOにはラベル');
+    });
+
+    test('should reject GOTO with variable (#=A)', () => {
         const tokens: Token[] = [
             { type: TokenType.HASH, value: '#', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
         ];
-        const ast = interpreter.parse(tokens);
-        expect(ast.body).toHaveLength(1);
-        expect(ast.body[0]?.statements).toHaveLength(1);
-        const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('GotoStatement');
-        const gotoStmt = stmt as any;
-        expect(gotoStmt.target.type).toBe('Identifier');
-        expect(gotoStmt.target.name).toBe('A');
+        expect(() => interpreter.parse(tokens)).toThrow('GOTOにはラベル');
     });
 
-    test('should parse GOSUB with expression (!=A+10)', () => {
+    test('should reject GOSUB with expression (!=A+10)', () => {
         const tokens: Token[] = [
             { type: TokenType.BANG, value: '!', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
@@ -822,13 +822,7 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
             { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
             { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
         ];
-        const ast = interpreter.parse(tokens);
-        expect(ast.body).toHaveLength(1);
-        expect(ast.body[0]?.statements).toHaveLength(1);
-        const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('GosubStatement');
-        const gosubStmt = stmt as any;
-        expect(gosubStmt.target.type).toBe('BinaryExpression');
+        expect(() => interpreter.parse(tokens)).toThrow('GOSUBにはラベル');
     });
 });
 

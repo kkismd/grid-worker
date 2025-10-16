@@ -78,21 +78,23 @@ export interface IfStatement extends ASTNode {
 }
 
 /**
- * GOTOステートメント (例: #=100)
- * 指定した行番号に無条件ジャンプ
+ * GOTOステートメント (例: #=^START)
+ * 指定したラベルに無条件ジャンプ
+ * WorkerScript仕様: ラベル（^LABEL形式）のみを許容
  */
 export interface GotoStatement extends ASTNode {
     type: 'GotoStatement';
-    target: Expression; // 行番号を表す式
+    target: string; // ラベル名（^プレフィックスなし）
 }
 
 /**
- * GOSUBステートメント (例: !=200)
- * 指定した行番号にサブルーチンコール
+ * GOSUBステートメント (例: !=^MYSUB)
+ * 指定したラベルにサブルーチンコール
+ * WorkerScript仕様: ラベル（^LABEL形式）のみを許容
  */
 export interface GosubStatement extends ASTNode {
     type: 'GosubStatement';
-    target: Expression; // 行番号を表す式
+    target: string; // ラベル名（^プレフィックスなし）
 }
 
 /**
