@@ -35,6 +35,7 @@ class WorkerInterpreter {
     private scriptLines: string[] = []; // 解析済みのスクリプト行
     private labels: Map<string, number> = new Map(); // ラベル名と行番号のマッピング
     private tokens: Token[][] = []; // 各行のトークンリストを保持
+    private program: Program | null = null; // 構築されたプログラムAST
     private lexer: Lexer; // Lexerのインスタンス
     private gridData: number[];
     private peekFn: (index: number) => number;
@@ -107,7 +108,77 @@ class WorkerInterpreter {
             }
         });
 
+        // 全行のASTを構築
+        this.buildProgramAST();
+
         this.logFn("スクリプトがロードされました。");
+    }
+
+    /**
+     * 全行のトークンからProgramASTを構築します。
+     */
+    private buildProgramAST(): void {
+        const lines: Line[] = [];
+
+        for (let i = 0; i < this.tokens.length; i++) {
+            const lineTokens = this.tokens[i];
+            if (!lineTokens) continue;
+
+            // コメント行や空行はステートメントなしの行として扱う
+            if (lineTokens.length === 0 || 
+                (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.COMMENT)) {
+                const line: Line = {
+                    lineNumber: i,
+                    statements: [],
+                };
+                const sourceText = this.scriptLines[i];
+                if (sourceText !== undefined) {
+                    line.sourceText = sourceText;
+                }
+                lines.push(line);
+                continue;
+            }
+
+            // ラベル定義行もステートメントなしとして扱う（実行時はスキップ）
+            if (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.LABEL_DEFINITION) {
+                const line: Line = {
+                    lineNumber: i,
+                    statements: [],
+                };
+                const sourceText = this.scriptLines[i];
+                if (sourceText !== undefined) {
+                    line.sourceText = sourceText;
+                }
+                lines.push(line);
+                continue;
+            }
+
+            // 通常の行をパース
+            try {
+                const parsedProgram = this.parse(lineTokens);
+                // parse()は常に1つのLineを含むProgramを返す
+                const parsedLine = parsedProgram.body[0];
+                if (parsedLine) {
+                    const line: Line = {
+                        lineNumber: i,
+                        statements: parsedLine.statements,
+                    };
+                    const sourceText = this.scriptLines[i];
+                    if (sourceText !== undefined) {
+                        line.sourceText = sourceText;
+                    }
+                    lines.push(line);
+                }
+            } catch (error: any) {
+                throw new Error(`構文解析エラー (行: ${i + 1}): ${error.message}`);
+            }
+        }
+
+        this.program = {
+            type: 'Program',
+            line: 0,
+            body: lines,
+        };
     }
 
     /**
@@ -559,6 +630,32 @@ class WorkerInterpreter {
     // private evaluateExpression(expression: string, state: InterpreterState): number | string { ... }
     // private getVariableValue(name: string, state: InterpreterState): number { ... }
     // private setVariableValue(name: string, value: number, state: InterpreterState): void { ... }
+
+    /**
+     * 構築されたプログラムASTを取得します。
+     * @returns Program ASTまたはnull（未構築の場合）
+     */
+    getProgram(): Program | null {
+        return this.program;
+    }
+
+    /**
+     * 指定された行番号のLine ASTを取得します。
+     * @param lineNumber 取得する行番号（0-indexed）
+     * @returns Line ASTまたはundefined（存在しない場合）
+     */
+    getLineByNumber(lineNumber: number): Line | undefined {
+        return this.program?.body.find(line => line.lineNumber === lineNumber);
+    }
+
+    /**
+     * ラベル名から対応する行番号を取得します。
+     * @param labelName ラベル名（例: "^LOOP"）
+     * @returns 行番号またはundefined（存在しない場合）
+     */
+    getLabelLine(labelName: string): number | undefined {
+        return this.labels.get(labelName);
+    }
 }
 
 export default WorkerInterpreter;

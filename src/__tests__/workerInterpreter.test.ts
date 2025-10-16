@@ -663,3 +663,70 @@ describe('Parser (TDD Cycle 2.5)', () => {
     });
 });
 
+
+describe('Parser (TDD Cycle 2A.3)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should build and store Program AST when loadScript is called', () => {
+        const script = 'A=10\nB=20';
+        interpreter.loadScript(script);
+        
+        const program = interpreter.getProgram();
+        expect(program).toBeDefined();
+        expect(program?.type).toBe('Program');
+        expect(program?.body).toHaveLength(2);
+        expect(program?.body[0]?.lineNumber).toBe(0);
+        expect(program?.body[1]?.lineNumber).toBe(1);
+    });
+
+    test('should retrieve line by line number', () => {
+        const script = 'A=10\nB=20\nC=30';
+        interpreter.loadScript(script);
+        
+        const line1 = interpreter.getLineByNumber(1);
+        expect(line1).toBeDefined();
+        expect(line1?.lineNumber).toBe(1);
+        expect(line1?.statements).toHaveLength(1);
+        expect(line1?.statements[0]?.type).toBe('AssignmentStatement');
+    });
+
+    test('should return undefined for non-existent line number', () => {
+        const script = 'A=10';
+        interpreter.loadScript(script);
+        
+        const line = interpreter.getLineByNumber(99);
+        expect(line).toBeUndefined();
+    });
+
+    test('should support label jumps via line numbers', () => {
+        const script = '^LOOP\nA=10\nB=20';
+        interpreter.loadScript(script);
+        
+        // ラベルの行番号を取得
+        const labelLine = interpreter.getLabelLine('^LOOP');
+        expect(labelLine).toBe(0);
+        
+        // その行のASTを取得
+        const line = interpreter.getLineByNumber(labelLine!);
+        expect(line).toBeDefined();
+        expect(line?.lineNumber).toBe(0);
+    });
+
+    test('should handle empty lines in Program', () => {
+        const script = 'A=10\n\nB=20';
+        interpreter.loadScript(script);
+        
+        const program = interpreter.getProgram();
+        expect(program?.body).toHaveLength(3);
+        expect(program?.body[1]?.statements).toHaveLength(0); // 空行
+    });
+});
