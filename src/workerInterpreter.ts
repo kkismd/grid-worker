@@ -223,8 +223,8 @@ class WorkerInterpreter {
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
                     // ;= の後の条件式と後続のステートメントを解析
-                    const result = this.parseIfStatement(tokens, index + 2);
-                    statements.push(result.statement);
+                    const result = this.parseIfStatement(tokens, index, index + 2);
+                    statements.push(...result.statements); // 複数のステートメントを追加
                     index = tokens.length; // すべてのトークンを消費
                     continue;
                 }
@@ -450,16 +450,19 @@ class WorkerInterpreter {
     }
 
     /**
-     * IFステートメントを解析します。
+     * IFステートメントと後続のステートメントを解析します。
      * ;=条件 ステートメント1 ステートメント2 ... の形式
+     * 新しい設計: IFステートメントは条件のみを持ち、後続ステートメントは独立した要素として返される
      * @param tokens トークン配列
-     * @param start 条件式の開始インデックス
-     * @returns 解析されたIFステートメント
+     * @param ifTokenIndex ;=の;のトークンインデックス
+     * @param conditionStart 条件式の開始インデックス
+     * @returns 解析されたステートメント配列（IF + 後続ステートメント）
      */
-    private parseIfStatement(tokens: Token[], start: number): { statement: Statement } {
+    private parseIfStatement(tokens: Token[], ifTokenIndex: number, conditionStart: number): { statements: Statement[] } {
+        const allStatements: Statement[] = [];
+        
         // 条件式の終わりを見つける（次のステートメントの開始位置）
-        // 条件式は最初の非演算子トークン列まで続く
-        let conditionEnd = start;
+        let conditionEnd = conditionStart;
         let parenDepth = 0;
         let foundConditionEnd = false;
         
@@ -475,8 +478,6 @@ class WorkerInterpreter {
                 conditionEnd++;
             } else if (parenDepth === 0) {
                 // 括弧の外で、ステートメント区切り位置をチェック
-                // 条件式が終わった後、スペースで区切られたステートメントが来る
-                // まず条件式を構成するトークンかチェック
                 if (this.isExpressionToken(token.type)) {
                     conditionEnd++;
                 } else {
@@ -489,14 +490,21 @@ class WorkerInterpreter {
         }
         
         // 条件式を解析
-        const conditionTokens = tokens.slice(start, conditionEnd);
+        const conditionTokens = tokens.slice(conditionStart, conditionEnd);
         const condition = this.parseExpressionFromTokens(conditionTokens);
         
-        // IFステートメントの行番号は最初のトークンから
-        const ifLine = tokens[0]?.line ?? 0;
+        // IFステートメントの行番号は;=の;から
+        const ifToken = tokens[ifTokenIndex];
+        const ifLine = ifToken?.line ?? 0;
         
-        // 後続のステートメントを解析
-        const consequent: Statement[] = [];
+        // IFステートメント（条件のみ）を追加
+        allStatements.push({
+            type: 'IfStatement',
+            line: ifLine,
+            condition,
+        });
+        
+        // 後続のステートメントを個別に解析
         let index = conditionEnd;
         
         while (index < tokens.length) {
@@ -516,7 +524,7 @@ class WorkerInterpreter {
                     
                     const exprTokens = tokens.slice(exprStart, exprEnd);
                     const expression = this.parseExpressionFromTokens(exprTokens);
-                    consequent.push({
+                    allStatements.push({
                         type: 'OutputStatement',
                         line: token.line,
                         column: token.column,
@@ -540,7 +548,7 @@ class WorkerInterpreter {
                     
                     const exprTokens = tokens.slice(exprStart, exprEnd);
                     const value = this.parseExpressionFromTokens(exprTokens);
-                    consequent.push({
+                    allStatements.push({
                         type: 'AssignmentStatement',
                         line: token.line,
                         column: token.column,
@@ -562,12 +570,7 @@ class WorkerInterpreter {
         }
         
         return {
-            statement: {
-                type: 'IfStatement',
-                line: ifLine,
-                condition,
-                consequent,
-            },
+            statements: allStatements,
         };
     }
 

@@ -63,12 +63,14 @@ export interface NewlineStatement extends ASTNode {
 }
 
 /**
- * IF条件分岐ステートメント (例: ;=A>100 ?=100)
+ * IF条件分岐ステートメント (例: ;=A>100)
+ * VTL仕様: 条件が偽の場合、同じ行の後続ステートメントをスキップする
+ * インタプリタ側で制御フローを処理する
  */
 export interface IfStatement extends ASTNode {
     type: 'IfStatement';
     condition: Expression;
-    consequent: Statement[];
+    // consequentは削除：後続ステートメントは同じLine.statements[]内に独立して存在
 }
 
 /**
