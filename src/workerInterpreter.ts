@@ -188,7 +188,17 @@ class WorkerInterpreter {
 
     /**
      * トークンのリストからASTを構築します（テスト用の互換性メソッド）。
-     * 新しい実装ではloadScript()内で自動的にparseStatementString()が呼ばれます。
+     * 
+     * @internal このメソッドはPhase 2のテスト互換性のために残されています。
+     * 本番コードでは使用されず、loadScript()内で自動的にparseStatementString()が呼ばれます。
+     * 
+     * @deprecated Phase 3完了後、テストをloadScript()ベースに書き換えて削除予定。
+     * 中長期的には以下のように書き換えを推奨：
+     * ```
+     * // 現在: const ast = interpreter.parse(lexer.tokenizeLine(...));
+     * // 将来: const program = interpreter.loadScript("A=10 B=20");
+     * ```
+     * 
      * @param tokens トークンの配列
      * @returns Program ASTノード
      */
@@ -217,6 +227,10 @@ class WorkerInterpreter {
 
     /**
      * トークン列から単一のステートメントをパースします。
+     * 
+     * parse()メソッドの実装を支えるヘルパーメソッド。
+     * parse()削除時にこのメソッドも削除予定。
+     * 
      * @param tokens トークン配列
      * @param startIndex 開始位置
      * @returns パースされたStatementと次のインデックス
