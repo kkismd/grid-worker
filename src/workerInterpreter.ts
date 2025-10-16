@@ -1,7 +1,7 @@
 // src/workerInterpreter.ts
 
-import { Lexer, TokenType, type Token } from './lexer';
-import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast';
+import { Lexer, TokenType, type Token } from './lexer.js';
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast.js';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。

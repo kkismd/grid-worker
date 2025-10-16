@@ -1,3 +1,6 @@
+// src/index.ts
+import WorkerInterpreter from './workerInterpreter.js';
+
 // --- Constants ---
 const GRID_WIDTH = 100;
 const GRID_HEIGHT = 100;
@@ -8,6 +11,9 @@ const GRID_AREA = GRID_WIDTH * GRID_HEIGHT;
 
 // --- State ---
 const gridData: number[] = new Array(GRID_AREA).fill(0);
+let currentInterpreter: WorkerInterpreter | null = null;
+let executionGenerator: Generator<void, void, unknown> | null = null;
+let executionInterval: number | null = null;
 
 // --- DOM Elements ---
 const canvas = document.getElementById('grid-canvas') as HTMLCanvasElement;
@@ -29,7 +35,9 @@ function drawCell(index: number) {
     const y = Math.floor(index / GRID_WIDTH) * CELL_SIZE;
     const value = gridData[index] ?? 0; // Default to 0 if somehow undefined
 
-    ctx.fillStyle = value === 0 ? 'black' : 'white';
+    // 0-255の値をグレースケールに変換
+    const grayValue = Math.floor(value);
+    ctx.fillStyle = `rgb(${grayValue}, ${grayValue}, ${grayValue})`;
     ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
 }
 
@@ -47,26 +55,34 @@ function drawGrid() {
 /**
  * Retrieves the value of a cell at a given index.
  * @param index The index of the cell.
- * @returns The value of the cell (0 or 1).
+ * @returns The value of the cell (0-255).
  */
 function peek(index: number): number {
     if (index < 0 || index >= GRID_AREA) {
-        throw new Error(`peek(): index ${index} is out of bounds.`);
+        return 0; // 範囲外は0を返す
     }
-    // We use a non-null assertion (!) because the check above ensures the index is valid.
-    return gridData[index]!;
+    return gridData[index] ?? 0;
 }
 
 /**
- * Updates the value of a cell at a given index and redraws it.
- * @param index The index of the cell.
- * @param value The new value for the cell (should be 0 or 1).
+ * Updates the value of a cell at given coordinates and redraws it.
+ * @param x The x coordinate (0-99).
+ * @param y The y coordinate (0-99).
+ * @param value The new value for the cell (0-255).
  */
-function poke(index: number, value: number): void {
+function poke(x: number, y: number, value: number): void {
+    // X, Yを0-99に正規化
+    const xMod = ((Math.floor(x) % 100) + 100) % 100;
+    const yMod = ((Math.floor(y) % 100) + 100) % 100;
+    const index = xMod * 100 + yMod;
+    
     if (index < 0 || index >= GRID_AREA) {
-        throw new Error(`poke(): index ${index} is out of bounds.`);
+        return; // 範囲外は無視
     }
-    gridData[index] = value;
+    
+    // 値を0-255にクランプ
+    const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+    gridData[index] = clampedValue;
     drawCell(index);
 }
 
@@ -75,9 +91,14 @@ function poke(index: number, value: number): void {
  * @param args The values to log.
  */
 function log(...args: any[]): void {
-    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+    const message = args.map(arg => {
+        if (typeof arg === 'string') return arg;
+        if (typeof arg === 'number') return String(arg);
+        return JSON.stringify(arg);
+    }).join(' ');
+    
     const logEntry = document.createElement('div');
-    logEntry.textContent = `> ${message}`;
+    logEntry.textContent = message;
     transcriptArea.appendChild(logEntry);
     transcriptArea.scrollTop = transcriptArea.scrollHeight; // Auto-scroll
 }
@@ -85,17 +106,81 @@ function log(...args: any[]): void {
 // --- Execution Logic ---
 
 /**
- * Executes the script from the textarea.
+ * Stops the current script execution.
+ */
+function stopExecution() {
+    if (executionInterval !== null) {
+        clearInterval(executionInterval);
+        executionInterval = null;
+    }
+    executionGenerator = null;
+    executeButton.textContent = 'Execute';
+    executeButton.disabled = false;
+}
+
+/**
+ * Executes one step of the script.
+ */
+function executeStep() {
+    if (!executionGenerator) {
+        stopExecution();
+        return;
+    }
+
+    try {
+        const result = executionGenerator.next();
+        if (result.done) {
+            stopExecution();
+            log('--- Script execution completed ---');
+        }
+    } catch (error) {
+        stopExecution();
+        if (error instanceof Error) {
+            log(`Error: ${error.message}`);
+        } else {
+            log(`An unknown error occurred.`);
+        }
+    }
+}
+
+/**
+ * Executes the script from the textarea using WorkerInterpreter.
  */
 function executeScript() {
     const userScript = scriptInput.value;
     if (!userScript) return;
 
+    // 既存の実行を停止
+    stopExecution();
+
+    // トランスクリプトをクリア
+    transcriptArea.innerHTML = '';
+    log('--- Starting script execution ---');
+
     try {
-        // Create a sandboxed function with our API as arguments.
-        const sandboxedExecutor = new Function('peek', 'poke', 'log', userScript);
-        sandboxedExecutor(peek, poke, log);
+        // WorkerInterpreterのインスタンスを作成
+        currentInterpreter = new WorkerInterpreter({
+            gridData: gridData,
+            peekFn: peek,
+            pokeFn: poke,
+            logFn: log,
+        });
+
+        // スクリプトをロード
+        currentInterpreter.loadScript(userScript);
+
+        // 実行ジェネレータを取得
+        executionGenerator = currentInterpreter.run();
+
+        // ボタンを更新
+        executeButton.textContent = 'Running...';
+        executeButton.disabled = true;
+
+        // 定期的にステップを実行（60 FPS相当）
+        executionInterval = window.setInterval(executeStep, 1000 / 60);
+
     } catch (error) {
+        stopExecution();
         if (error instanceof Error) {
             log(`Error: ${error.message}`);
         } else {
@@ -108,13 +193,17 @@ function executeScript() {
 executeButton.addEventListener('click', executeScript);
 drawGrid(); // Draw the initial grid on load.
 
-log('System initialized. Ready to execute script.');
+log('WorkerScript Interpreter initialized. Ready to execute script.');
+log('');
 
 // Example script for user convenience
-scriptInput.value = `// Example: Draw a white diagonal line
-for (let i = 0; i < 100; i++) {
-    const index = i * 100 + i;
-    poke(index, 1);
-}
-log('Diagonal line drawn!');
+scriptInput.value = `: Draw a diagonal line
+X=0 Y=0
+I=0,99
+  X=I Y=I
+  $=255
+  @=I
+
+?="Diagonal line drawn!"
 `;
+
