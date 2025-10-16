@@ -9,16 +9,39 @@ const CANVAS_WIDTH = GRID_WIDTH * CELL_SIZE;
 const CANVAS_HEIGHT = GRID_HEIGHT * CELL_SIZE;
 const GRID_AREA = GRID_WIDTH * GRID_HEIGHT;
 
+// Speed presets
+const SPEED_PRESETS = [
+    { name: 'Very Slow', stepsPerFrame: 1 },
+    { name: 'Slow', stepsPerFrame: 10 },
+    { name: 'Fast', stepsPerFrame: 1000 },
+    { name: 'Very Fast', stepsPerFrame: 10000 },
+    { name: 'Maximum', stepsPerFrame: 100000 },
+];
+
+// --- Worker Management ---
+interface Worker {
+    id: number;
+    interpreter: WorkerInterpreter | null;
+    generator: Generator<void, void, unknown> | null;
+    status: 'stopped' | 'running' | 'paused';
+    stepCount: number;
+}
+
 // --- State ---
 const gridData: number[] = new Array(GRID_AREA).fill(0);
-let currentInterpreter: WorkerInterpreter | null = null;
-let executionGenerator: Generator<void, void, unknown> | null = null;
-let executionInterval: number | null = null;
+const workers: Map<number, Worker> = new Map();
+let nextWorkerId = 1;
+let globalInterval: number | null = null;
+let currentStepsPerFrame = 1000; // Default to "Fast"
 
 // --- DOM Elements ---
 const canvas = document.getElementById('grid-canvas') as HTMLCanvasElement;
-const scriptInput = document.getElementById('script-input') as HTMLTextAreaElement;
-const executeButton = document.getElementById('execute-button') as HTMLButtonElement;
+const workersContainer = document.getElementById('workers-container') as HTMLDivElement;
+const addWorkerButton = document.getElementById('add-worker-btn') as HTMLButtonElement;
+const startAllButton = document.getElementById('start-all-btn') as HTMLButtonElement;
+const clearButton = document.getElementById('clear-btn') as HTMLButtonElement;
+const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
+const speedInfo = document.getElementById('speed-info') as HTMLDivElement;
 const transcriptArea = document.getElementById('transcript-area') as HTMLDivElement;
 const ctx = canvas.getContext('2d');
 
@@ -48,6 +71,15 @@ function drawGrid() {
     for (let i = 0; i < GRID_AREA; i++) {
         drawCell(i);
     }
+}
+
+/**
+ * Clears the entire grid to black (0).
+ */
+function clearGrid() {
+    gridData.fill(0);
+    drawGrid();
+    log('Grid cleared.');
 }
 
 // --- Scripting API ---
@@ -106,104 +138,296 @@ function log(...args: any[]): void {
 // --- Execution Logic ---
 
 /**
- * Stops the current script execution.
+ * Stops the global execution loop.
  */
-function stopExecution() {
-    if (executionInterval !== null) {
-        clearInterval(executionInterval);
-        executionInterval = null;
+function stopGlobalExecution() {
+    if (globalInterval !== null) {
+        clearInterval(globalInterval);
+        globalInterval = null;
     }
-    executionGenerator = null;
-    executeButton.textContent = 'Execute';
-    executeButton.disabled = false;
 }
 
 /**
- * Executes one step of the script.
+ * Starts the global execution loop.
  */
-function executeStep() {
-    if (!executionGenerator) {
-        stopExecution();
+function startGlobalExecution() {
+    if (globalInterval !== null) return; // Already running
+    
+    globalInterval = window.setInterval(() => {
+        executeGlobalStep();
+    }, 1000 / 60); // 60 FPS
+}
+
+/**
+ * Executes one frame for all active workers.
+ */
+function executeGlobalStep() {
+    let hasActiveWorkers = false;
+    
+    workers.forEach((worker) => {
+        if (worker.status !== 'running' || !worker.generator) return;
+        
+        hasActiveWorkers = true;
+        
+        try {
+            // Execute multiple steps per frame based on speed setting
+            for (let i = 0; i < currentStepsPerFrame; i++) {
+                const result = worker.generator.next();
+                worker.stepCount++;
+                
+                if (result.done) {
+                    worker.status = 'stopped';
+                    updateWorkerStatus(worker.id);
+                    log(`Worker ${worker.id} completed.`);
+                    break;
+                }
+            }
+            
+            updateWorkerStatus(worker.id);
+        } catch (error) {
+            worker.status = 'stopped';
+            updateWorkerStatus(worker.id);
+            if (error instanceof Error) {
+                log(`Worker ${worker.id} error: ${error.message}`);
+            } else {
+                log(`Worker ${worker.id} encountered an unknown error.`);
+            }
+        }
+    });
+    
+    // Stop global loop if no active workers
+    if (!hasActiveWorkers) {
+        stopGlobalExecution();
+    }
+}
+
+// --- Worker Management Functions ---
+
+/**
+ * Updates the status display of a worker.
+ */
+function updateWorkerStatus(workerId: number) {
+    const worker = workers.get(workerId);
+    if (!worker) return;
+    
+    const statusElement = document.getElementById(`status-${workerId}`);
+    if (statusElement) {
+        statusElement.textContent = `${worker.status} (${worker.stepCount} steps)`;
+        statusElement.className = `worker-status status-${worker.status}`;
+    }
+}
+
+/**
+ * Starts a worker.
+ */
+function startWorker(workerId: number) {
+    const worker = workers.get(workerId);
+    if (!worker) return;
+    
+    const textarea = document.getElementById(`script-${workerId}`) as HTMLTextAreaElement;
+    if (!textarea) return;
+    
+    const script = textarea.value.trim();
+    if (!script) {
+        log(`Worker ${workerId}: No script to execute.`);
         return;
     }
-
+    
     try {
-        const result = executionGenerator.next();
-        if (result.done) {
-            stopExecution();
-            log('--- Script execution completed ---');
-        }
+        // Create new interpreter
+        worker.interpreter = new WorkerInterpreter({
+            gridData: gridData,
+            peekFn: peek,
+            pokeFn: (x, y, value) => poke(x, y, value),
+            logFn: (...args) => log(`[Worker ${workerId}]`, ...args),
+        });
+        
+        worker.interpreter.loadScript(script);
+        worker.generator = worker.interpreter.run();
+        worker.status = 'running';
+        worker.stepCount = 0;
+        
+        updateWorkerStatus(workerId);
+        startGlobalExecution();
+        
+        log(`Worker ${workerId} started.`);
     } catch (error) {
-        stopExecution();
+        worker.status = 'stopped';
+        updateWorkerStatus(workerId);
         if (error instanceof Error) {
-            log(`Error: ${error.message}`);
-        } else {
-            log(`An unknown error occurred.`);
+            log(`Worker ${workerId} error: ${error.message}`);
         }
     }
 }
 
 /**
- * Executes the script from the textarea using WorkerInterpreter.
+ * Pauses a worker.
  */
-function executeScript() {
-    const userScript = scriptInput.value;
-    if (!userScript) return;
+function pauseWorker(workerId: number) {
+    const worker = workers.get(workerId);
+    if (!worker || worker.status !== 'running') return;
+    
+    worker.status = 'paused';
+    updateWorkerStatus(workerId);
+    log(`Worker ${workerId} paused.`);
+}
 
-    // 既存の実行を停止
-    stopExecution();
+/**
+ * Resumes a worker.
+ */
+function resumeWorker(workerId: number) {
+    const worker = workers.get(workerId);
+    if (!worker || worker.status !== 'paused' || !worker.generator) return;
+    
+    worker.status = 'running';
+    updateWorkerStatus(workerId);
+    startGlobalExecution();
+    log(`Worker ${workerId} resumed.`);
+}
 
-    // トランスクリプトをクリア
-    transcriptArea.innerHTML = '';
-    log('--- Starting script execution ---');
+/**
+ * Stops a worker.
+ */
+function stopWorker(workerId: number) {
+    const worker = workers.get(workerId);
+    if (!worker) return;
+    
+    worker.status = 'stopped';
+    worker.generator = null;
+    worker.interpreter = null;
+    updateWorkerStatus(workerId);
+    log(`Worker ${workerId} stopped.`);
+}
 
-    try {
-        // WorkerInterpreterのインスタンスを作成
-        currentInterpreter = new WorkerInterpreter({
-            gridData: gridData,
-            peekFn: peek,
-            pokeFn: poke,
-            logFn: log,
-        });
+/**
+ * Removes a worker.
+ */
+function removeWorker(workerId: number) {
+    stopWorker(workerId);
+    workers.delete(workerId);
+    
+    const card = document.getElementById(`worker-${workerId}`);
+    if (card) {
+        card.remove();
+    }
+    
+    log(`Worker ${workerId} removed.`);
+}
 
-        // スクリプトをロード
-        currentInterpreter.loadScript(userScript);
-
-        // 実行ジェネレータを取得
-        executionGenerator = currentInterpreter.run();
-
-        // ボタンを更新
-        executeButton.textContent = 'Running...';
-        executeButton.disabled = true;
-
-        // 定期的にステップを実行（60 FPS相当）
-        executionInterval = window.setInterval(executeStep, 1000 / 60);
-
-    } catch (error) {
-        stopExecution();
-        if (error instanceof Error) {
-            log(`Error: ${error.message}`);
-        } else {
-            log(`An unknown error occurred.`);
+/**
+ * Starts all workers.
+ */
+function startAllWorkers() {
+    let startedCount = 0;
+    workers.forEach((worker) => {
+        if (worker.status === 'stopped') {
+            startWorker(worker.id);
+            startedCount++;
         }
+    });
+    
+    if (startedCount > 0) {
+        log(`Started ${startedCount} worker(s).`);
+    } else {
+        log('No workers to start.');
     }
 }
 
-// --- Initialization ---
-executeButton.addEventListener('click', executeScript);
-drawGrid(); // Draw the initial grid on load.
-
-log('WorkerScript Interpreter initialized. Ready to execute script.');
-log('');
-
-// Example script for user convenience
-scriptInput.value = `: Draw a diagonal line
-X=0 Y=0
+/**
+ * Adds a new worker card to the UI.
+ */
+function addWorker() {
+    const workerId = nextWorkerId++;
+    
+    // Create worker object
+    const worker: Worker = {
+        id: workerId,
+        interpreter: null,
+        generator: null,
+        status: 'stopped',
+        stepCount: 0,
+    };
+    
+    workers.set(workerId, worker);
+    
+    // Create card HTML
+    const card = document.createElement('div');
+    card.className = 'worker-card';
+    card.id = `worker-${workerId}`;
+    card.innerHTML = `
+        <div class="worker-header">
+            <span class="worker-title">Worker ${workerId}</span>
+            <button class="remove-btn" data-worker-id="${workerId}">×</button>
+        </div>
+        <textarea class="worker-script" id="script-${workerId}" placeholder="Enter WorkerScript here...">: Worker ${workerId}
 I=0,99
-  X=I Y=I
+  X=I Y=${workerId * 5}
   $=255
   @=I
+?="Worker ${workerId} done!"</textarea>
+        <div class="worker-controls">
+            <button class="start-btn" data-worker-id="${workerId}">Start</button>
+            <button class="pause-btn" data-worker-id="${workerId}">Pause</button>
+            <button class="resume-btn" data-worker-id="${workerId}">Resume</button>
+            <button class="stop-btn" data-worker-id="${workerId}">Stop</button>
+        </div>
+        <div class="worker-status status-stopped" id="status-${workerId}">stopped (0 steps)</div>
+    `;
+    
+    workersContainer.appendChild(card);
+    log(`Worker ${workerId} added.`);
+}
 
-?="Diagonal line drawn!"
-`;
+// --- Event Handlers ---
 
+// Speed slider
+speedSlider.addEventListener('input', () => {
+    const index = parseInt(speedSlider.value) - 1;
+    const preset = SPEED_PRESETS[index];
+    if (preset) {
+        currentStepsPerFrame = preset.stepsPerFrame;
+        speedInfo.textContent = `${preset.name} (${preset.stepsPerFrame} steps/frame)`;
+    }
+});
+
+// Add worker button
+addWorkerButton.addEventListener('click', addWorker);
+
+// Start all button
+startAllButton.addEventListener('click', startAllWorkers);
+
+// Clear grid button
+clearButton.addEventListener('click', clearGrid);
+
+// Event delegation for worker controls
+workersContainer.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.dataset.workerId) return;
+    
+    const workerId = parseInt(target.dataset.workerId);
+    
+    if (target.classList.contains('start-btn')) {
+        startWorker(workerId);
+    } else if (target.classList.contains('pause-btn')) {
+        pauseWorker(workerId);
+    } else if (target.classList.contains('resume-btn')) {
+        resumeWorker(workerId);
+    } else if (target.classList.contains('stop-btn')) {
+        stopWorker(workerId);
+    } else if (target.classList.contains('remove-btn')) {
+        removeWorker(workerId);
+    }
+});
+
+// --- Initialization ---
+drawGrid(); // Draw the initial grid on load.
+
+// Initialize speed display
+const defaultPreset = SPEED_PRESETS[2]; // "Fast"
+if (defaultPreset) {
+    speedInfo.textContent = `${defaultPreset.name} (${defaultPreset.stepsPerFrame} steps/frame)`;
+}
+
+log('Multi-Worker System initialized.');
+log('Click "Add New Worker" to create workers.');
+log('');
