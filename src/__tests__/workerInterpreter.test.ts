@@ -586,6 +586,7 @@ describe('Parser (TDD Cycle 2.5)', () => {
                         {
                             type: 'IfStatement',
                             line: 0,
+                            column: 0,
                             condition: {
                                 type: 'BinaryExpression',
                                 line: 0,
@@ -631,6 +632,7 @@ describe('Parser (TDD Cycle 2.5)', () => {
                         {
                             type: 'IfStatement',
                             line: 0,
+                            column: 0,
                             condition: {
                                 type: 'BinaryExpression',
                                 line: 0,
@@ -1153,5 +1155,181 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         const binaryExpr = assignStmt.value as any;
         expect(binaryExpr.left.type).toBe('PeekExpression');
         expect(binaryExpr.operator).toBe('-');
+    });
+});
+
+describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse multiple assignments on one line (A=10 B=20 C=30)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 6 },
+            { type: TokenType.NUMBER, value: '20', line: 0, column: 7 },
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 10 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
+            { type: TokenType.NUMBER, value: '30', line: 0, column: 12 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(3);
+        
+        const stmt1 = ast.body[0]?.statements[0];
+        expect(stmt1?.type).toBe('AssignmentStatement');
+        const assign1 = stmt1 as any;
+        expect(assign1.variable.name).toBe('A');
+        expect(assign1.value.value).toBe(10);
+        
+        const stmt2 = ast.body[0]?.statements[1];
+        expect(stmt2?.type).toBe('AssignmentStatement');
+        const assign2 = stmt2 as any;
+        expect(assign2.variable.name).toBe('B');
+        expect(assign2.value.value).toBe(20);
+        
+        const stmt3 = ast.body[0]?.statements[2];
+        expect(stmt3?.type).toBe('AssignmentStatement');
+        const assign3 = stmt3 as any;
+        expect(assign3.variable.name).toBe('C');
+        expect(assign3.value.value).toBe(30);
+    });
+
+    test('should parse assignment with output (A=10 B=20 ?=A+B)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 6 },
+            { type: TokenType.NUMBER, value: '20', line: 0, column: 7 },
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 10 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 12 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 13 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 14 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(3);
+        
+        expect(ast.body[0]?.statements[0]?.type).toBe('AssignmentStatement');
+        expect(ast.body[0]?.statements[1]?.type).toBe('AssignmentStatement');
+        expect(ast.body[0]?.statements[2]?.type).toBe('OutputStatement');
+    });
+
+    test('should parse IF with multiple subsequent statements (;=A>10 ?="Yes" B=1)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 7 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 8 },
+            { type: TokenType.STRING, value: 'Yes', line: 0, column: 9 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 15 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 16 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 17 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(3);
+        
+        expect(ast.body[0]?.statements[0]?.type).toBe('IfStatement');
+        expect(ast.body[0]?.statements[1]?.type).toBe('OutputStatement');
+        expect(ast.body[0]?.statements[2]?.type).toBe('AssignmentStatement');
+    });
+
+    test('should parse FOR loop with output and NEXT (I=1,10 ?=I @=I)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 2 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 7 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 8 },
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 9 },
+            { type: TokenType.AT, value: '@', line: 0, column: 11 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 12 },
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 13 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(3);
+        
+        expect(ast.body[0]?.statements[0]?.type).toBe('ForStatement');
+        expect(ast.body[0]?.statements[1]?.type).toBe('OutputStatement');
+        expect(ast.body[0]?.statements[2]?.type).toBe('NextStatement');
+    });
+
+    test('should parse PEEK/POKE with assignment (A=$ $=A+1 B=$)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 2 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 4 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 5 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 6 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 7 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 8 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 10 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
+            { type: TokenType.DOLLAR, value: '$', line: 0, column: 12 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(3);
+        
+        const stmt1 = ast.body[0]?.statements[0];
+        expect(stmt1?.type).toBe('AssignmentStatement');
+        const assign1 = stmt1 as any;
+        expect(assign1.value.type).toBe('PeekExpression');
+        
+        const stmt2 = ast.body[0]?.statements[1];
+        expect(stmt2?.type).toBe('PokeStatement');
+        
+        const stmt3 = ast.body[0]?.statements[2];
+        expect(stmt3?.type).toBe('AssignmentStatement');
+        const assign3 = stmt3 as any;
+        expect(assign3.value.type).toBe('PeekExpression');
+    });
+
+    test('should parse complex line with control flow (;=X>0 #=^SKIP A=1 B=2)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'X', line: 0, column: 2 },
+            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '0', line: 0, column: 4 },
+            { type: TokenType.HASH, value: '#', line: 0, column: 6 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 7 },
+            { type: TokenType.LABEL_DEFINITION, value: '^SKIP', line: 0, column: 8 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 14 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 15 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 16 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 18 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 19 },
+            { type: TokenType.NUMBER, value: '2', line: 0, column: 20 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(4);
+        
+        expect(ast.body[0]?.statements[0]?.type).toBe('IfStatement');
+        expect(ast.body[0]?.statements[1]?.type).toBe('GotoStatement');
+        expect(ast.body[0]?.statements[2]?.type).toBe('AssignmentStatement');
+        expect(ast.body[0]?.statements[3]?.type).toBe('AssignmentStatement');
     });
 });

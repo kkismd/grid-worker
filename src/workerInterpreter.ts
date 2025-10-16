@@ -245,8 +245,8 @@ class WorkerInterpreter {
                                 line: token.line,
                                 column: token.column,
                             });
-                            // すべてのトークンを消費
-                            index = tokens.length;
+                            // #=-1 は4トークン消費
+                            index += 4;
                             continue;
                         }
                     }
@@ -260,8 +260,8 @@ class WorkerInterpreter {
                             column: token.column,
                             target: labelName,
                         });
-                        // すべてのトークンを消費
-                        index = tokens.length;
+                        // #=^LABEL は3トークン消費
+                        index += 3;
                         continue;
                     }
                     
@@ -286,8 +286,8 @@ class WorkerInterpreter {
                             column: token.column,
                             target: labelName,
                         });
-                        // すべてのトークンを消費
-                        index = tokens.length;
+                        // !=^LABEL は3トークン消費
+                        index += 3;
                         continue;
                     }
                     
@@ -301,10 +301,17 @@ class WorkerInterpreter {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // ;= の後の条件式と後続のステートメントを解析
-                    const result = this.parseIfStatement(tokens, index, index + 2);
-                    statements.push(...result.statements); // 複数のステートメントを追加
-                    index = tokens.length; // すべてのトークンを消費
+                    // ;= の後の条件式を解析
+                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
+                    
+                    statements.push({
+                        type: 'IfStatement',
+                        line: token.line,
+                        column: token.column,
+                        condition: exprResult.expr,
+                    });
+                    
+                    index += 2 + exprResult.consumed; // ;= + 式
                     continue;
                 }
             }
@@ -314,19 +321,18 @@ class WorkerInterpreter {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // ?= の後の全トークンを式として解析
-                    const exprTokens = tokens.slice(index + 2);
-                    const expression = this.parseExpressionFromTokens(exprTokens);
+                    // ?= の後から式を解析
+                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
                     
                     statements.push({
                         type: 'OutputStatement',
                         line: token.line,
                         column: token.column,
-                        expression,
+                        expression: exprResult.expr,
                     });
                     
-                    // すべてのトークンを消費
-                    index = tokens.length;
+                    // ?= + 式
+                    index += 2 + exprResult.consumed;
                     continue;
                 }
             }
@@ -350,8 +356,8 @@ class WorkerInterpreter {
                                 column: thirdToken.column,
                             },
                         });
-                        // すべてのトークンを消費
-                        index = tokens.length;
+                        // @=I は3トークン消費
+                        index += 3;
                         continue;
                     }
                     
@@ -364,19 +370,18 @@ class WorkerInterpreter {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // = の後のトークンを取得
-                    const exprTokens = tokens.slice(index + 2);
-                    const value = this.parseExpressionFromTokens(exprTokens);
+                    // = の後から式を解析
+                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
                     
                     statements.push({
                         type: 'PokeStatement',
                         line: token.line,
                         column: token.column,
-                        value,
+                        value: exprResult.expr,
                     });
                     
-                    // すべてのトークンを消費
-                    index = tokens.length;
+                    // $= + 式
+                    index += 2 + exprResult.consumed;
                     continue;
                 }
             }
@@ -393,70 +398,50 @@ class WorkerInterpreter {
                         column: token.column,
                     };
                     
-                    // = の後のトークンを取得
-                    const exprTokens = tokens.slice(index + 2);
+                    // = の後の式を解析（カンマも演算子として解析される）
+                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
                     
-                    // カンマが含まれているかチェック（FORループの判定）
-                    const commaIndex = exprTokens.findIndex(t => t?.type === TokenType.COMMA);
-                    
-                    if (commaIndex !== -1) {
+                    // 式がカンマを含むBinaryExpressionかチェック（FORループ判定）
+                    if (this.isCommaExpression(exprResult.expr)) {
                         // FORループ: I=start,end[,step]
-                        const startTokens = exprTokens.slice(0, commaIndex);
-                        const start = this.parseExpressionFromTokens(startTokens);
+                        const parts = this.extractCommaExpressionParts(exprResult.expr);
                         
-                        // 2番目のカンマを探す
-                        const remainingTokens = exprTokens.slice(commaIndex + 1);
-                        const secondCommaIndex = remainingTokens.findIndex(t => t?.type === TokenType.COMMA);
-                        
-                        let end: Expression;
-                        let step: Expression | undefined;
-                        
-                        if (secondCommaIndex !== -1) {
-                            // ステップ値あり
-                            const endTokens = remainingTokens.slice(0, secondCommaIndex);
-                            end = this.parseExpressionFromTokens(endTokens);
-                            
-                            const stepTokens = remainingTokens.slice(secondCommaIndex + 1);
-                            step = this.parseExpressionFromTokens(stepTokens);
-                            
+                        if (parts.length === 2) {
+                            // I=start,end（ステップ省略）
                             statements.push({
                                 type: 'ForStatement',
                                 line: token.line,
                                 column: token.column,
                                 variable,
-                                start,
-                                end,
-                                step,
+                                start: parts[0]!,
+                                end: parts[1]!,
+                            });
+                        } else if (parts.length === 3) {
+                            // I=start,end,step
+                            statements.push({
+                                type: 'ForStatement',
+                                line: token.line,
+                                column: token.column,
+                                variable,
+                                start: parts[0]!,
+                                end: parts[1]!,
+                                step: parts[2]!,
                             });
                         } else {
-                            // ステップ値なし（デフォルト1）
-                            end = this.parseExpressionFromTokens(remainingTokens);
-                            
-                            statements.push({
-                                type: 'ForStatement',
-                                line: token.line,
-                                column: token.column,
-                                variable,
-                                start,
-                                end,
-                                // stepは省略（undefinedを明示的に設定しない）
-                            });
+                            throw new Error(`構文エラー: FORループの式が不正です (行: ${token.line + 1}, 列: ${token.column + 1})`);
                         }
                     } else {
                         // 通常の代入ステートメント
-                        const value = this.parseExpressionFromTokens(exprTokens);
-                        
                         statements.push({
                             type: 'AssignmentStatement',
                             line: token.line,
                             column: token.column,
                             variable,
-                            value,
+                            value: exprResult.expr,
                         });
                     }
+                    index += 2 + exprResult.consumed; // variable= + 式
                     
-                    // すべてのトークンを消費
-                    index = tokens.length;
                     continue;
                 }
             }
@@ -526,20 +511,21 @@ class WorkerInterpreter {
      * トークンの配列から式を解析します（複数トークンの式をサポート）。
      * VTL系言語の仕様に従い、左から右へ評価します（括弧は優先順位を変更）。
      * @param tokens 式のトークン配列
-     * @returns Expression ASTノード
+     * @returns Expression ASTノードと消費したトークン数
      */
-    private parseExpressionFromTokens(tokens: Token[]): Expression {
+    private parseExpressionFromTokens(tokens: Token[]): { expr: Expression; consumed: number } {
         if (tokens.length === 0) {
             throw new Error('構文エラー: 式が空です');
         }
 
         // 単一トークンの場合
         if (tokens.length === 1) {
-            return this.parseExpression(tokens[0]!);
+            return { expr: this.parseExpression(tokens[0]!), consumed: 1 };
         }
 
         // 括弧がある場合の処理
-        return this.parseBinaryExpression(tokens, 0).expr;
+        const result = this.parseBinaryExpression(tokens, 0);
+        return { expr: result.expr, consumed: result.nextIndex };
     }
 
     /**
@@ -654,131 +640,6 @@ class WorkerInterpreter {
     }
 
     /**
-     * IFステートメントと後続のステートメントを解析します。
-     * ;=条件 ステートメント1 ステートメント2 ... の形式
-     * 新しい設計: IFステートメントは条件のみを持ち、後続ステートメントは独立した要素として返される
-     * @param tokens トークン配列
-     * @param ifTokenIndex ;=の;のトークンインデックス
-     * @param conditionStart 条件式の開始インデックス
-     * @returns 解析されたステートメント配列（IF + 後続ステートメント）
-     */
-    private parseIfStatement(tokens: Token[], ifTokenIndex: number, conditionStart: number): { statements: Statement[] } {
-        const allStatements: Statement[] = [];
-        
-        // 条件式の終わりを見つける（次のステートメントの開始位置）
-        let conditionEnd = conditionStart;
-        let parenDepth = 0;
-        let foundConditionEnd = false;
-        
-        while (conditionEnd < tokens.length && !foundConditionEnd) {
-            const token = tokens[conditionEnd];
-            if (!token) break;
-            
-            if (token.type === TokenType.LEFT_PAREN) {
-                parenDepth++;
-                conditionEnd++;
-            } else if (token.type === TokenType.RIGHT_PAREN) {
-                parenDepth--;
-                conditionEnd++;
-            } else if (parenDepth === 0) {
-                // 括弧の外で、ステートメント区切り位置をチェック
-                if (this.isExpressionToken(token.type)) {
-                    conditionEnd++;
-                } else {
-                    // 式の一部でないトークンが見つかった
-                    foundConditionEnd = true;
-                }
-            } else {
-                conditionEnd++;
-            }
-        }
-        
-        // 条件式を解析
-        const conditionTokens = tokens.slice(conditionStart, conditionEnd);
-        const condition = this.parseExpressionFromTokens(conditionTokens);
-        
-        // IFステートメントの行番号は;=の;から
-        const ifToken = tokens[ifTokenIndex];
-        const ifLine = ifToken?.line ?? 0;
-        
-        // IFステートメント（条件のみ）を追加
-        allStatements.push({
-            type: 'IfStatement',
-            line: ifLine,
-            condition,
-        });
-        
-        // 後続のステートメントを個別に解析
-        let index = conditionEnd;
-        
-        while (index < tokens.length) {
-            const token = tokens[index];
-            if (!token) break;
-            
-            // 出力ステートメント (?=)
-            if (token.type === TokenType.QUESTION) {
-                const nextToken = tokens[index + 1];
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // 次の式の終わりを見つける
-                    const exprStart = index + 2;
-                    let exprEnd = exprStart;
-                    while (exprEnd < tokens.length && !this.isStatementStart(tokens[exprEnd]!.type)) {
-                        exprEnd++;
-                    }
-                    
-                    const exprTokens = tokens.slice(exprStart, exprEnd);
-                    const expression = this.parseExpressionFromTokens(exprTokens);
-                    allStatements.push({
-                        type: 'OutputStatement',
-                        line: token.line,
-                        column: token.column,
-                        expression,
-                    });
-                    index = exprEnd;
-                    continue;
-                }
-            }
-            
-            // 代入ステートメント
-            if (token.type === TokenType.IDENTIFIER) {
-                const nextToken = tokens[index + 1];
-                if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // 次の式の終わりを見つける
-                    const exprStart = index + 2;
-                    let exprEnd = exprStart;
-                    while (exprEnd < tokens.length && !this.isStatementStart(tokens[exprEnd]!.type)) {
-                        exprEnd++;
-                    }
-                    
-                    const exprTokens = tokens.slice(exprStart, exprEnd);
-                    const value = this.parseExpressionFromTokens(exprTokens);
-                    allStatements.push({
-                        type: 'AssignmentStatement',
-                        line: token.line,
-                        column: token.column,
-                        variable: { 
-                            type: 'Identifier', 
-                            name: token.value,
-                            line: token.line,
-                            column: token.column,
-                        },
-                        value,
-                    });
-                    index = exprEnd;
-                    continue;
-                }
-            }
-            
-            // その他のトークンがあれば終了
-            break;
-        }
-        
-        return {
-            statements: allStatements,
-        };
-    }
-
-    /**
      * トークンが式の一部として有効かどうかを判定します。
      * @param tokenType トークンタイプ
      * @returns 式トークンの場合true
@@ -812,6 +673,7 @@ class WorkerInterpreter {
             TokenType.NOT_EQUAL,
             TokenType.AMPERSAND,
             TokenType.PIPE,
+            TokenType.COMMA, // カンマ演算子（FORループ専用、最低優先度）
         ];
     }
 
@@ -830,7 +692,24 @@ class WorkerInterpreter {
             TokenType.RIGHT_BRACKET, // ] (RETURN)
             TokenType.AT,            // @= (NEXT)
             TokenType.SLASH,         // / (改行)
+            TokenType.DOLLAR,        // $= (POKE)
         ].includes(tokenType);
+    }
+
+    /**
+     * 次のステートメントの開始位置を見つけます
+     * @param tokens トークン配列
+     * @param startIndex 検索開始位置
+     * @returns 次のステートメントの開始インデックス、見つからなければtokens.length
+     */
+    private findNextStatementStart(tokens: Token[], startIndex: number): number {
+        for (let i = startIndex; i < tokens.length; i++) {
+            const token = tokens[i];
+            if (token && this.isStatementStart(token.type)) {
+                return i;
+            }
+        }
+        return tokens.length;
     }
 
     // TODO: 必要に応じて、式評価、変数解決などのヘルパーメソッドを追加
@@ -862,6 +741,34 @@ class WorkerInterpreter {
      */
     getLabelLine(labelName: string): number | undefined {
         return this.labels.get(labelName);
+    }
+
+    /**
+     * 式がカンマを含むBinaryExpressionかどうかを判定します。
+     * @param expr 式
+     * @returns カンマ式の場合true
+     */
+    private isCommaExpression(expr: Expression): boolean {
+        return expr.type === 'BinaryExpression' && expr.operator === ',';
+    }
+
+    /**
+     * カンマ式を展開して、コンマで区切られた部分式の配列を返します。
+     * 例: (A,B),C → [A, B, C]
+     * @param expr カンマを含むBinaryExpression
+     * @returns 部分式の配列
+     */
+    private extractCommaExpressionParts(expr: Expression): Expression[] {
+        if (expr.type !== 'BinaryExpression' || expr.operator !== ',') {
+            return [expr];
+        }
+        
+        // 左辺を再帰的に展開
+        const leftParts = this.extractCommaExpressionParts(expr.left);
+        // 右辺を再帰的に展開
+        const rightParts = this.extractCommaExpressionParts(expr.right);
+        
+        return [...leftParts, ...rightParts];
     }
 }
 
