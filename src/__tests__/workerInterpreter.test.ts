@@ -184,11 +184,16 @@ describe('Parser (TDD Cycle 2.1)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'A', line: 0, column: 0 },
-                    value: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
+                            line: 0,
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'A', line: 0, column: 0 },
+                            value: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
+                        },
+                    ],
                 },
             ],
         });
@@ -219,10 +224,15 @@ describe('Parser (TDD Cycle 2.2)', () => {
             line: 0,
             body: [
                 {
-                    type: 'OutputStatement',
-                    line: 0,
-                    column: 0,
-                    expression: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'OutputStatement',
+                            line: 0,
+                            column: 0,
+                            expression: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
+                        },
+                    ],
                 },
             ],
         });
@@ -240,10 +250,15 @@ describe('Parser (TDD Cycle 2.2)', () => {
             line: 0,
             body: [
                 {
-                    type: 'OutputStatement',
-                    line: 0,
-                    column: 0,
-                    expression: { type: 'StringLiteral', value: 'Hello', line: 0, column: 2 },
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'OutputStatement',
+                            line: 0,
+                            column: 0,
+                            expression: { type: 'StringLiteral', value: 'Hello', line: 0, column: 2 },
+                        },
+                    ],
                 },
             ],
         });
@@ -259,9 +274,14 @@ describe('Parser (TDD Cycle 2.2)', () => {
             line: 0,
             body: [
                 {
-                    type: 'NewlineStatement',
-                    line: 0,
-                    column: 0,
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'NewlineStatement',
+                            line: 0,
+                            column: 0,
+                        },
+                    ],
                 },
             ],
         });
@@ -294,17 +314,22 @@ describe('Parser (TDD Cycle 2.3)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'C', line: 0, column: 0 },
-                    value: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '+',
-                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
-                        right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
-                    },
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
+                            line: 0,
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'C', line: 0, column: 0 },
+                            value: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '+',
+                                left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                                right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
+                            },
+                        },
+                    ],
                 },
             ],
         });
@@ -327,23 +352,28 @@ describe('Parser (TDD Cycle 2.3)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'D', line: 0, column: 0 },
-                    value: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '-',
-                        left: {
-                            type: 'BinaryExpression',
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
                             line: 0,
-                            operator: '*',
-                            left: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
-                            right: { type: 'NumericLiteral', value: 5, line: 0, column: 5 },
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'D', line: 0, column: 0 },
+                            value: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '-',
+                                left: {
+                                    type: 'BinaryExpression',
+                                    line: 0,
+                                    operator: '*',
+                                    left: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
+                                    right: { type: 'NumericLiteral', value: 5, line: 0, column: 5 },
+                                },
+                                right: { type: 'NumericLiteral', value: 2, line: 0, column: 7 },
+                            },
                         },
-                        right: { type: 'NumericLiteral', value: 2, line: 0, column: 7 },
-                    },
+                    ],
                 },
             ],
         });
@@ -367,23 +397,28 @@ describe('Parser (TDD Cycle 2.3)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'E', line: 0, column: 0 },
-                    value: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '*',
-                        left: {
-                            type: 'BinaryExpression',
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
                             line: 0,
-                            operator: '+',
-                            left: { type: 'Identifier', name: 'A', line: 0, column: 3 },
-                            right: { type: 'Identifier', name: 'B', line: 0, column: 5 },
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'E', line: 0, column: 0 },
+                            value: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '*',
+                                left: {
+                                    type: 'BinaryExpression',
+                                    line: 0,
+                                    operator: '+',
+                                    left: { type: 'Identifier', name: 'A', line: 0, column: 3 },
+                                    right: { type: 'Identifier', name: 'B', line: 0, column: 5 },
+                                },
+                                right: { type: 'Identifier', name: 'C', line: 0, column: 8 },
+                            },
                         },
-                        right: { type: 'Identifier', name: 'C', line: 0, column: 8 },
-                    },
+                    ],
                 },
             ],
         });
@@ -416,17 +451,22 @@ describe('Parser (TDD Cycle 2.4)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'F', line: 0, column: 0 },
-                    value: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '>',
-                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
-                        right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
-                    },
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
+                            line: 0,
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'F', line: 0, column: 0 },
+                            value: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '>',
+                                left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                                right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
+                            },
+                        },
+                    ],
                 },
             ],
         });
@@ -446,17 +486,22 @@ describe('Parser (TDD Cycle 2.4)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'G', line: 0, column: 0 },
-                    value: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '=',
-                        left: { type: 'Identifier', name: 'X', line: 0, column: 2 },
-                        right: { type: 'Identifier', name: 'Y', line: 0, column: 4 },
-                    },
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
+                            line: 0,
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'G', line: 0, column: 0 },
+                            value: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '=',
+                                left: { type: 'Identifier', name: 'X', line: 0, column: 2 },
+                                right: { type: 'Identifier', name: 'Y', line: 0, column: 4 },
+                            },
+                        },
+                    ],
                 },
             ],
         });
@@ -479,23 +524,28 @@ describe('Parser (TDD Cycle 2.4)', () => {
             line: 0,
             body: [
                 {
-                    type: 'AssignmentStatement',
-                    line: 0,
-                    column: 0,
-                    variable: { type: 'Identifier', name: 'H', line: 0, column: 0 },
-                    value: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '|',
-                        left: {
-                            type: 'BinaryExpression',
+                    lineNumber: 0,
+                    statements: [
+                        {
+                            type: 'AssignmentStatement',
                             line: 0,
-                            operator: '&',
-                            left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
-                            right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'H', line: 0, column: 0 },
+                            value: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '|',
+                                left: {
+                                    type: 'BinaryExpression',
+                                    line: 0,
+                                    operator: '&',
+                                    left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                                    right: { type: 'Identifier', name: 'B', line: 0, column: 4 },
+                                },
+                                right: { type: 'Identifier', name: 'C', line: 0, column: 6 },
+                            },
                         },
-                        right: { type: 'Identifier', name: 'C', line: 0, column: 6 },
-                    },
+                    ],
                 },
             ],
         });
@@ -531,21 +581,26 @@ describe('Parser (TDD Cycle 2.5)', () => {
             line: 0,
             body: [
                 {
-                    type: 'IfStatement',
-                    line: 0,
-                    condition: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '>',
-                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
-                        right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
-                    },
-                    consequent: [
+                    lineNumber: 0,
+                    statements: [
                         {
-                            type: 'OutputStatement',
+                            type: 'IfStatement',
                             line: 0,
-                            column: 8,
-                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
+                            condition: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '>',
+                                left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                                right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
+                            },
+                            consequent: [
+                                {
+                                    type: 'OutputStatement',
+                                    line: 0,
+                                    column: 8,
+                                    expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
+                                },
+                            ],
                         },
                     ],
                 },
@@ -573,28 +628,33 @@ describe('Parser (TDD Cycle 2.5)', () => {
             line: 0,
             body: [
                 {
-                    type: 'IfStatement',
-                    line: 0,
-                    condition: {
-                        type: 'BinaryExpression',
-                        line: 0,
-                        operator: '>',
-                        left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
-                        right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
-                    },
-                    consequent: [
+                    lineNumber: 0,
+                    statements: [
                         {
-                            type: 'OutputStatement',
+                            type: 'IfStatement',
                             line: 0,
-                            column: 8,
-                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
-                        },
-                        {
-                            type: 'AssignmentStatement',
-                            line: 0,
-                            column: 14,
-                            variable: { type: 'Identifier', name: 'B', line: 0, column: 14 },
-                            value: { type: 'NumericLiteral', value: 200, line: 0, column: 16 },
+                            condition: {
+                                type: 'BinaryExpression',
+                                line: 0,
+                                operator: '>',
+                                left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
+                                right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
+                            },
+                            consequent: [
+                                {
+                                    type: 'OutputStatement',
+                                    line: 0,
+                                    column: 8,
+                                    expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
+                                },
+                                {
+                                    type: 'AssignmentStatement',
+                                    line: 0,
+                                    column: 14,
+                                    variable: { type: 'Identifier', name: 'B', line: 0, column: 14 },
+                                    value: { type: 'NumericLiteral', value: 200, line: 0, column: 16 },
+                                },
+                            ],
                         },
                     ],
                 },

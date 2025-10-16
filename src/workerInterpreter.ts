@@ -1,7 +1,7 @@
 // src/workerInterpreter.ts
 
 import { Lexer, TokenType, type Token } from './lexer';
-import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral } from './ast';
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。
@@ -116,7 +116,7 @@ class WorkerInterpreter {
      * @returns Program ASTノード
      */
     parse(tokens: Token[]): Program {
-        const body: Statement[] = [];
+        const statements: Statement[] = [];
         let index = 0;
 
         // プログラムの行番号は最初のトークンから取得、なければ0
@@ -137,7 +137,7 @@ class WorkerInterpreter {
 
             // 改行ステートメント (/)
             if (token.type === TokenType.SLASH) {
-                body.push({
+                statements.push({
                     type: 'NewlineStatement',
                     line: token.line,
                     column: token.column,
@@ -153,7 +153,7 @@ class WorkerInterpreter {
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
                     // ;= の後の条件式と後続のステートメントを解析
                     const result = this.parseIfStatement(tokens, index + 2);
-                    body.push(result.statement);
+                    statements.push(result.statement);
                     index = tokens.length; // すべてのトークンを消費
                     continue;
                 }
@@ -168,7 +168,7 @@ class WorkerInterpreter {
                     const exprTokens = tokens.slice(index + 2);
                     const expression = this.parseExpressionFromTokens(exprTokens);
                     
-                    body.push({
+                    statements.push({
                         type: 'OutputStatement',
                         line: token.line,
                         column: token.column,
@@ -196,7 +196,7 @@ class WorkerInterpreter {
                     const exprTokens = tokens.slice(index + 2);
                     const value = this.parseExpressionFromTokens(exprTokens);
                     
-                    body.push({
+                    statements.push({
                         type: 'AssignmentStatement',
                         line: token.line,
                         column: token.column,
@@ -213,6 +213,12 @@ class WorkerInterpreter {
             // その他のトークンがあればエラー
             throw new Error(`構文エラー: 予期しないトークン '${token.value}' (行: ${token.line + 1}, 列: ${token.column + 1})`);
         }
+
+        // Statement[]をLine[]でラップする
+        const body: Line[] = [{
+            lineNumber: programLine,
+            statements: statements,
+        }];
 
         return {
             type: 'Program',

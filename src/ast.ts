@@ -13,11 +13,20 @@ export interface ASTNode {
 }
 
 /**
+ * プログラムの1行を表す構造
+ */
+export interface Line {
+    lineNumber: number;           // 行番号（0-indexed）
+    statements: Statement[];      // その行に含まれるステートメントの配列
+    sourceText?: string;          // デバッグ用の元のソースコード
+}
+
+/**
  * プログラム全体を表すASTノード
  */
 export interface Program extends ASTNode {
     type: 'Program';
-    body: Statement[];
+    body: Line[];  // Statement[]ではなくLine[]
 }
 
 /**
