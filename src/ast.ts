@@ -40,7 +40,9 @@ export type Statement =
     | GotoStatement
     | GosubStatement
     | ReturnStatement
-    | HaltStatement;
+    | HaltStatement
+    | ForStatement
+    | NextStatement;
 
 /**
  * 代入ステートメント (例: A=10)
@@ -111,6 +113,27 @@ export interface ReturnStatement extends ASTNode {
  */
 export interface HaltStatement extends ASTNode {
     type: 'HaltStatement';
+}
+
+/**
+ * FORループステートメント (例: I=1,100 または I=100,1,-1)
+ * ループ変数の初期化と範囲設定
+ */
+export interface ForStatement extends ASTNode {
+    type: 'ForStatement';
+    variable: Identifier;    // ループ変数
+    start: Expression;       // 開始値
+    end: Expression;         // 終了値
+    step?: Expression;       // ステップ値（省略時は1）
+}
+
+/**
+ * NEXTステートメント (例: @=I)
+ * ループ変数をインクリメントし、ループ継続を判定
+ */
+export interface NextStatement extends ASTNode {
+    type: 'NextStatement';
+    variable: Identifier;    // ループ変数
 }
 
 /**

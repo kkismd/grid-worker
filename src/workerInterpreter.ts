@@ -331,7 +331,35 @@ class WorkerInterpreter {
                 }
             }
 
-            // 代入ステートメントの解析
+            // NEXTステートメント (@=I)
+            if (token.type === TokenType.AT) {
+                const nextToken = tokens[index + 1];
+                
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    const thirdToken = tokens[index + 2];
+                    
+                    if (thirdToken && thirdToken.type === TokenType.IDENTIFIER) {
+                        statements.push({
+                            type: 'NextStatement',
+                            line: token.line,
+                            column: token.column,
+                            variable: {
+                                type: 'Identifier',
+                                name: thirdToken.value,
+                                line: thirdToken.line,
+                                column: thirdToken.column,
+                            },
+                        });
+                        // すべてのトークンを消費
+                        index = tokens.length;
+                        continue;
+                    }
+                    
+                    throw new Error(`構文エラー: NEXTには変数が必要です (行: ${token.line + 1}, 列: ${token.column + 1})`);
+                }
+            }
+
+            // 代入ステートメント または FORループの解析
             if (token.type === TokenType.IDENTIFIER) {
                 const nextToken = tokens[index + 1];
                 
@@ -342,17 +370,68 @@ class WorkerInterpreter {
                         line: token.line,
                         column: token.column,
                     };
-                    // = の後の全トークンを式として解析
-                    const exprTokens = tokens.slice(index + 2);
-                    const value = this.parseExpressionFromTokens(exprTokens);
                     
-                    statements.push({
-                        type: 'AssignmentStatement',
-                        line: token.line,
-                        column: token.column,
-                        variable,
-                        value,
-                    });
+                    // = の後のトークンを取得
+                    const exprTokens = tokens.slice(index + 2);
+                    
+                    // カンマが含まれているかチェック（FORループの判定）
+                    const commaIndex = exprTokens.findIndex(t => t?.type === TokenType.COMMA);
+                    
+                    if (commaIndex !== -1) {
+                        // FORループ: I=start,end[,step]
+                        const startTokens = exprTokens.slice(0, commaIndex);
+                        const start = this.parseExpressionFromTokens(startTokens);
+                        
+                        // 2番目のカンマを探す
+                        const remainingTokens = exprTokens.slice(commaIndex + 1);
+                        const secondCommaIndex = remainingTokens.findIndex(t => t?.type === TokenType.COMMA);
+                        
+                        let end: Expression;
+                        let step: Expression | undefined;
+                        
+                        if (secondCommaIndex !== -1) {
+                            // ステップ値あり
+                            const endTokens = remainingTokens.slice(0, secondCommaIndex);
+                            end = this.parseExpressionFromTokens(endTokens);
+                            
+                            const stepTokens = remainingTokens.slice(secondCommaIndex + 1);
+                            step = this.parseExpressionFromTokens(stepTokens);
+                            
+                            statements.push({
+                                type: 'ForStatement',
+                                line: token.line,
+                                column: token.column,
+                                variable,
+                                start,
+                                end,
+                                step,
+                            });
+                        } else {
+                            // ステップ値なし（デフォルト1）
+                            end = this.parseExpressionFromTokens(remainingTokens);
+                            
+                            statements.push({
+                                type: 'ForStatement',
+                                line: token.line,
+                                column: token.column,
+                                variable,
+                                start,
+                                end,
+                                // stepは省略（undefinedを明示的に設定しない）
+                            });
+                        }
+                    } else {
+                        // 通常の代入ステートメント
+                        const value = this.parseExpressionFromTokens(exprTokens);
+                        
+                        statements.push({
+                            type: 'AssignmentStatement',
+                            line: token.line,
+                            column: token.column,
+                            variable,
+                            value,
+                        });
+                    }
                     
                     // すべてのトークンを消費
                     index = tokens.length;

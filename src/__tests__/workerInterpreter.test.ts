@@ -921,3 +921,118 @@ describe('WorkerInterpreter - Unary Minus Operator (Phase 2B.3.5)', () => {
         expect(assignStmt.value.operand.type).toBe('BinaryExpression');
     });
 });
+
+describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse FOR loop with default step (I=1,100)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 2 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('ForStatement');
+        const forStmt = stmt as any;
+        expect(forStmt.variable.name).toBe('I');
+        expect(forStmt.start.type).toBe('NumericLiteral');
+        expect(forStmt.start.value).toBe(1);
+        expect(forStmt.end.type).toBe('NumericLiteral');
+        expect(forStmt.end.value).toBe(100);
+        expect(forStmt.step).toBeUndefined(); // デフォルトステップ
+    });
+
+    test('should parse FOR loop with negative step (J=10,1,-1)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'J', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 4 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 6 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 7 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('ForStatement');
+        const forStmt = stmt as any;
+        expect(forStmt.variable.name).toBe('J');
+        expect(forStmt.start.value).toBe(10);
+        expect(forStmt.end.value).toBe(1);
+        expect(forStmt.step).toBeDefined();
+        expect(forStmt.step.type).toBe('UnaryExpression');
+        expect(forStmt.step.operator).toBe('-');
+        expect(forStmt.step.operand.value).toBe(1);
+    });
+
+    test('should parse FOR loop with variable expressions (K=A,B,C)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'K', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 6 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('ForStatement');
+        const forStmt = stmt as any;
+        expect(forStmt.variable.name).toBe('K');
+        expect(forStmt.start.type).toBe('Identifier');
+        expect(forStmt.start.name).toBe('A');
+        expect(forStmt.end.type).toBe('Identifier');
+        expect(forStmt.end.name).toBe('B');
+        expect(forStmt.step.type).toBe('Identifier');
+        expect(forStmt.step.name).toBe('C');
+    });
+
+    test('should parse NEXT statement (@=I)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.AT, value: '@', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('NextStatement');
+        const nextStmt = stmt as any;
+        expect(nextStmt.variable.type).toBe('Identifier');
+        expect(nextStmt.variable.name).toBe('I');
+    });
+
+    test('should distinguish FOR from regular assignment (A=1)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement'); // FORではなく通常の代入
+    });
+});
