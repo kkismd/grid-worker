@@ -42,6 +42,8 @@ class WorkerInterpreter {
     private pokeFn: (index: number, value: number) => void;
     private logFn: (...args: any[]) => void;
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
+    private currentLineIndex: number = 0; // 現在実行中の行インデックス
+    private callStack: number[] = []; // GOSUBのリターンアドレススタック
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
@@ -93,11 +95,16 @@ class WorkerInterpreter {
                 if (!labelName) {
                     throw new Error(`構文エラー: 無効なラベル定義 (行: ${index + 1})`);
                 }
-                if (this.labels.has(labelName)) {
+                // ラベル名から ^ を除去して保存
+                const cleanLabelName = labelName.substring(1);
+                if (this.labels.has(cleanLabelName)) {
                     throw new Error(`構文エラー: ラベル '${labelName}' が重複して定義されています。`);
                 }
-                this.labels.set(labelName, index);
-                this.tokens.push([{ type: TokenType.LABEL_DEFINITION, value: labelName, line: index, column: 0 }]);
+                this.labels.set(cleanLabelName, index);
+                
+                // 仕様: ラベルは行の先頭に記述され、その後に改行が続く
+                // ラベル定義行は空のトークンリストとして扱う
+                this.tokens.push([]);
                 return;
             }
 
@@ -123,23 +130,9 @@ class WorkerInterpreter {
             const lineTokens = this.tokens[i];
             if (!lineTokens) continue;
 
-            // コメント行や空行はステートメントなしの行として扱う
+            // コメント行、空行、ラベル定義行はステートメントなしの行として扱う
             if (lineTokens.length === 0 || 
                 (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.COMMENT)) {
-                const line: Line = {
-                    lineNumber: i,
-                    statements: [],
-                };
-                const sourceText = this.scriptLines[i];
-                if (sourceText !== undefined) {
-                    line.sourceText = sourceText;
-                }
-                lines.push(line);
-                continue;
-            }
-
-            // ラベル定義行もステートメントなしとして扱う（実行時はスキップ）
-            if (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.LABEL_DEFINITION) {
                 const line: Line = {
                     lineNumber: i,
                     statements: [],
@@ -1133,12 +1126,19 @@ class WorkerInterpreter {
             throw new Error('スクリプトがロードされていません。loadScript()を先に呼び出してください。');
         }
 
-        // 変数をリセット
+        // 変数とステートをリセット
         this.variables.clear();
+        this.currentLineIndex = 0;
+        this.callStack = [];
 
-        // 各行のステートメントを順次実行
-        for (const line of this.program.body) {
+        // プログラム実行ループ
+        while (this.currentLineIndex < this.program.body.length) {
+            const line = this.program.body[this.currentLineIndex];
+            if (!line) break;
+
             let skipRemaining = false;
+            let jumped = false;
+
             for (const statement of line.statements) {
                 if (skipRemaining) {
                     // IF条件が偽だった場合、この行の残りをスキップ
@@ -1146,12 +1146,32 @@ class WorkerInterpreter {
                     continue;
                 }
                 
-                const shouldSkip = this.executeStatement(statement);
-                if (shouldSkip) {
+                const result = this.executeStatement(statement);
+                
+                // GOTO/GOSUB/RETURNの場合、currentLineIndexが変更される
+                if (result.jump) {
+                    // ジャンプ先が設定されている場合
+                    jumped = true;
+                    yield;
+                    break; // この行の残りのステートメントをスキップしてジャンプ先へ
+                }
+                
+                if (result.halt) {
+                    // プログラム停止
+                    return;
+                }
+                
+                if (result.skipRemaining) {
                     skipRemaining = true;
                 }
+                
                 // 1ステートメント実行後にyieldして制御を返す
                 yield;
+            }
+
+            // ジャンプしていない場合のみ次の行へ進む
+            if (!jumped) {
+                this.currentLineIndex++;
             }
         }
     }
@@ -1159,9 +1179,9 @@ class WorkerInterpreter {
     /**
      * 単一のステートメントを実行します。
      * @param statement 実行するステートメント
-     * @returns この行の残りのステートメントをスキップすべき場合true
+     * @returns 実行結果（ジャンプ、停止、スキップの情報）
      */
-    private executeStatement(statement: Statement): boolean {
+    private executeStatement(statement: Statement): { jump: boolean; halt: boolean; skipRemaining: boolean } {
         switch (statement.type) {
             case 'AssignmentStatement':
                 {
@@ -1194,15 +1214,52 @@ class WorkerInterpreter {
                     }
                     // 条件が0（偽）の場合、この行の残りをスキップ
                     if (condition === 0) {
-                        return true;
+                        return { jump: false, halt: false, skipRemaining: true };
                     }
                 }
                 break;
             
+            case 'GotoStatement':
+                {
+                    const targetLine = this.labels.get(statement.target);
+                    if (targetLine === undefined) {
+                        throw new Error(`ラベル ${statement.target} が見つかりません`);
+                    }
+                    this.currentLineIndex = targetLine;
+                    return { jump: true, halt: false, skipRemaining: false };
+                }
+            
+            case 'GosubStatement':
+                {
+                    const targetLine = this.labels.get(statement.target);
+                    if (targetLine === undefined) {
+                        throw new Error(`ラベル ${statement.target} が見つかりません`);
+                    }
+                    // 現在の次の行をスタックにプッシュ
+                    this.callStack.push(this.currentLineIndex + 1);
+                    this.currentLineIndex = targetLine;
+                    return { jump: true, halt: false, skipRemaining: false };
+                }
+            
+            case 'ReturnStatement':
+                {
+                    if (this.callStack.length === 0) {
+                        throw new Error('RETURN文がありますがGOSUBの呼び出しがありません');
+                    }
+                    const returnLine = this.callStack.pop()!;
+                    this.currentLineIndex = returnLine;
+                    return { jump: true, halt: false, skipRemaining: false };
+                }
+            
+            case 'HaltStatement':
+                {
+                    return { jump: false, halt: true, skipRemaining: false };
+                }
+            
             default:
                 throw new Error(`未実装のステートメント: ${statement.type}`);
         }
-        return false;
+        return { jump: false, halt: false, skipRemaining: false };
     }
 
     /**

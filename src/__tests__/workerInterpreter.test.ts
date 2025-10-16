@@ -742,8 +742,8 @@ describe('Parser (TDD Cycle 2A.3)', () => {
         const script = '^LOOP\nA=10\nB=20';
         interpreter.loadScript(script);
         
-        // ラベルの行番号を取得
-        const labelLine = interpreter.getLabelLine('^LOOP');
+        // ラベルの行番号を取得 (^なしで検索)
+        const labelLine = interpreter.getLabelLine('LOOP');
         expect(labelLine).toBe(0);
         
         // その行のASTを取得
@@ -2188,5 +2188,186 @@ describe('Phase 3.4a: Operator Precedence', () => {
         gen.next(); // C=!A|B>10 → 1|0 = 1
         
         expect(interpreter.getVariable('C')).toBe(1);
+    });
+});
+
+// ============================================================
+// Phase 3.5: GOTO/GOSUB/RETURN の実行テスト
+// ============================================================
+describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPeekFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+    let mockGridData: number[];
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPeekFn = jest.fn(() => 0);
+        mockPokeFn = jest.fn();
+        mockGridData = new Array(100).fill(0);
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should execute GOTO to jump to a label', () => {
+        interpreter.loadScript('A=1 #=^SKIP\nA=2\n^SKIP\nA=3');
+        const gen = interpreter.run();
+        gen.next(); // A=1
+        gen.next(); // GOTO ^SKIP
+        gen.next(); // A=3 (skipped A=2)
+        
+        expect(interpreter.getVariable('A')).toBe(3);
+    });
+
+    test('should execute forward GOTO', () => {
+        interpreter.loadScript('^START\n?="Line1" #=^END\n?="Line2"\n^END\n?="Line3"');
+        const gen = interpreter.run();
+        gen.next(); // Output Line1
+        gen.next(); // GOTO ^END
+        gen.next(); // Output Line3 (skipped Line2)
+        
+        expect(mockLogFn).toHaveBeenCalledTimes(2);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 'Line1');
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, 'Line3');
+    });
+
+    test('should execute backward GOTO (simple loop)', () => {
+        interpreter.loadScript('^LOOP\nA=A+1 ;=A<3 #=^LOOP\n?=A');
+        const gen = interpreter.run();
+        
+        // Loop iteration 1: A=0+1=1, 1<3 true, GOTO LOOP
+        gen.next(); // A=A+1 → A=1
+        gen.next(); // IF A<3 → true
+        gen.next(); // GOTO ^LOOP (jump to line 0, then to line 1)
+        
+        // Loop iteration 2: A=1+1=2, 2<3 true, GOTO LOOP
+        gen.next(); // A=A+1 → A=2
+        gen.next(); // IF A<3 → true
+        gen.next(); // GOTO ^LOOP
+        
+        // Loop iteration 3: A=2+1=3, 3<3 false, skip GOTO
+        gen.next(); // A=A+1 → A=3
+        gen.next(); // IF A<3 → false (skip GOTO)
+        gen.next(); // GOTO skipped
+        
+        // Output A
+        gen.next(); // ?=A
+        
+        expect(interpreter.getVariable('A')).toBe(3);
+        expect(mockLogFn).toHaveBeenCalledWith(3);
+    });
+
+    test('should execute GOSUB and RETURN', () => {
+        interpreter.loadScript('A=1 !=^SUB\nA=2\n^SUB\nA=A*10 ]');
+        const gen = interpreter.run();
+        gen.next(); // A=1
+        gen.next(); // GOSUB ^SUB
+        gen.next(); // A=A*10 → A=10
+        gen.next(); // RETURN
+        gen.next(); // A=2
+        
+        expect(interpreter.getVariable('A')).toBe(2);
+    });
+
+    test('should handle nested GOSUB calls', () => {
+        interpreter.loadScript('A=1 !=^SUB1\n^SUB1\nA=A+1 !=^SUB2\n]\n^SUB2\nA=A*10 ]');
+        const gen = interpreter.run();
+        gen.next(); // A=1
+        gen.next(); // GOSUB ^SUB1
+        gen.next(); // A=A+1 → A=2
+        gen.next(); // GOSUB ^SUB2
+        gen.next(); // A=A*10 → A=20
+        gen.next(); // RETURN (from SUB2)
+        gen.next(); // RETURN (from SUB1)
+        
+        expect(interpreter.getVariable('A')).toBe(20);
+    });
+
+    test('should execute HALT (#=-1) to stop program', () => {
+        interpreter.loadScript('A=1 #=-1 A=2');
+        const gen = interpreter.run();
+        gen.next(); // A=1
+        const result = gen.next(); // HALT
+        
+        expect(result.done).toBe(true);
+        expect(interpreter.getVariable('A')).toBe(1);
+    });
+
+    test('should halt when program reaches end', () => {
+        interpreter.loadScript('A=5');
+        const gen = interpreter.run();
+        gen.next(); // A=5
+        const result = gen.next(); // End of program
+        
+        expect(result.done).toBe(true);
+        expect(interpreter.getVariable('A')).toBe(5);
+    });
+
+    test('should handle GOSUB with output', () => {
+        interpreter.loadScript('!=^PRINT\n^PRINT\n?="Hello" ]');
+        const gen = interpreter.run();
+        gen.next(); // GOSUB ^PRINT
+        gen.next(); // Output
+        gen.next(); // RETURN
+        
+        expect(mockLogFn).toHaveBeenCalledWith('Hello');
+    });
+
+    test('should throw error on RETURN without GOSUB', () => {
+        interpreter.loadScript(']');
+        const gen = interpreter.run();
+        
+        expect(() => gen.next()).toThrow('RETURN文がありますがGOSUBの呼び出しがありません');
+    });
+
+    test('should handle multiple GOTOs in sequence', () => {
+        interpreter.loadScript('#=^A\n^A\n#=^B\n^B\nA=10');
+        const gen = interpreter.run();
+        gen.next(); // GOTO ^A
+        gen.next(); // GOTO ^B
+        gen.next(); // A=10
+        
+        expect(interpreter.getVariable('A')).toBe(10);
+    });
+
+    test('should execute statements before GOTO on same line', () => {
+        interpreter.loadScript('A=5 B=10 #=^END\nC=20\n^END');
+        const gen = interpreter.run();
+        gen.next(); // A=5
+        gen.next(); // B=10
+        gen.next(); // GOTO ^END (C=20 skipped)
+        
+        expect(interpreter.getVariable('A')).toBe(5);
+        expect(interpreter.getVariable('B')).toBe(10);
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    test('should handle GOSUB in a loop', () => {
+        interpreter.loadScript('^LOOP\nA=A+1 !=^ADD\n;=A<2 #=^LOOP\n^ADD\nB=B+1 ]');
+        const gen = interpreter.run();
+        
+        // Iteration 1
+        gen.next(); // A=A+1 → A=1
+        gen.next(); // GOSUB ^ADD
+        gen.next(); // B=B+1 → B=1
+        gen.next(); // RETURN
+        gen.next(); // IF A<2 → true
+        gen.next(); // GOTO ^LOOP
+        
+        // Iteration 2
+        gen.next(); // A=A+1 → A=2
+        gen.next(); // GOSUB ^ADD
+        gen.next(); // B=B+1 → B=2
+        gen.next(); // RETURN
+        gen.next(); // IF A<2 → false (exit loop)
+        gen.next(); // GOTO skipped
+        
+        expect(interpreter.getVariable('A')).toBe(2);
+        expect(interpreter.getVariable('B')).toBe(2);
     });
 });
