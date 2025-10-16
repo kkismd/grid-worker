@@ -1891,3 +1891,161 @@ describe('Phase 3.3: Comparison and logical operators', () => {
         expect(interpreter.getVariable('B')).toBe(1); // at least one non-zero
     });
 });
+
+// ========================================
+// Phase 3.4: IFステートメント実行
+// ========================================
+
+describe('Phase 3.4: IF statement execution', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPokeFn = jest.fn();
+        const gridData = Array.from(new Int16Array(10000));
+        interpreter = new WorkerInterpreter({
+            gridData,
+            peekFn: (index) => gridData[index] ?? 0,
+            pokeFn: (index, value) => {
+                gridData[index] = value;
+                mockPokeFn(index, value);
+            },
+            logFn: mockLogFn,
+        });
+    });
+
+    test('should execute statements after IF when condition is true (non-zero)', () => {
+        interpreter.loadScript(';=1 ?="True"');
+        const gen = interpreter.run();
+        gen.next(); // IF statement
+        gen.next(); // Output statement
+        
+        expect(mockLogFn).toHaveBeenCalledWith('True');
+    });
+
+    test('should skip statements after IF when condition is false (zero)', () => {
+        interpreter.loadScript(';=0 ?="False"');
+        const gen = interpreter.run();
+        gen.next(); // IF statement
+        gen.next(); // Skipped Output statement
+        
+        expect(mockLogFn).not.toHaveBeenCalled();
+    });
+
+    test('should evaluate expression in IF condition', () => {
+        interpreter.loadScript('A=10 ;=A>5 ?="Greater"');
+        const gen = interpreter.run();
+        gen.next(); // A=10
+        gen.next(); // IF
+        gen.next(); // Output
+        
+        expect(mockLogFn).toHaveBeenCalledWith('Greater');
+    });
+
+    test('should skip when comparison is false', () => {
+        interpreter.loadScript('A=3 ;=A>5 ?="Greater"');
+        const gen = interpreter.run();
+        gen.next(); // A=3
+        gen.next(); // IF
+        gen.next(); // Skipped Output
+        
+        expect(mockLogFn).not.toHaveBeenCalled();
+    });
+
+    test('should handle multiple statements after IF when true', () => {
+        interpreter.loadScript(';=1 A=10 B=20 ?=A');
+        const gen = interpreter.run();
+        gen.next(); // IF
+        gen.next(); // A=10
+        gen.next(); // B=20
+        gen.next(); // ?=A
+        
+        expect(interpreter.getVariable('A')).toBe(10);
+        expect(interpreter.getVariable('B')).toBe(20);
+        expect(mockLogFn).toHaveBeenCalledWith(10);
+    });
+
+    test('should skip all statements after IF when false', () => {
+        interpreter.loadScript(';=0 A=10 B=20 ?=999');
+        const gen = interpreter.run();
+        gen.next(); // IF
+        gen.next(); // Skipped A=10
+        gen.next(); // Skipped B=20
+        gen.next(); // Skipped ?=999
+        
+        expect(interpreter.getVariable('A')).toBe(0); // Not executed
+        expect(interpreter.getVariable('B')).toBe(0); // Not executed
+        expect(mockLogFn).not.toHaveBeenCalled(); // Not executed
+    });
+
+    test('should handle logical AND in IF condition', () => {
+        interpreter.loadScript('A=10 B=5 ;=(A>5)&(B<10) ?="Both true"');
+        const gen = interpreter.run();
+        gen.next(); // A=10
+        gen.next(); // B=5
+        gen.next(); // IF
+        gen.next(); // Output
+        
+        expect(mockLogFn).toHaveBeenCalledWith('Both true');
+    });
+
+    test('should handle logical OR in IF condition', () => {
+        interpreter.loadScript('A=3 B=15 ;=(A>5)|(B>10) ?="At least one"');
+        const gen = interpreter.run();
+        gen.next(); // A=3
+        gen.next(); // B=15
+        gen.next(); // IF
+        gen.next(); // Output
+        
+        expect(mockLogFn).toHaveBeenCalledWith('At least one');
+    });
+
+    test('should handle NOT operator in IF condition', () => {
+        interpreter.loadScript('A=0 ;=!A ?="A is zero"');
+        const gen = interpreter.run();
+        gen.next(); // A=0
+        gen.next(); // IF
+        gen.next(); // Output
+        
+        expect(mockLogFn).toHaveBeenCalledWith('A is zero');
+    });
+
+    test('should execute statements before IF regardless of condition', () => {
+        interpreter.loadScript('A=5 ;=0 B=10');
+        const gen = interpreter.run();
+        gen.next(); // A=5
+        gen.next(); // IF
+        gen.next(); // Skipped B=10
+        
+        expect(interpreter.getVariable('A')).toBe(5); // Before IF, executed
+        expect(interpreter.getVariable('B')).toBe(0); // After IF, skipped
+    });
+
+    test('should handle multiple IFs on different lines', () => {
+        interpreter.loadScript(';=1 ?="Line1"\n;=0 ?="Line2"\n;=1 ?="Line3"');
+        const gen = interpreter.run();
+        gen.next(); // Line 1: IF
+        gen.next(); // Line 1: Output
+        gen.next(); // Line 2: IF
+        gen.next(); // Line 2: Skipped Output
+        gen.next(); // Line 3: IF
+        gen.next(); // Line 3: Output
+        
+        expect(mockLogFn).toHaveBeenCalledTimes(2);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 'Line1');
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, 'Line3');
+    });
+
+    test('should handle complex expression in IF', () => {
+        interpreter.loadScript('A=10 B=20 ;=(A+B)>25 ?="Sum > 25"');
+        const gen = interpreter.run();
+        gen.next(); // A=10
+        gen.next(); // B=20
+        gen.next(); // IF
+        gen.next(); // Output
+        
+        expect(mockLogFn).toHaveBeenCalledWith('Sum > 25');
+    });
+});

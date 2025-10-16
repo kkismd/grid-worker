@@ -1093,8 +1093,18 @@ class WorkerInterpreter {
 
         // 各行のステートメントを順次実行
         for (const line of this.program.body) {
+            let skipRemaining = false;
             for (const statement of line.statements) {
-                this.executeStatement(statement);
+                if (skipRemaining) {
+                    // IF条件が偽だった場合、この行の残りをスキップ
+                    yield; // スキップされたステートメントもyieldする
+                    continue;
+                }
+                
+                const shouldSkip = this.executeStatement(statement);
+                if (shouldSkip) {
+                    skipRemaining = true;
+                }
                 // 1ステートメント実行後にyieldして制御を返す
                 yield;
             }
@@ -1104,8 +1114,9 @@ class WorkerInterpreter {
     /**
      * 単一のステートメントを実行します。
      * @param statement 実行するステートメント
+     * @returns この行の残りのステートメントをスキップすべき場合true
      */
-    private executeStatement(statement: Statement): void {
+    private executeStatement(statement: Statement): boolean {
         switch (statement.type) {
             case 'AssignmentStatement':
                 {
@@ -1130,9 +1141,23 @@ class WorkerInterpreter {
                 }
                 break;
             
+            case 'IfStatement':
+                {
+                    const condition = this.evaluateExpression(statement.condition);
+                    if (typeof condition === 'string') {
+                        throw new Error('IF条件は数値でなければなりません');
+                    }
+                    // 条件が0（偽）の場合、この行の残りをスキップ
+                    if (condition === 0) {
+                        return true;
+                    }
+                }
+                break;
+            
             default:
                 throw new Error(`未実装のステートメント: ${statement.type}`);
         }
+        return false;
     }
 
     /**
