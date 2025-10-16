@@ -542,12 +542,51 @@ class WorkerInterpreter {
     }
 
     /**
-     * 二項演算式を再帰的に解析します（左から右への評価）。
+     * 演算子の優先順位を返します。
+     * 数値が大きいほど優先順位が高い。
+     * @param operator 演算子文字列
+     * @returns 優先順位（1-6）
+     */
+    private getOperatorPrecedence(operator: string): number {
+        // 優先順位（高→低）:
+        // 6: 単項演算子 (!, -, +) - parsePrimaryExpressionで処理
+        // 5: 乗除算 (*, /)
+        // 4: 加減算 (+, -)
+        // 3: 比較 (>, <, >=, <=, =, <>)
+        // 2: 論理AND (&)
+        // 1: 論理OR (|)
+        
+        switch (operator) {
+            case '*':
+            case '/':
+                return 5;
+            case '+':
+            case '-':
+                return 4;
+            case '>':
+            case '<':
+            case '>=':
+            case '<=':
+            case '=':
+            case '<>':
+                return 3;
+            case '&':
+                return 2;
+            case '|':
+                return 1;
+            default:
+                return 0;
+        }
+    }
+
+    /**
+     * 二項演算式を優先順位を考慮して再帰的に解析します。
      * @param tokens トークン配列
      * @param start 開始インデックス
+     * @param minPrecedence 最小優先順位
      * @returns 解析された式と次のインデックス
      */
-    private parseBinaryExpression(tokens: Token[], start: number): { expr: Expression; nextIndex: number } {
+    private parseBinaryExpression(tokens: Token[], start: number, minPrecedence: number = 0): { expr: Expression; nextIndex: number } {
         // 左辺を解析
         let left = this.parsePrimaryExpression(tokens, start);
         let index = left.nextIndex;
@@ -558,26 +597,32 @@ class WorkerInterpreter {
             if (!token) break;
 
             // 演算子かどうかチェック
-            if (this.isBinaryOperator(token.type)) {
-                const operator = token.value;
-                index++;
-
-                // 右辺を解析
-                const right = this.parsePrimaryExpression(tokens, index);
-                index = right.nextIndex;
-
-                // 左結合で二項演算式を構築
-                left.expr = {
-                    type: 'BinaryExpression',
-                    operator,
-                    left: left.expr,
-                    right: right.expr,
-                    line: left.expr.line, // 左辺の行番号を使用
-                };
-            } else {
-                // 演算子でない場合は終了
+            if (!this.isBinaryOperator(token.type)) {
                 break;
             }
+
+            const operator = token.value;
+            const precedence = this.getOperatorPrecedence(operator);
+
+            // 優先順位が低い場合は終了
+            if (precedence < minPrecedence) {
+                break;
+            }
+
+            index++;
+
+            // 右辺を解析（同じ優先順位の場合は左結合のため +1）
+            const right = this.parseBinaryExpression(tokens, index, precedence + 1);
+            index = right.nextIndex;
+
+            // 二項演算式を構築
+            left.expr = {
+                type: 'BinaryExpression',
+                operator,
+                left: left.expr,
+                right: right.expr,
+                line: left.expr.line,
+            };
         }
 
         return { expr: left.expr, nextIndex: index };

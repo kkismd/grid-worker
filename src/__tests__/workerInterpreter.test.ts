@@ -379,7 +379,7 @@ describe('Parser (TDD Cycle 2.3)', () => {
             { type: TokenType.NUMBER, value: '2', line: 0, column: 7 },
         ];
         const ast = interpreter.parse(tokens);
-        // VTL系言語は左から右へ評価するため: ((10*5)-2)
+        // 標準的な演算子優先順位: 10*(5-2) = 10*3 = 30
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
@@ -1992,7 +1992,7 @@ describe('Phase 3.4: IF statement execution', () => {
     });
 
     test('should handle logical OR in IF condition', () => {
-        interpreter.loadScript('A=3 B=15 ;=(A>5)|(B>10) ?="At least one"');
+        interpreter.loadScript('A=3 B=15 ;=A>5|B>10 ?="At least one"');
         const gen = interpreter.run();
         gen.next(); // A=3
         gen.next(); // B=15
@@ -2047,5 +2047,146 @@ describe('Phase 3.4: IF statement execution', () => {
         gen.next(); // Output
         
         expect(mockLogFn).toHaveBeenCalledWith('Sum > 25');
+    });
+});
+
+// ============================================================
+// Phase 3.4a: 演算子優先順位のテスト
+// ============================================================
+describe('Phase 3.4a: Operator Precedence', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPeekFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+    let mockGridData: number[];
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPeekFn = jest.fn(() => 0);
+        mockPokeFn = jest.fn();
+        mockGridData = new Array(100).fill(0);
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should respect arithmetic operator precedence (A+B*C)', () => {
+        interpreter.loadScript('A=2 B=3 C=4 D=A+B*C');
+        const gen = interpreter.run();
+        gen.next(); // A=2
+        gen.next(); // B=3
+        gen.next(); // C=4
+        gen.next(); // D=A+B*C → 2+3*4 = 2+12 = 14
+        
+        expect(interpreter.getVariable('D')).toBe(14);
+    });
+
+    test('should respect arithmetic operator precedence (A*B+C)', () => {
+        interpreter.loadScript('A=2 B=3 C=4 D=A*B+C');
+        const gen = interpreter.run();
+        gen.next(); // A=2
+        gen.next(); // B=3
+        gen.next(); // C=4
+        gen.next(); // D=A*B+C → 2*3+4 = 6+4 = 10
+        
+        expect(interpreter.getVariable('D')).toBe(10);
+    });
+
+    test('should respect arithmetic operator precedence (A/B-C)', () => {
+        interpreter.loadScript('A=12 B=3 C=2 D=A/B-C');
+        const gen = interpreter.run();
+        gen.next(); // A=12
+        gen.next(); // B=3
+        gen.next(); // C=2
+        gen.next(); // D=A/B-C → 12/3-2 = 4-2 = 2
+        
+        expect(interpreter.getVariable('D')).toBe(2);
+    });
+
+    test('should respect logical operator precedence (A&B|C)', () => {
+        interpreter.loadScript('A=1 B=0 C=1 D=A&B|C');
+        const gen = interpreter.run();
+        gen.next(); // A=1
+        gen.next(); // B=0
+        gen.next(); // C=1
+        gen.next(); // D=A&B|C → (1&0)|1 = 0|1 = 1
+        
+        expect(interpreter.getVariable('D')).toBe(1);
+    });
+
+    test('should respect comparison before logical OR (A>5|B>10)', () => {
+        interpreter.loadScript('A=3 B=15 C=A>5|B>10');
+        const gen = interpreter.run();
+        gen.next(); // A=3
+        gen.next(); // B=15
+        gen.next(); // C=A>5|B>10 → 0|1 = 1
+        
+        expect(interpreter.getVariable('C')).toBe(1);
+    });
+
+    test('should respect comparison before logical AND (A>5&B>10)', () => {
+        interpreter.loadScript('A=7 B=8 C=A>5&B>10');
+        const gen = interpreter.run();
+        gen.next(); // A=7
+        gen.next(); // B=8
+        gen.next(); // C=A>5&B>10 → 1&0 = 0
+        
+        expect(interpreter.getVariable('C')).toBe(0);
+    });
+
+    test('should handle complex precedence (A>5|B>10&C=1)', () => {
+        interpreter.loadScript('A=3 B=15 C=1 D=A>5|B>10&C=1');
+        const gen = interpreter.run();
+        gen.next(); // A=3
+        gen.next(); // B=15
+        gen.next(); // C=1
+        gen.next(); // D=A>5|B>10&C=1 → 0|(1&1) = 0|1 = 1
+        
+        expect(interpreter.getVariable('D')).toBe(1);
+    });
+
+    test('should handle arithmetic and comparison together (A+B>C*D)', () => {
+        interpreter.loadScript('A=5 B=3 C=2 D=4 E=A+B>C*D');
+        const gen = interpreter.run();
+        gen.next(); // A=5
+        gen.next(); // B=3
+        gen.next(); // C=2
+        gen.next(); // D=4
+        gen.next(); // E=A+B>C*D → 8>8 = 0
+        
+        expect(interpreter.getVariable('E')).toBe(0);
+    });
+
+    test('should use operator precedence in IF condition', () => {
+        interpreter.loadScript('A=3 B=15 ;=A>5|B>10 ?="Success"');
+        const gen = interpreter.run();
+        gen.next(); // A=3
+        gen.next(); // B=15
+        gen.next(); // IF: A>5|B>10 → 0|1 = 1 (true)
+        gen.next(); // Output
+        
+        expect(mockLogFn).toHaveBeenCalledWith('Success');
+    });
+
+    test('should handle unary minus with precedence', () => {
+        interpreter.loadScript('A=5 B=-A*2');
+        const gen = interpreter.run();
+        gen.next(); // A=5
+        gen.next(); // B=-A*2 → (-5)*2 = -10
+        
+        expect(interpreter.getVariable('B')).toBe(-10);
+    });
+
+    test('should handle NOT with precedence', () => {
+        interpreter.loadScript('A=0 B=5 C=!A|B>10');
+        const gen = interpreter.run();
+        gen.next(); // A=0
+        gen.next(); // B=5
+        gen.next(); // C=!A|B>10 → 1|0 = 1
+        
+        expect(interpreter.getVariable('C')).toBe(1);
     });
 });
