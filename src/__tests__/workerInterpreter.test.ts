@@ -463,3 +463,92 @@ describe('Parser (TDD Cycle 2.4)', () => {
     });
 });
 
+describe('Parser (TDD Cycle 2.5)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse an IF statement (;=A>100 ?=100)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 8 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 9 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 10 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'IfStatement',
+                    condition: {
+                        type: 'BinaryExpression',
+                        operator: '>',
+                        left: { type: 'Identifier', name: 'A' },
+                        right: { type: 'NumericLiteral', value: 100 },
+                    },
+                    consequent: [
+                        {
+                            type: 'OutputStatement',
+                            expression: { type: 'NumericLiteral', value: 100 },
+                        },
+                    ],
+                },
+            ],
+        });
+    });
+
+    test('should parse an IF statement with multiple actions', () => {
+        const tokens: Token[] = [
+            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
+            { type: TokenType.QUESTION, value: '?', line: 0, column: 8 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 9 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 10 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 14 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 15 },
+            { type: TokenType.NUMBER, value: '200', line: 0, column: 16 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'IfStatement',
+                    condition: {
+                        type: 'BinaryExpression',
+                        operator: '>',
+                        left: { type: 'Identifier', name: 'A' },
+                        right: { type: 'NumericLiteral', value: 100 },
+                    },
+                    consequent: [
+                        {
+                            type: 'OutputStatement',
+                            expression: { type: 'NumericLiteral', value: 100 },
+                        },
+                        {
+                            type: 'AssignmentStatement',
+                            variable: { type: 'Identifier', name: 'B' },
+                            value: { type: 'NumericLiteral', value: 200 },
+                        },
+                    ],
+                },
+            ],
+        });
+    });
+});
+

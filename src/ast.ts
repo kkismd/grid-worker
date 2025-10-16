@@ -24,7 +24,8 @@ export interface Program extends ASTNode {
 export type Statement = 
     | AssignmentStatement 
     | OutputStatement 
-    | NewlineStatement; // 他のステートメント型も追加予定
+    | NewlineStatement
+    | IfStatement; // 他のステートメント型も追加予定
 
 /**
  * 代入ステートメント (例: A=10)
@@ -48,6 +49,15 @@ export interface OutputStatement extends ASTNode {
  */
 export interface NewlineStatement extends ASTNode {
     type: 'NewlineStatement';
+}
+
+/**
+ * IF条件分岐ステートメント (例: ;=A>100 ?=100)
+ */
+export interface IfStatement extends ASTNode {
+    type: 'IfStatement';
+    condition: Expression;
+    consequent: Statement[];
 }
 
 /**

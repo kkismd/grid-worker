@@ -141,6 +141,19 @@ class WorkerInterpreter {
                 continue;
             }
 
+            // IFステートメント (;=)
+            if (token.type === TokenType.SEMICOLON) {
+                const nextToken = tokens[index + 1];
+                
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // ;= の後の条件式と後続のステートメントを解析
+                    const result = this.parseIfStatement(tokens, index + 2);
+                    body.push(result.statement);
+                    index = tokens.length; // すべてのトークンを消費
+                    continue;
+                }
+            }
+
             // 出力ステートメント (?=)
             if (token.type === TokenType.QUESTION) {
                 const nextToken = tokens[index + 1];
@@ -337,12 +350,145 @@ class WorkerInterpreter {
      * @returns 二項演算子の場合true
      */
     private isBinaryOperator(tokenType: TokenType): boolean {
+        return this.getBinaryOperatorTypes().includes(tokenType);
+    }
+
+    /**
+     * IFステートメントを解析します。
+     * ;=条件 ステートメント1 ステートメント2 ... の形式
+     * @param tokens トークン配列
+     * @param start 条件式の開始インデックス
+     * @returns 解析されたIFステートメント
+     */
+    private parseIfStatement(tokens: Token[], start: number): { statement: Statement } {
+        // 条件式の終わりを見つける（次のステートメントの開始位置）
+        // 条件式は最初の非演算子トークン列まで続く
+        let conditionEnd = start;
+        let parenDepth = 0;
+        let foundConditionEnd = false;
+        
+        while (conditionEnd < tokens.length && !foundConditionEnd) {
+            const token = tokens[conditionEnd];
+            if (!token) break;
+            
+            if (token.type === TokenType.LEFT_PAREN) {
+                parenDepth++;
+                conditionEnd++;
+            } else if (token.type === TokenType.RIGHT_PAREN) {
+                parenDepth--;
+                conditionEnd++;
+            } else if (parenDepth === 0) {
+                // 括弧の外で、ステートメント区切り位置をチェック
+                // 条件式が終わった後、スペースで区切られたステートメントが来る
+                // まず条件式を構成するトークンかチェック
+                if (this.isExpressionToken(token.type)) {
+                    conditionEnd++;
+                } else {
+                    // 式の一部でないトークンが見つかった
+                    foundConditionEnd = true;
+                }
+            } else {
+                conditionEnd++;
+            }
+        }
+        
+        // 条件式を解析
+        const conditionTokens = tokens.slice(start, conditionEnd);
+        const condition = this.parseExpressionFromTokens(conditionTokens);
+        
+        // 後続のステートメントを解析
+        const consequent: Statement[] = [];
+        let index = conditionEnd;
+        
+        while (index < tokens.length) {
+            const token = tokens[index];
+            if (!token) break;
+            
+            // 出力ステートメント (?=)
+            if (token.type === TokenType.QUESTION) {
+                const nextToken = tokens[index + 1];
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // 次の式の終わりを見つける
+                    const exprStart = index + 2;
+                    let exprEnd = exprStart;
+                    while (exprEnd < tokens.length && !this.isStatementStart(tokens[exprEnd]!.type)) {
+                        exprEnd++;
+                    }
+                    
+                    const exprTokens = tokens.slice(exprStart, exprEnd);
+                    const expression = this.parseExpressionFromTokens(exprTokens);
+                    consequent.push({
+                        type: 'OutputStatement',
+                        expression,
+                    });
+                    index = exprEnd;
+                    continue;
+                }
+            }
+            
+            // 代入ステートメント
+            if (token.type === TokenType.IDENTIFIER) {
+                const nextToken = tokens[index + 1];
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // 次の式の終わりを見つける
+                    const exprStart = index + 2;
+                    let exprEnd = exprStart;
+                    while (exprEnd < tokens.length && !this.isStatementStart(tokens[exprEnd]!.type)) {
+                        exprEnd++;
+                    }
+                    
+                    const exprTokens = tokens.slice(exprStart, exprEnd);
+                    const value = this.parseExpressionFromTokens(exprTokens);
+                    consequent.push({
+                        type: 'AssignmentStatement',
+                        variable: { type: 'Identifier', name: token.value },
+                        value,
+                    });
+                    index = exprEnd;
+                    continue;
+                }
+            }
+            
+            // その他のトークンがあれば終了
+            break;
+        }
+        
+        return {
+            statement: {
+                type: 'IfStatement',
+                condition,
+                consequent,
+            },
+        };
+    }
+
+    /**
+     * トークンが式の一部として有効かどうかを判定します。
+     * @param tokenType トークンタイプ
+     * @returns 式トークンの場合true
+     */
+    private isExpressionToken(tokenType: TokenType): boolean {
+        return [
+            TokenType.NUMBER,
+            TokenType.STRING,
+            TokenType.IDENTIFIER,
+            TokenType.LEFT_PAREN,
+            TokenType.RIGHT_PAREN,
+            ...this.getBinaryOperatorTypes(),
+        ].includes(tokenType);
+    }
+
+    /**
+     * 二項演算子のトークンタイプ一覧を取得します。
+     * @returns 二項演算子のトークンタイプ配列
+     */
+    private getBinaryOperatorTypes(): TokenType[] {
         return [
             TokenType.PLUS,
             TokenType.MINUS,
             TokenType.ASTERISK,
             TokenType.SLASH,
-            TokenType.EQUALS,           // 比較演算子としての =
+            TokenType.EQUALS,
             TokenType.GREATER_THAN,
             TokenType.LESS_THAN,
             TokenType.GREATER_THAN_OR_EQUAL,
@@ -350,6 +496,24 @@ class WorkerInterpreter {
             TokenType.NOT_EQUAL,
             TokenType.AMPERSAND,
             TokenType.PIPE,
+        ];
+    }
+
+    /**
+     * トークンがステートメントの開始を示すかどうかを判定します。
+     * @param tokenType トークンタイプ
+     * @returns ステートメント開始の場合true
+     */
+    private isStatementStart(tokenType: TokenType): boolean {
+        return [
+            TokenType.QUESTION,      // ?= (出力)
+            TokenType.IDENTIFIER,    // 変数名 (代入の可能性)
+            TokenType.SEMICOLON,     // ;= (IF)
+            TokenType.HASH,          // #= (GOTO/停止)
+            TokenType.BANG,          // != (GOSUB)
+            TokenType.RIGHT_BRACKET, // ] (RETURN)
+            TokenType.AT,            // @= (NEXT)
+            TokenType.SLASH,         // / (改行)
         ].includes(tokenType);
     }
 
