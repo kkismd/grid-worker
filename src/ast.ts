@@ -42,7 +42,8 @@ export type Statement =
     | ReturnStatement
     | HaltStatement
     | ForStatement
-    | NextStatement;
+    | NextStatement
+    | PokeStatement;
 
 /**
  * 代入ステートメント (例: A=10)
@@ -137,6 +138,15 @@ export interface NextStatement extends ASTNode {
 }
 
 /**
+ * POKEステートメント (例: *=A)
+ * システム変数*を使ってgridDataに値を書き込む
+ */
+export interface PokeStatement extends ASTNode {
+    type: 'PokeStatement';
+    value: Expression;       // 書き込む値
+}
+
+/**
  * 式を表すASTノード
  */
 export type Expression = 
@@ -144,7 +154,8 @@ export type Expression =
     | StringLiteral 
     | Identifier
     | BinaryExpression
-    | UnaryExpression;
+    | UnaryExpression
+    | PeekExpression;
 
 /**
  * 数値リテラル
@@ -190,4 +201,12 @@ export interface UnaryExpression extends ASTNode {
     type: 'UnaryExpression';
     operator: '-';  // 将来的に他の単項演算子を追加する可能性
     operand: Expression;
+}
+
+/**
+ * PEEK式 (例: A=*)
+ * システム変数*を使ってgridDataから値を読み取る
+ */
+export interface PeekExpression extends ASTNode {
+    type: 'PeekExpression';
 }

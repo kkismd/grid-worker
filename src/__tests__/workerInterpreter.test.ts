@@ -1036,3 +1036,122 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(stmt?.type).toBe('AssignmentStatement'); // FORではなく通常の代入
     });
 });
+
+describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse PEEK expression (A=*)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.variable.name).toBe('A');
+        expect(assignStmt.value.type).toBe('PeekExpression');
+    });
+
+    test('should parse POKE statement (*=A)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('PokeStatement');
+        const pokeStmt = stmt as any;
+        expect(pokeStmt.value.type).toBe('Identifier');
+        expect(pokeStmt.value.name).toBe('A');
+    });
+
+    test('should parse POKE with numeric literal (*=42)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '42', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('PokeStatement');
+        const pokeStmt = stmt as any;
+        expect(pokeStmt.value.type).toBe('NumericLiteral');
+        expect(pokeStmt.value.value).toBe(42);
+    });
+
+    test('should parse POKE with expression (*=A+10)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('PokeStatement');
+        const pokeStmt = stmt as any;
+        expect(pokeStmt.value.type).toBe('BinaryExpression');
+    });
+
+    test('should parse PEEK in expression (B=A+*)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.variable.name).toBe('B');
+        expect(assignStmt.value.type).toBe('BinaryExpression');
+        const binaryExpr = assignStmt.value as any;
+        expect(binaryExpr.right.type).toBe('PeekExpression');
+    });
+
+    test('should parse PEEK in subtraction (C=*-2)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.ASTERISK, value: '*', line: 0, column: 2 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '2', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.variable.name).toBe('C');
+        expect(assignStmt.value.type).toBe('BinaryExpression');
+        const binaryExpr = assignStmt.value as any;
+        expect(binaryExpr.left.type).toBe('PeekExpression');
+        expect(binaryExpr.operator).toBe('-');
+    });
+});

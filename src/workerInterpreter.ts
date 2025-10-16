@@ -359,6 +359,28 @@ class WorkerInterpreter {
                 }
             }
 
+            // POKEステートメント (*=expression)
+            if (token.type === TokenType.ASTERISK) {
+                const nextToken = tokens[index + 1];
+                
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // = の後のトークンを取得
+                    const exprTokens = tokens.slice(index + 2);
+                    const value = this.parseExpressionFromTokens(exprTokens);
+                    
+                    statements.push({
+                        type: 'PokeStatement',
+                        line: token.line,
+                        column: token.column,
+                        value,
+                    });
+                    
+                    // すべてのトークンを消費
+                    index = tokens.length;
+                    continue;
+                }
+            }
+
             // 代入ステートメント または FORループの解析
             if (token.type === TokenType.IDENTIFIER) {
                 const nextToken = tokens[index + 1];
@@ -484,6 +506,14 @@ class WorkerInterpreter {
             return {
                 type: 'Identifier',
                 name: token.value,
+                line: token.line,
+                column: token.column,
+            };
+        }
+
+        if (token.type === TokenType.ASTERISK) {
+            return {
+                type: 'PeekExpression',
                 line: token.line,
                 column: token.column,
             };
