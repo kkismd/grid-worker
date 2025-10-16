@@ -36,7 +36,11 @@ export type Statement =
     | AssignmentStatement 
     | OutputStatement 
     | NewlineStatement
-    | IfStatement; // 他のステートメント型も追加予定
+    | IfStatement
+    | GotoStatement
+    | GosubStatement
+    | ReturnStatement
+    | HaltStatement;
 
 /**
  * 代入ステートメント (例: A=10)
@@ -71,6 +75,40 @@ export interface IfStatement extends ASTNode {
     type: 'IfStatement';
     condition: Expression;
     // consequentは削除：後続ステートメントは同じLine.statements[]内に独立して存在
+}
+
+/**
+ * GOTOステートメント (例: #=100)
+ * 指定した行番号に無条件ジャンプ
+ */
+export interface GotoStatement extends ASTNode {
+    type: 'GotoStatement';
+    target: Expression; // 行番号を表す式
+}
+
+/**
+ * GOSUBステートメント (例: !=200)
+ * 指定した行番号にサブルーチンコール
+ */
+export interface GosubStatement extends ASTNode {
+    type: 'GosubStatement';
+    target: Expression; // 行番号を表す式
+}
+
+/**
+ * RETURNステートメント (])
+ * サブルーチンから戻る
+ */
+export interface ReturnStatement extends ASTNode {
+    type: 'ReturnStatement';
+}
+
+/**
+ * HALTステートメント (#=-1)
+ * プログラムの実行を停止
+ */
+export interface HaltStatement extends ASTNode {
+    type: 'HaltStatement';
 }
 
 /**

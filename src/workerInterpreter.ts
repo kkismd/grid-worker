@@ -217,6 +217,78 @@ class WorkerInterpreter {
                 continue;
             }
 
+            // RETURNステートメント (])
+            if (token.type === TokenType.RIGHT_BRACKET) {
+                statements.push({
+                    type: 'ReturnStatement',
+                    line: token.line,
+                    column: token.column,
+                });
+                index++;
+                continue;
+            }
+
+            // GOTOステートメント (#=) と HALTステートメント (#=-1)
+            if (token.type === TokenType.HASH) {
+                const nextToken = tokens[index + 1];
+                
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // #=-1 の場合はHALTステートメント
+                    const thirdToken = tokens[index + 2];
+                    const fourthToken = tokens[index + 3];
+                    
+                    if (thirdToken && thirdToken.type === TokenType.MINUS &&
+                        fourthToken && fourthToken.type === TokenType.NUMBER && 
+                        fourthToken.value === '1') {
+                        statements.push({
+                            type: 'HaltStatement',
+                            line: token.line,
+                            column: token.column,
+                        });
+                        // すべてのトークンを消費
+                        index = tokens.length;
+                        continue;
+                    }
+                    
+                    // #= の後の式を解析（通常のGOTO）
+                    const exprTokens = tokens.slice(index + 2);
+                    const target = this.parseExpressionFromTokens(exprTokens);
+                    
+                    statements.push({
+                        type: 'GotoStatement',
+                        line: token.line,
+                        column: token.column,
+                        target,
+                    });
+                    
+                    // すべてのトークンを消費
+                    index = tokens.length;
+                    continue;
+                }
+            }
+
+            // GOSUBステートメント (!=)
+            if (token.type === TokenType.BANG) {
+                const nextToken = tokens[index + 1];
+                
+                if (nextToken && nextToken.type === TokenType.EQUALS) {
+                    // != の後の式を解析
+                    const exprTokens = tokens.slice(index + 2);
+                    const target = this.parseExpressionFromTokens(exprTokens);
+                    
+                    statements.push({
+                        type: 'GosubStatement',
+                        line: token.line,
+                        column: token.column,
+                        target,
+                    });
+                    
+                    // すべてのトークンを消費
+                    index = tokens.length;
+                    continue;
+                }
+            }
+
             // IFステートメント (;=)
             if (token.type === TokenType.SEMICOLON) {
                 const nextToken = tokens[index + 1];

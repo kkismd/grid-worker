@@ -726,3 +726,109 @@ describe('Parser (TDD Cycle 2A.3)', () => {
         expect(program?.body[1]?.statements).toHaveLength(0); // 空行
     });
 });
+
+describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse GOTO statement (#=100)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('GotoStatement');
+        expect(stmt).toHaveProperty('target');
+        const gotoStmt = stmt as any;
+        expect(gotoStmt.target.type).toBe('NumericLiteral');
+        expect(gotoStmt.target.value).toBe(100);
+    });
+
+    test('should parse GOSUB statement (!=200)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.BANG, value: '!', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '200', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('GosubStatement');
+        expect(stmt).toHaveProperty('target');
+        const gosubStmt = stmt as any;
+        expect(gosubStmt.target.type).toBe('NumericLiteral');
+        expect(gosubStmt.target.value).toBe(200);
+    });
+
+    test('should parse RETURN statement (])', () => {
+        const tokens: Token[] = [
+            { type: TokenType.RIGHT_BRACKET, value: ']', line: 0, column: 0 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('ReturnStatement');
+    });
+
+    test('should parse HALT statement (#=-1)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 3 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('HaltStatement');
+    });
+
+    test('should parse GOTO with variable target (#=A)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('GotoStatement');
+        const gotoStmt = stmt as any;
+        expect(gotoStmt.target.type).toBe('Identifier');
+        expect(gotoStmt.target.name).toBe('A');
+    });
+
+    test('should parse GOSUB with expression (!=A+10)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.BANG, value: '!', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('GosubStatement');
+        const gosubStmt = stmt as any;
+        expect(gosubStmt.target.type).toBe('BinaryExpression');
+    });
+});
+
