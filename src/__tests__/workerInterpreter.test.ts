@@ -364,3 +364,102 @@ describe('Parser (TDD Cycle 2.3)', () => {
     });
 });
 
+describe('Parser (TDD Cycle 2.4)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse a comparison expression (F=A>B)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'F', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'F' },
+                    value: {
+                        type: 'BinaryExpression',
+                        operator: '>',
+                        left: { type: 'Identifier', name: 'A' },
+                        right: { type: 'Identifier', name: 'B' },
+                    },
+                },
+            ],
+        });
+    });
+
+    test('should parse an equality comparison (G=X=Y)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'G', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'X', line: 0, column: 2 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 3 },
+            { type: TokenType.IDENTIFIER, value: 'Y', line: 0, column: 4 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'G' },
+                    value: {
+                        type: 'BinaryExpression',
+                        operator: '=',
+                        left: { type: 'Identifier', name: 'X' },
+                        right: { type: 'Identifier', name: 'Y' },
+                    },
+                },
+            ],
+        });
+    });
+
+    test('should parse a logical expression (H=A&B|C)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'H', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.AMPERSAND, value: '&', line: 0, column: 3 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
+            { type: TokenType.PIPE, value: '|', line: 0, column: 5 },
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 6 },
+        ];
+        const ast = interpreter.parse(tokens);
+        // 左から右へ評価: ((A&B)|C)
+        expect(ast).toEqual({
+            type: 'Program',
+            body: [
+                {
+                    type: 'AssignmentStatement',
+                    variable: { type: 'Identifier', name: 'H' },
+                    value: {
+                        type: 'BinaryExpression',
+                        operator: '|',
+                        left: {
+                            type: 'BinaryExpression',
+                            operator: '&',
+                            left: { type: 'Identifier', name: 'A' },
+                            right: { type: 'Identifier', name: 'B' },
+                        },
+                        right: { type: 'Identifier', name: 'C' },
+                    },
+                },
+            ],
+        });
+    });
+});
+

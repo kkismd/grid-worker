@@ -342,6 +342,7 @@ class WorkerInterpreter {
             TokenType.MINUS,
             TokenType.ASTERISK,
             TokenType.SLASH,
+            TokenType.EQUALS,           // 比較演算子としての =
             TokenType.GREATER_THAN,
             TokenType.LESS_THAN,
             TokenType.GREATER_THAN_OR_EQUAL,
