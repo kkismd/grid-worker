@@ -111,8 +111,6 @@ class WorkerInterpreter {
 
         // 全行のASTを構築
         this.buildProgramAST();
-
-        this.logFn("スクリプトがロードされました。");
     }
 
     /**
@@ -322,8 +320,28 @@ class WorkerInterpreter {
                 const nextToken = tokens[index + 1];
                 
                 if (nextToken && nextToken.type === TokenType.EQUALS) {
-                    // ?= の後から式を解析
-                    const exprResult = this.parseExpressionFromTokens(tokens.slice(index + 2));
+                    // ?= の後から次のステートメント開始位置まで式を解析
+                    const exprStart = index + 2;
+                    let exprEnd = exprStart;
+                    while (exprEnd < tokens.length) {
+                        const t = tokens[exprEnd];
+                        if (!t) break;
+                        
+                        // IDENTIFIERの後に=がある場合は代入ステートメント
+                        if (t.type === TokenType.IDENTIFIER) {
+                            const nextT = tokens[exprEnd + 1];
+                            if (nextT && nextT.type === TokenType.EQUALS) {
+                                break; // 代入ステートメントなので式の終わり
+                            }
+                        } else if (this.isStatementStart(t.type)) {
+                            break; // 他のステートメント開始
+                        }
+                        
+                        exprEnd++;
+                    }
+                    
+                    const exprTokens = tokens.slice(exprStart, exprEnd);
+                    const exprResult = this.parseExpressionFromTokens(exprTokens);
                     
                     statements.push({
                         type: 'OutputStatement',
@@ -518,6 +536,9 @@ class WorkerInterpreter {
         if (tokens.length === 0) {
             throw new Error('構文エラー: 式が空です');
         }
+
+        // デバッグ: トークン列を出力
+        // console.log('parseExpressionFromTokens:', tokens.map(t => `${t?.type}:${t?.value}`).join(', '));
 
         // 単一トークンの場合
         if (tokens.length === 1) {
@@ -806,7 +827,23 @@ class WorkerInterpreter {
             case 'AssignmentStatement':
                 {
                     const value = this.evaluateExpression(statement.value);
+                    if (typeof value === 'string') {
+                        throw new Error('変数には数値のみを代入できます');
+                    }
                     this.variables.set(statement.variable.name, value);
+                }
+                break;
+            
+            case 'OutputStatement':
+                {
+                    const value = this.evaluateExpression(statement.expression);
+                    this.logFn(value);
+                }
+                break;
+            
+            case 'NewlineStatement':
+                {
+                    this.logFn('\n');
                 }
                 break;
             
@@ -816,13 +853,16 @@ class WorkerInterpreter {
     }
 
     /**
-     * 式を評価して数値を返します。
+     * 式を評価して数値または文字列を返します。
      * @param expr 評価する式
-     * @returns 評価結果の数値
+     * @returns 評価結果の数値または文字列
      */
-    private evaluateExpression(expr: Expression): number {
+    private evaluateExpression(expr: Expression): number | string {
         switch (expr.type) {
             case 'NumericLiteral':
+                return expr.value;
+            
+            case 'StringLiteral':
                 return expr.value;
             
             case 'Identifier':
@@ -839,6 +879,11 @@ class WorkerInterpreter {
                 {
                     const left = this.evaluateExpression(expr.left);
                     const right = this.evaluateExpression(expr.right);
+                    
+                    // 文字列を含む演算は未サポート
+                    if (typeof left === 'string' || typeof right === 'string') {
+                        throw new Error('文字列演算はサポートされていません');
+                    }
                     
                     switch (expr.operator) {
                         case '+': return left + right;

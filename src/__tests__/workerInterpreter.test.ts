@@ -121,6 +121,14 @@ describe('Lexer (TDD Cycle 1.2)', () => {
       { type: TokenType.LABEL_DEFINITION, value: '^MY_LABEL', line: 0, column: 0 },
     ]);
   });
+
+  test('should tokenize string followed by other statements', () => {
+    const line = '?=100 /';
+    const tokens = lexer.tokenizeLine(line, 0);
+    console.log('Tokenized ?=100 /:', JSON.stringify(tokens, null, 2));
+    // このテストでトークン化の結果を確認する
+    expect(tokens.length).toBe(4); // ?, =, 100, /
+  });
 });
 
 describe('Lexer (TDD Cycle 1.3)', () => {
@@ -1420,5 +1428,184 @@ describe('WorkerInterpreter - Execution (Phase 3.1)', () => {
         expect(interpreter.getVariable('A')).toBe(1);
         expect(interpreter.getVariable('B')).toBe(2);
         expect(interpreter.getVariable('C')).toBe(3);
+    });
+});
+
+describe('WorkerInterpreter - Output Statements (Phase 3.2)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        mockLogFn.mockClear();
+        mockPeekFn.mockClear();
+        mockPokeFn.mockClear();
+        
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should execute numeric output (?=10)', () => {
+        const script = '?=10';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが数値10で呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledWith(10);
+    });
+
+    test('should execute string output (?="Hello")', () => {
+        const script = '?="Hello"';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが文字列"Hello"で呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledWith('Hello');
+    });
+
+    test('should execute string output with spaces (?="Hello World")', () => {
+        const script = '?="Hello World"';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが文字列"Hello World"で呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledWith('Hello World');
+    });
+
+    test('should execute string output with trailing space (?="Value: ")', () => {
+        const script = '?="Value: "';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが文字列"Value: "で呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledWith('Value: ');
+    });
+
+    test('should execute variable output (?=A)', () => {
+        const script = 'A=42 ?=A';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが42で呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledWith(42);
+    });
+
+    test('should execute newline statement (/)', () => {
+        const script = '/';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが改行文字で呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledWith('\n');
+    });
+
+    test('should execute multiple output statements', () => {
+        const script = '?=10 ?=20';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        // logFnが2回呼ばれることを確認
+        expect(mockLogFn).toHaveBeenCalledTimes(2);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 10);
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, 20);
+    });
+
+    test('should execute two string outputs', () => {
+        const script = '?="A" ?="B"';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledTimes(2);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 'A');
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, 'B');
+    });
+
+    test('should execute string then number output', () => {
+        const script = '?="Value: " ?=100';
+        interpreter.loadScript(script);
+        
+        const gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledTimes(2);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 'Value: ');
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, 100);
+    });
+
+    test('should execute string, number, and newline output', () => {
+        // まず数値と改行をテスト
+        const simpleScript = '?=100 /';
+        interpreter.loadScript(simpleScript);
+        
+        let gen = interpreter.run();
+        let result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledTimes(2);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 100);
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, '\n');
+        mockLogFn.mockClear();
+        
+        // 次に文字列、数値、改行をテスト
+        const script = '?="Value: " ?=100 /';
+        interpreter.loadScript(script);
+        
+        gen = interpreter.run();
+        result = gen.next();
+        while (!result.done) {
+            result = gen.next();
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledTimes(3);
+        expect(mockLogFn).toHaveBeenNthCalledWith(1, 'Value: ');
+        expect(mockLogFn).toHaveBeenNthCalledWith(2, 100);
+        expect(mockLogFn).toHaveBeenNthCalledWith(3, '\n');
     });
 });
