@@ -188,7 +188,7 @@ export interface Identifier extends ASTNode {
  */
 export interface BinaryExpression extends ASTNode {
     type: 'BinaryExpression';
-    operator: string; // '+', '-', '*', '/', '>', '<', '>=', '<=', '=', '<>', '&', '|'
+    operator: string; // '+', '-', '*', '/', '%', '>', '<', '>=', '<=', '=', '<>', '&', '|'
     left: Expression;
     right: Expression;
 }

@@ -14,6 +14,7 @@ export enum TokenType {
     MINUS = 'MINUS', // -
     ASTERISK = 'ASTERISK', // *
     SLASH = 'SLASH', // /
+    PERCENT = 'PERCENT', // %
     EQUALS = 'EQUALS', // =
     GREATER_THAN = 'GREATER_THAN', // >
     LESS_THAN = 'LESS_THAN', // <
@@ -176,6 +177,11 @@ export class Lexer {
             }
             if (char === '/') {
                 tokens.push({ type: TokenType.SLASH, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '%') {
+                tokens.push({ type: TokenType.PERCENT, value: char, line: lineNumber, column: cursor });
                 cursor++;
                 continue;
             }

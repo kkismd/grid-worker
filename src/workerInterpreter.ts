@@ -544,7 +544,7 @@ class WorkerInterpreter {
     private getOperatorPrecedence(operator: string): number {
         // 優先順位（高→低）:
         // 6: 単項演算子 (!, -, +) - parsePrimaryExpressionで処理
-        // 5: 乗除算 (*, /)
+        // 5: 乗除算・剰余 (*, /, %)
         // 4: 加減算 (+, -)
         // 3: 比較 (>, <, >=, <=, =, <>)
         // 2: 論理AND (&)
@@ -553,6 +553,7 @@ class WorkerInterpreter {
         switch (operator) {
             case '*':
             case '/':
+            case '%':
                 return 5;
             case '+':
             case '-':
@@ -747,6 +748,7 @@ class WorkerInterpreter {
             TokenType.MINUS,
             TokenType.ASTERISK,
             TokenType.SLASH,
+            TokenType.PERCENT,
             TokenType.EQUALS,
             TokenType.GREATER_THAN,
             TokenType.LESS_THAN,
@@ -1482,6 +1484,11 @@ class WorkerInterpreter {
                                 throw new Error('ゼロ除算エラー');
                             }
                             return Math.floor(left / right); // 整数除算
+                        case '%':
+                            if (right === 0) {
+                                throw new Error('ゼロ除算エラー（剰余演算）');
+                            }
+                            return ((left % right) + right) % right; // 正の剰余を保証
                         
                         // 比較演算子（真=1, 偽=0）
                         case '>': return left > right ? 1 : 0;
