@@ -826,3 +826,98 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
     });
 });
 
+describe('WorkerInterpreter - Unary Minus Operator (Phase 2B.3.5)', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse negative number literal (A=-100)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 3 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.value.type).toBe('UnaryExpression');
+        expect(assignStmt.value.operator).toBe('-');
+        expect(assignStmt.value.operand.type).toBe('NumericLiteral');
+        expect(assignStmt.value.operand.value).toBe(100);
+    });
+
+    test('should parse unary minus with variable (B=-A)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 3 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.value.type).toBe('UnaryExpression');
+        expect(assignStmt.value.operator).toBe('-');
+        expect(assignStmt.value.operand.type).toBe('Identifier');
+        expect(assignStmt.value.operand.name).toBe('A');
+    });
+
+    test('should parse complex expression with unary minus (C=10+-5)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 4 },
+            { type: TokenType.NUMBER, value: '5', line: 0, column: 5 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.value.type).toBe('BinaryExpression');
+        expect(assignStmt.value.operator).toBe('+');
+        expect(assignStmt.value.left.type).toBe('NumericLiteral');
+        expect(assignStmt.value.right.type).toBe('UnaryExpression');
+        expect(assignStmt.value.right.operator).toBe('-');
+        expect(assignStmt.value.right.operand.value).toBe(5);
+    });
+
+    test('should parse unary minus with parentheses (D=-(A+B))', () => {
+        const tokens: Token[] = [
+            { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
+            { type: TokenType.LEFT_PAREN, value: '(', line: 0, column: 3 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 4 },
+            { type: TokenType.PLUS, value: '+', line: 0, column: 5 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 6 },
+            { type: TokenType.RIGHT_PAREN, value: ')', line: 0, column: 7 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.value.type).toBe('UnaryExpression');
+        expect(assignStmt.value.operator).toBe('-');
+        expect(assignStmt.value.operand.type).toBe('BinaryExpression');
+    });
+});

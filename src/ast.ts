@@ -120,7 +120,8 @@ export type Expression =
     | NumericLiteral 
     | StringLiteral 
     | Identifier
-    | BinaryExpression; // UnaryExpression など、他の式型も追加予定
+    | BinaryExpression
+    | UnaryExpression;
 
 /**
  * 数値リテラル
@@ -156,4 +157,14 @@ export interface BinaryExpression extends ASTNode {
     operator: string; // '+', '-', '*', '/', '>', '<', '>=', '<=', '=', '<>', '&', '|'
     left: Expression;
     right: Expression;
+}
+
+/**
+ * 単項演算式 (例: -A, -100)
+ * 現時点では単項マイナス（-）のみをサポート
+ */
+export interface UnaryExpression extends ASTNode {
+    type: 'UnaryExpression';
+    operator: '-';  // 将来的に他の単項演算子を追加する可能性
+    operand: Expression;
 }

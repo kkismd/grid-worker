@@ -476,7 +476,7 @@ class WorkerInterpreter {
     }
 
     /**
-     * 基本式（リテラル、識別子、括弧式）を解析します。
+     * 基本式（リテラル、識別子、括弧式、単項演算）を解析します。
      * @param tokens トークン配列
      * @param start 開始インデックス
      * @returns 解析された式と次のインデックス
@@ -485,6 +485,22 @@ class WorkerInterpreter {
         const token = tokens[start];
         if (!token) {
             throw new Error('構文エラー: 式が不完全です');
+        }
+
+        // 単項マイナス演算子
+        if (token.type === TokenType.MINUS) {
+            // マイナスの後の式を解析
+            const result = this.parsePrimaryExpression(tokens, start + 1);
+            return {
+                expr: {
+                    type: 'UnaryExpression',
+                    operator: '-',
+                    operand: result.expr,
+                    line: token.line,
+                    column: token.column,
+                },
+                nextIndex: result.nextIndex,
+            };
         }
 
         // 括弧式
