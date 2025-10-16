@@ -35,6 +35,7 @@ export enum TokenType {
     LEFT_PAREN = 'LEFT_PAREN', // (
     RIGHT_PAREN = 'RIGHT_PAREN', // )
     DOLLAR = 'DOLLAR', // $ (PEEK/POKE)
+    APOSTROPHE = 'APOSTROPHE', // ' (Random number)
 
     // 予約語 (現時点ではなし、将来的に追加される可能性)
 
@@ -250,6 +251,11 @@ export class Lexer {
             }
             if (char === '$') {
                 tokens.push({ type: TokenType.DOLLAR, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === "'") {
+                tokens.push({ type: TokenType.APOSTROPHE, value: char, line: lineNumber, column: cursor });
                 cursor++;
                 continue;
             }

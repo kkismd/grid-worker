@@ -155,7 +155,8 @@ export type Expression =
     | Identifier
     | BinaryExpression
     | UnaryExpression
-    | PeekExpression;
+    | PeekExpression
+    | RandomExpression;
 
 /**
  * 数値リテラル
@@ -204,9 +205,17 @@ export interface UnaryExpression extends ASTNode {
 }
 
 /**
- * PEEK式 (例: A=*)
- * システム変数*を使ってgridDataから値を読み取る
+ * PEEK式 (例: A=$)
+ * システム変数$を使ってgridDataから値を読み取る
  */
 export interface PeekExpression extends ASTNode {
     type: 'PeekExpression';
+}
+
+/**
+ * Random式 (例: A=')
+ * システム変数'を使ってランダム数を生成（0-32767）
+ */
+export interface RandomExpression extends ASTNode {
+    type: 'RandomExpression';
 }

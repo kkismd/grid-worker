@@ -508,6 +508,14 @@ class WorkerInterpreter {
             };
         }
 
+        if (token.type === TokenType.APOSTROPHE) {
+            return {
+                type: 'RandomExpression',
+                line: token.line,
+                column: token.column,
+            };
+        }
+
         throw new Error(`構文エラー: 無効な式トークン '${token.value}' (行: ${token.line + 1})`);
     }
 
@@ -734,6 +742,8 @@ class WorkerInterpreter {
             TokenType.IDENTIFIER,
             TokenType.LEFT_PAREN,
             TokenType.RIGHT_PAREN,
+            TokenType.DOLLAR,
+            TokenType.APOSTROPHE,
             ...this.getBinaryOperatorTypes(),
         ].includes(tokenType);
     }
@@ -1523,6 +1533,12 @@ class WorkerInterpreter {
                     
                     // gridDataから値を読み取り
                     return this.peekFn(index);
+                }
+            
+            case 'RandomExpression':
+                {
+                    // ランダム数生成: 0-32767の範囲
+                    return Math.floor(Math.random() * 32768);
                 }
             
             default:
