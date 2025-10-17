@@ -40,7 +40,9 @@ export class CLIRunner {
             gridData: this.gridData,
             peekFn: (index: number) => this.peek(index),
             pokeFn: (x: number, y: number, value: number) => this.poke(x, y, value),
-            logFn: (...args: any[]) => this.log(...args)
+            logFn: (...args: any[]) => this.log(...args),
+            getFn: () => this.get1Byte(),
+            putFn: (value: number) => this.put1Byte(value)
         });
 
         try {
@@ -213,6 +215,45 @@ export class CLIRunner {
         console.log('\n📊 グリッド状態:');
         const rendered = this.gridRenderer.renderToString(this.gridData);
         console.log(rendered);
+    }
+
+    /**
+     * VTL互換 1byte入力（現在は固定値を返す）
+     */
+    private get1Byte(): number {
+        // CLI環境では入力が難しいため、デモ用の固定値を返す
+        // 実際の実装では標準入力やファイルから読み取ることも可能
+        const demoValue = 42; // デモ用固定値
+        if (this.config.debug) {
+            console.log(`[DEBUG] 1byte入力: ${demoValue}`);
+        }
+        return demoValue;
+    }
+
+    /**
+     * VTL互換 1byte出力
+     */
+    private put1Byte(value: number): void {
+        // 値を0-255の範囲にクランプ
+        const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+        
+        if (this.config.debug) {
+            console.log(`[DEBUG] 1byte出力: ${clampedValue} (ASCII: ${String.fromCharCode(clampedValue)})`);
+        }
+        
+        // ASCII文字として出力（印刷可能文字の場合）
+        if (clampedValue >= 32 && clampedValue <= 126) {
+            process.stdout.write(String.fromCharCode(clampedValue));
+        } else if (clampedValue === 10) {
+            // 改行文字
+            process.stdout.write('\n');
+        } else if (clampedValue === 13) {
+            // キャリッジリターン
+            process.stdout.write('\r');
+        } else {
+            // その他の制御文字は16進数で表示
+            process.stdout.write(`[0x${clampedValue.toString(16).padStart(2, '0')}]`);
+        }
     }
 
     /**

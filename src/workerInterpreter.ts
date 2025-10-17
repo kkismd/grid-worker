@@ -41,6 +41,8 @@ class WorkerInterpreter {
     private peekFn: (index: number) => number;
     private pokeFn: (x: number, y: number, value: number) => void;
     private logFn: (...args: any[]) => void;
+    private getFn: (() => number) | undefined; // 1byte入力関数（0-255の値を返す）
+    private putFn: ((value: number) => void) | undefined; // 1byte出力関数（0-255の値を受け取る）
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック
@@ -56,11 +58,15 @@ class WorkerInterpreter {
         peekFn: (index: number) => number;
         pokeFn: (x: number, y: number, value: number) => void;
         logFn: (...args: any[]) => void;
+        getFn?: () => number; // 1byte入力関数（0-255の値を返す）
+        putFn?: (value: number) => void; // 1byte出力関数（0-255の値を受け取る）
     }) {
         this.gridData = config.gridData;
         this.peekFn = config.peekFn;
         this.pokeFn = config.pokeFn;
         this.logFn = config.logFn;
+        this.getFn = config.getFn;
+        this.putFn = config.putFn;
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
@@ -397,6 +403,22 @@ class WorkerInterpreter {
             };
         }
 
+        // 1byte出力ステートメント ($=expression)
+        if (token.type === TokenType.DOLLAR) {
+            const exprTokens = tokens.slice(startIndex + 2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                statement: {
+                    type: 'IoPutStatement',
+                    line: token.line,
+                    column: token.column,
+                    value: exprResult.expr,
+                },
+                nextIndex: startIndex + 2 + exprResult.consumed
+            };
+        }
+
         // 代入ステートメント または FORループ
         if (token.type === TokenType.IDENTIFIER) {
             const exprTokens = tokens.slice(startIndex + 2);
@@ -522,6 +544,14 @@ class WorkerInterpreter {
                 line: token.line,
                 column: token.column,
                 value: token.value,
+            };
+        }
+
+        if (token.type === TokenType.DOLLAR) {
+            return {
+                type: 'IoGetExpression',
+                line: token.line,
+                column: token.column,
             };
         }
 
@@ -754,6 +784,7 @@ class WorkerInterpreter {
             TokenType.BACKTICK,
             TokenType.TILDE,
             TokenType.CHAR_LITERAL,
+            TokenType.DOLLAR,
             ...this.getBinaryOperatorTypes(),
         ].includes(tokenType);
     }
@@ -1042,6 +1073,19 @@ class WorkerInterpreter {
             
             return {
                 type: 'PokeStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                value: exprResult.expr,
+            };
+        }
+
+        // 1byte出力ステートメント ($=expression)
+        if (firstToken.type === TokenType.DOLLAR && secondToken.type === TokenType.EQUALS) {
+            const exprTokens = tokens.slice(2);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            return {
+                type: 'IoPutStatement',
                 line: firstToken.line,
                 column: firstToken.column,
                 value: exprResult.expr,
@@ -1441,6 +1485,25 @@ class WorkerInterpreter {
                 this.pokeFn(Math.floor(x), Math.floor(y), clampedValue);
                 break;
             }
+
+            case 'IoPutStatement': {
+                // VTL互換 1byte出力: $システム変数に値を書き込み
+                const value = this.evaluateExpression(statement.value);
+                
+                // 文字列は不可
+                if (typeof value === 'string') {
+                    throw new Error('1byte出力には数値が必要です');
+                }
+                
+                if (this.putFn) {
+                    // 値を0-255の範囲にクランプ
+                    const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+                    this.putFn(clampedValue);
+                } else {
+                    throw new Error('1byte出力機能が設定されていません');
+                }
+                break;
+            }
         }
         return { jump: false, halt: false, skipRemaining: false };
     }
@@ -1596,6 +1659,18 @@ class WorkerInterpreter {
                     } else {
                         // エスケープシーケンス等で処理済みの文字
                         return charValue.charCodeAt(0);
+                    }
+                }
+
+            case 'IoGetExpression':
+                {
+                    // VTL互換 1byte入力: $システム変数から値を読み取り
+                    if (this.getFn) {
+                        const value = this.getFn();
+                        // 0-255の範囲に制限
+                        return Math.max(0, Math.min(255, Math.floor(value)));
+                    } else {
+                        throw new Error('1byte入力機能が設定されていません');
                     }
                 }
             

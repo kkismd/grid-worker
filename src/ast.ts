@@ -43,7 +43,8 @@ export type Statement =
     | HaltStatement
     | ForStatement
     | NextStatement
-    | PokeStatement;
+    | PokeStatement
+    | IoPutStatement;
 
 /**
  * 代入ステートメント (例: A=10)
@@ -138,12 +139,21 @@ export interface NextStatement extends ASTNode {
 }
 
 /**
- * POKEステートメント (例: *=A)
- * システム変数*を使ってgridDataに値を書き込む
+ * POKEステートメント (例: `=A)
+ * システム変数`を使ってgridDataに値を書き込む
  */
 export interface PokeStatement extends ASTNode {
     type: 'PokeStatement';
     value: Expression;       // 書き込む値
+}
+
+/**
+ * 1byte出力ステートメント (例: $=A)
+ * VTL互換：$システム変数を使って1byteの値を出力（0-255）
+ */
+export interface IoPutStatement extends ASTNode {
+    type: 'IoPutStatement';
+    value: Expression;       // 出力する値
 }
 
 /**
@@ -157,7 +167,8 @@ export type Expression =
     | UnaryExpression
     | PeekExpression
     | RandomExpression
-    | CharLiteralExpression;
+    | CharLiteralExpression
+    | IoGetExpression;
 
 /**
  * 数値リテラル
@@ -229,4 +240,12 @@ export interface RandomExpression extends ASTNode {
 export interface CharLiteralExpression extends ASTNode {
     type: 'CharLiteralExpression';
     value: string; // 実際の文字（エスケープ処理済み）
+}
+
+/**
+ * 1byte入力式 (例: A=$)
+ * VTL互換：$システム変数を使って1byteの値を読み取る（0-255）
+ */
+export interface IoGetExpression extends ASTNode {
+    type: 'IoGetExpression';
 }
