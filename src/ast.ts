@@ -213,7 +213,7 @@ export interface PeekExpression extends ASTNode {
 }
 
 /**
- * Random式 (例: A=')
+ * Random式 (例: A=~)
  * システム変数'を使ってランダム数を生成（0-32767）
  */
 export interface RandomExpression extends ASTNode {

@@ -381,8 +381,8 @@ class WorkerInterpreter {
             };
         }
 
-        // POKEステートメント ($=expression)
-        if (token.type === TokenType.DOLLAR) {
+        // POKEステートメント (`=expression)
+        if (token.type === TokenType.BACKTICK) {
             const exprTokens = tokens.slice(startIndex + 2);
             const exprResult = this.parseExpressionFromTokens(exprTokens);
             
@@ -500,7 +500,7 @@ class WorkerInterpreter {
             };
         }
 
-        if (token.type === TokenType.DOLLAR) {
+        if (token.type === TokenType.BACKTICK) {
             return {
                 type: 'PeekExpression',
                 line: token.line,
@@ -508,7 +508,7 @@ class WorkerInterpreter {
             };
         }
 
-        if (token.type === TokenType.APOSTROPHE) {
+        if (token.type === TokenType.TILDE) {
             return {
                 type: 'RandomExpression',
                 line: token.line,
@@ -742,8 +742,8 @@ class WorkerInterpreter {
             TokenType.IDENTIFIER,
             TokenType.LEFT_PAREN,
             TokenType.RIGHT_PAREN,
-            TokenType.DOLLAR,
-            TokenType.APOSTROPHE,
+            TokenType.BACKTICK,
+            TokenType.TILDE,
             ...this.getBinaryOperatorTypes(),
         ].includes(tokenType);
     }
@@ -1010,8 +1010,8 @@ class WorkerInterpreter {
             };
         }
 
-        // POKEステートメント ($=expression)
-        if (firstToken.type === TokenType.DOLLAR && secondToken.type === TokenType.EQUALS) {
+        // POKEステートメント (`=expression)
+        if (firstToken.type === TokenType.BACKTICK && secondToken.type === TokenType.EQUALS) {
             const exprTokens = tokens.slice(2);
             const exprResult = this.parseExpressionFromTokens(exprTokens);
             

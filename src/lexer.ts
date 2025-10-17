@@ -34,8 +34,10 @@ export enum TokenType {
     COMMA = 'COMMA', // ,
     LEFT_PAREN = 'LEFT_PAREN', // (
     RIGHT_PAREN = 'RIGHT_PAREN', // )
-    DOLLAR = 'DOLLAR', // $ (PEEK/POKE)
-    APOSTROPHE = 'APOSTROPHE', // ' (Random number)
+    DOLLAR = 'DOLLAR', // $ (VTL 1byte data I/O)
+    APOSTROPHE = 'APOSTROPHE', // ' (Character literal)
+    TILDE = 'TILDE', // ~ (Random number)
+    BACKTICK = 'BACKTICK', // ` (Grid access PEEK/POKE)
 
     // 予約語 (現時点ではなし、将来的に追加される可能性)
 
@@ -256,6 +258,16 @@ export class Lexer {
             }
             if (char === "'") {
                 tokens.push({ type: TokenType.APOSTROPHE, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '~') {
+                tokens.push({ type: TokenType.TILDE, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '`') {
+                tokens.push({ type: TokenType.BACKTICK, value: char, line: lineNumber, column: cursor });
                 cursor++;
                 continue;
             }

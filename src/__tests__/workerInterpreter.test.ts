@@ -1084,11 +1084,11 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         });
     });
 
-    test('should parse PEEK expression (A=$)', () => {
+    test('should parse PEEK expression (A=`)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 2 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 2 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1100,9 +1100,9 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(assignStmt.value.type).toBe('PeekExpression');
     });
 
-    test('should parse POKE statement ($=A)', () => {
+    test('should parse POKE statement (`=A)', () => {
         const tokens: Token[] = [
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 0 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
         ];
@@ -1116,9 +1116,9 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(pokeStmt.value.name).toBe('A');
     });
 
-    test('should parse POKE with numeric literal ($=42)', () => {
+    test('should parse POKE with numeric literal (`=42)', () => {
         const tokens: Token[] = [
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 0 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.NUMBER, value: '42', line: 0, column: 2 },
         ];
@@ -1132,9 +1132,9 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(pokeStmt.value.value).toBe(42);
     });
 
-    test('should parse POKE with expression ($=A+10)', () => {
+    test('should parse POKE with expression (`=A+10)', () => {
         const tokens: Token[] = [
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 0 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
             { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
@@ -1149,13 +1149,13 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(pokeStmt.value.type).toBe('BinaryExpression');
     });
 
-    test('should parse PEEK in expression (B=A+$)', () => {
+    test('should parse PEEK in expression (B=A+`)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 4 },
+            { type: TokenType.PLUS, value: '+', line:0, column: 3 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 4 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1169,11 +1169,11 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
         expect(binaryExpr.right.type).toBe('PeekExpression');
     });
 
-    test('should parse PEEK in subtraction (C=$-2)', () => {
+    test('should parse PEEK in subtraction (C=`-2)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 2 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 2 },
             { type: TokenType.MINUS, value: '-', line: 0, column: 3 },
             { type: TokenType.NUMBER, value: '2', line: 0, column: 4 },
         ];
@@ -1307,19 +1307,19 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
         expect(ast.body[0]?.statements[2]?.type).toBe('NextStatement');
     });
 
-    test('should parse PEEK/POKE with assignment (A=$ $=A+1 B=$)', () => {
+    test('should parse PEEK/POKE with assignment (A=` `=A+1 B=`)', () => {
         const tokens: Token[] = [
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 2 },
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 4 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 2 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 4 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 5 },
             { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 6 },
             { type: TokenType.PLUS, value: '+', line: 0, column: 7 },
             { type: TokenType.NUMBER, value: '1', line: 0, column: 8 },
             { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 10 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
-            { type: TokenType.DOLLAR, value: '$', line: 0, column: 12 },
+            { type: TokenType.BACKTICK, value: '`', line: 0, column: 12 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -2581,12 +2581,12 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     test('should read from grid using PEEK with X, Y system variables', () => {
         // gridData[0] = 42 (X=0, Y=0)
         gridData[0] = 42;
-        interpreter.loadScript('X=0 Y=0\nA=$\n?=A');
+        interpreter.loadScript('X=0 Y=0\nA=`\n?=A');
         const gen = interpreter.run();
         
         gen.next(); // X=0
         gen.next(); // Y=0
-        gen.next(); // A=$ (PEEK)
+        gen.next(); // A=` (PEEK)
         gen.next(); // ?=A
         
         expect(interpreter.getVariable('A')).toBe(42);
@@ -2594,12 +2594,12 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     });
 
     test('should write to grid using POKE with X, Y system variables', () => {
-        interpreter.loadScript('X=5 Y=3\n$=99');
+        interpreter.loadScript('X=5 Y=3\n`=99');
         const gen = interpreter.run();
         
         gen.next(); // X=5
         gen.next(); // Y=3
-        gen.next(); // $=99 (POKE)
+        gen.next(); // `=99 (POKE)
         
         // Grid index = (5 % 100) * 100 + (3 % 100) = 500 + 3 = 503
         expect(gridData[503]).toBe(99);
@@ -2607,13 +2607,13 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     });
 
     test('should calculate grid index with X, Y modulo 100', () => {
-        interpreter.loadScript('X=250 Y=175\n$=77\nA=$');
+        interpreter.loadScript('X=250 Y=175\n`=77\nA=`');
         const gen = interpreter.run();
         
         gen.next(); // X=250
         gen.next(); // Y=175
-        gen.next(); // $=77 (POKE)
-        gen.next(); // A=$ (PEEK)
+        gen.next(); // `=77 (POKE)
+        gen.next(); // A=` (PEEK)
         
         // X % 100 = 50, Y % 100 = 75
         // Grid index = 50 * 100 + 75 = 5075
@@ -2623,13 +2623,13 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     });
 
     test('should handle negative X, Y coordinates', () => {
-        interpreter.loadScript('X=0-5 Y=0-3\n$=55\nB=$');
+        interpreter.loadScript('X=0-5 Y=0-3\n`=55\nB=`');
         const gen = interpreter.run();
         
         gen.next(); // X=0-5
         gen.next(); // Y=0-3
-        gen.next(); // $=55 (POKE)
-        gen.next(); // B=$ (PEEK)
+        gen.next(); // `=55 (POKE)
+        gen.next(); // B=` (PEEK)
         
         // JavaScript modulo for negative: -5 % 100 = -5 → need to wrap to 95
         // -3 % 100 = -3 → need to wrap to 97
@@ -2643,21 +2643,21 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     });
 
     test('should PEEK and POKE at different grid positions', () => {
-        interpreter.loadScript('X=10 Y=20\n$=100\nX=11 Y=21\n$=101\nX=10 Y=20\nA=$\nX=11 Y=21\nB=$');
+        interpreter.loadScript('X=10 Y=20\n`=100\nX=11 Y=21\n`=101\nX=10 Y=20\nA=`\nX=11 Y=21\nB=`');
         const gen = interpreter.run();
         
         gen.next(); // X=10
         gen.next(); // Y=20
-        gen.next(); // $=100 (POKE at 10,20)
+        gen.next(); // `=100 (POKE at 10,20)
         gen.next(); // X=11
         gen.next(); // Y=21
-        gen.next(); // $=101 (POKE at 11,21)
+        gen.next(); // `=101 (POKE at 11,21)
         gen.next(); // X=10
         gen.next(); // Y=20
-        gen.next(); // A=$ (PEEK at 10,20)
+        gen.next(); // A=` (PEEK at 10,20)
         gen.next(); // X=11
         gen.next(); // Y=21
-        gen.next(); // B=$ (PEEK at 11,21)
+        gen.next(); // B=` (PEEK at 11,21)
         
         expect(interpreter.getVariable('A')).toBe(100);
         expect(interpreter.getVariable('B')).toBe(101);
@@ -2666,13 +2666,13 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     });
 
     test('should clamp POKE value to 0-255 range', () => {
-        interpreter.loadScript('X=0 Y=0\n$=300\nA=$');
+        interpreter.loadScript('X=0 Y=0\n`=300\nA=`');
         const gen = interpreter.run();
         
         gen.next(); // X=0
         gen.next(); // Y=0
-        gen.next(); // $=300 (POKE, should clamp to 255)
-        gen.next(); // A=$ (PEEK)
+        gen.next(); // `=300 (POKE, should clamp to 255)
+        gen.next(); // A=` (PEEK)
         
         // Uint8Array automatically clamps 300 to 44 (300 % 256)
         // But we should clamp to 255
@@ -2681,28 +2681,28 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     });
 
     test('should clamp negative POKE value to 0', () => {
-        interpreter.loadScript('X=0 Y=0\n$=0-10\nB=$');
+        interpreter.loadScript('X=0 Y=0\n`=0-10\nB=`');
         const gen = interpreter.run();
         
         gen.next(); // X=0
         gen.next(); // Y=0
-        gen.next(); // $=-10 (POKE, should clamp to 0)
-        gen.next(); // B=$ (PEEK)
+        gen.next(); // `=-10 (POKE, should clamp to 0)
+        gen.next(); // B=` (PEEK)
         
         expect(gridData[0]).toBe(0);
         expect(interpreter.getVariable('B')).toBe(0);
     });
 
     test('should use system variables X, Y for grid access', () => {
-        interpreter.loadScript('X=7 Y=8\n$=88\n?=X\n?=Y\nC=$');
+        interpreter.loadScript('X=7 Y=8\n`=88\n?=X\n?=Y\nC=`');
         const gen = interpreter.run();
         
         gen.next(); // X=7
         gen.next(); // Y=8
-        gen.next(); // $=88 (POKE)
+        gen.next(); // `=88 (POKE)
         gen.next(); // ?=X
         gen.next(); // ?=Y
-        gen.next(); // C=$ (PEEK)
+        gen.next(); // C=` (PEEK)
         
         expect(interpreter.getVariable('X')).toBe(7);
         expect(interpreter.getVariable('Y')).toBe(8);
@@ -2714,29 +2714,29 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
     test('should handle PEEK in expression', () => {
         gridData[0] = 10;
         gridData[1] = 20;
-        interpreter.loadScript('X=0 Y=0\nA=$+5\nX=0 Y=1\nB=$*2');
+        interpreter.loadScript('X=0 Y=0\nA=`+5\nX=0 Y=1\nB=`*2');
         const gen = interpreter.run();
         
         gen.next(); // X=0
         gen.next(); // Y=0
-        gen.next(); // A=$+5 (PEEK 10 + 5)
+        gen.next(); // A=`+5 (PEEK 10 + 5)
         gen.next(); // X=0
         gen.next(); // Y=1
-        gen.next(); // B=$*2 (PEEK 20 * 2)
+        gen.next(); // B=`*2 (PEEK 20 * 2)
         
         expect(interpreter.getVariable('A')).toBe(15);
         expect(interpreter.getVariable('B')).toBe(40);
     });
 
     test('should handle POKE with expression', () => {
-        interpreter.loadScript('A=10 B=20\nX=5 Y=5\n$=A+B');
+        interpreter.loadScript('A=10 B=20\nX=5 Y=5\n`=A+B');
         const gen = interpreter.run();
         
         gen.next(); // A=10
         gen.next(); // B=20
         gen.next(); // X=5
         gen.next(); // Y=5
-        gen.next(); // $=A+B (POKE 30)
+        gen.next(); // `=A+B (POKE 30)
         
         // Grid index = 5 * 100 + 5 = 505
         expect(gridData[505]).toBe(30);
