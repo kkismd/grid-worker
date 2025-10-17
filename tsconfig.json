@@ -10,7 +10,8 @@
     "module": "es2022",
     "target": "es2022",
     "lib": ["es2016", "dom"],
-    "types": ["jest"],
+    "types": ["jest", "node"],
+    "moduleResolution": "bundler",
 
     // Other Outputs
     "sourceMap": true,
