@@ -791,6 +791,17 @@ class WorkerInterpreter {
                 break;
             }
 
+            // コメント開始チェック（文字列外のみ）
+            if (!inString && char === ':') {
+                // 現在のステートメントを保存
+                if (current.length > 0) {
+                    statements.push(current);
+                }
+                // 残りの部分をコメントとして追加
+                statements.push(line.substring(i));
+                break;
+            }
+
             if (char === '"') {
                 // ダブルクォートの処理
                 if (inString) {
@@ -850,6 +861,11 @@ class WorkerInterpreter {
             return null;
         }
 
+        // コメント文字列の直接チェック（破棄）
+        if (stmtString.trim().startsWith(':')) {
+            return null; // コメントは実行対象から除外
+        }
+
         // ステートメント文字列をトークン化
         const tokens = this.lexer.tokenizeLine(stmtString, lineNumber);
         
@@ -879,6 +895,11 @@ class WorkerInterpreter {
                 line: firstToken.line,
                 column: firstToken.column,
             };
+        }
+
+        // COMMENTは実行時に無視（ASTに含めない）
+        if (firstToken.type === TokenType.COMMENT) {
+            return null; // コメントは破棄
         }
 
         // 2トークン以上必要なステートメント
