@@ -156,7 +156,8 @@ export type Expression =
     | BinaryExpression
     | UnaryExpression
     | PeekExpression
-    | RandomExpression;
+    | RandomExpression
+    | CharLiteralExpression;
 
 /**
  * 数値リテラル
@@ -214,8 +215,18 @@ export interface PeekExpression extends ASTNode {
 
 /**
  * Random式 (例: A=~)
- * システム変数'を使ってランダム数を生成（0-32767）
+ * システム変数~を使ってランダム数を生成（0-32767）
  */
 export interface RandomExpression extends ASTNode {
     type: 'RandomExpression';
+}
+
+/**
+ * Character literal式 (例: A='A')
+ * シングルクォートで囲まれた文字をASCIIコードに変換（0-127）
+ * エスケープシーケンス対応: '\n', '\t', '\r', '\\', '\'', '\0'
+ */
+export interface CharLiteralExpression extends ASTNode {
+    type: 'CharLiteralExpression';
+    value: string; // 実際の文字（エスケープ処理済み）
 }

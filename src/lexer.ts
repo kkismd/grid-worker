@@ -35,7 +35,8 @@ export enum TokenType {
     LEFT_PAREN = 'LEFT_PAREN', // (
     RIGHT_PAREN = 'RIGHT_PAREN', // )
     DOLLAR = 'DOLLAR', // $ (VTL 1byte data I/O)
-    APOSTROPHE = 'APOSTROPHE', // ' (Character literal)
+    APOSTROPHE = 'APOSTROPHE', // ' (Character literal delimiter)
+    CHAR_LITERAL = 'CHAR_LITERAL', // 'a' (Character literal value)
     TILDE = 'TILDE', // ~ (Random number)
     BACKTICK = 'BACKTICK', // ` (Grid access PEEK/POKE)
 
@@ -257,8 +258,33 @@ export class Lexer {
                 continue;
             }
             if (char === "'") {
-                tokens.push({ type: TokenType.APOSTROPHE, value: char, line: lineNumber, column: cursor });
-                cursor++;
+                // Character literal parsing: 'a', 'Z', '1', ''' (for single quote)
+                const startColumn = cursor;
+                cursor++; // Skip opening quote
+                
+                if (cursor >= lineText.length) {
+                    throw new Error(`字句解析エラー: 文字リテラルが終了していません (行: ${lineNumber + 1}, 列: ${startColumn + 1})`);
+                }
+                
+                const charValue = lineText[cursor];
+                
+                if (!charValue) {
+                    throw new Error(`字句解析エラー: 文字リテラルが終了していません (行: ${lineNumber + 1}, 列: ${startColumn + 1})`);
+                }
+                
+                cursor++; // Skip the character
+                
+                if (cursor >= lineText.length || lineText[cursor] !== "'") {
+                    throw new Error(`字句解析エラー: 文字リテラルが閉じられていません (行: ${lineNumber + 1}, 列: ${startColumn + 1})`);
+                }
+                
+                cursor++; // Skip closing quote
+                tokens.push({ 
+                    type: TokenType.CHAR_LITERAL, 
+                    value: charValue, 
+                    line: lineNumber, 
+                    column: startColumn 
+                });
                 continue;
             }
             if (char === '~') {

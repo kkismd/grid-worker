@@ -193,6 +193,52 @@ describe('Lexer (TDD Cycle 1.3)', () => {
   });
 });
 
+describe('Lexer - Character Literals', () => {
+  const lexer = new Lexer();
+
+  test('should tokenize basic character literals', () => {
+    const line = "'A' 'z' '0'";
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.CHAR_LITERAL, value: 'A', line: 0, column: 0 },
+      { type: TokenType.CHAR_LITERAL, value: 'z', line: 0, column: 4 },
+      { type: TokenType.CHAR_LITERAL, value: '0', line: 0, column: 8 },
+    ]);
+  });
+
+  test('should tokenize special characters', () => {
+    const line = "' ' '!' '@'";
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.CHAR_LITERAL, value: ' ', line: 0, column: 0 },
+      { type: TokenType.CHAR_LITERAL, value: '!', line: 0, column: 4 },
+      { type: TokenType.CHAR_LITERAL, value: '@', line: 0, column: 8 },
+    ]);
+  });
+
+  test('should tokenize single quote character literal', () => {
+    const line = "''' 'A' 'B'";
+    expect(lexer.tokenizeLine(line, 0)).toEqual([
+      { type: TokenType.CHAR_LITERAL, value: "'", line: 0, column: 0 },
+      { type: TokenType.CHAR_LITERAL, value: 'A', line: 0, column: 4 },
+      { type: TokenType.CHAR_LITERAL, value: 'B', line: 0, column: 8 },
+    ]);
+  });
+
+  test('should throw error for unterminated character literal', () => {
+    const line = "'A";
+    expect(() => lexer.tokenizeLine(line, 0)).toThrow('文字リテラルが閉じられていません');
+  });
+
+  test('should throw error for empty character literal', () => {
+    const line = "''";
+    expect(() => lexer.tokenizeLine(line, 0)).toThrow('文字リテラルが閉じられていません');
+  });
+
+  test('should throw error for multi-character literal', () => {
+    const line = "'ab'";
+    expect(() => lexer.tokenizeLine(line, 0)).toThrow('文字リテラルが閉じられていません');
+  });
+});
+
 describe('Parser (TDD Cycle 2.1)', () => {
     let interpreter: WorkerInterpreter;
 
@@ -1713,6 +1759,21 @@ describe('Phase 2C.1: String literal protection in whitespace splitting', () => 
         const result = interpreter.splitLineByWhitespace('   ');
         expect(result).toEqual([]);
     });
+
+    test('should protect whitespace inside character literals', () => {
+        const result = interpreter.splitLineByWhitespace("A='A' B=' ' C='z'");
+        expect(result).toEqual(["A='A'", "B=' '", "C='z'"]);
+    });
+
+    test('should handle single quote in character literals', () => {
+        const result = interpreter.splitLineByWhitespace("A=''' B='A' C='B'");
+        expect(result).toEqual(["A='''", "B='A'", "C='B'"]);
+    });
+
+    test('should handle mixed string and character literals', () => {
+        const result = interpreter.splitLineByWhitespace('?="Hello" A=\'A\' B=" world" C=\' \'');
+        expect(result).toEqual(['?="Hello"', "A='A'", 'B=" world"', "C=' '"]);
+    });
 });
 
 // ========================================
@@ -2741,5 +2802,112 @@ describe('Phase 3.7: PEEK/POKE execution', () => {
         // Grid index = 5 * 100 + 5 = 505
         expect(gridData[505]).toBe(30);
         expect(mockPokeFn).toHaveBeenCalledWith(5, 5, 30);
+    });
+});
+
+describe('Character Literals - Parser and Execution', () => {
+    let interpreter: WorkerInterpreter;
+    let gridData: number[];
+    
+    beforeEach(() => {
+        gridData = new Array(100 * 100).fill(0);
+        interpreter = new WorkerInterpreter({
+            gridData: gridData,
+            logFn: mockLogFn,
+            peekFn: (index: number) => gridData[index] || 0,
+            pokeFn: (x: number, y: number, value: number) => {
+                const index = y * 100 + x;
+                gridData[index] = Math.max(0, Math.min(255, value));
+            },
+        });
+        
+        // Clear mock calls
+        mockLogFn.mockClear();
+    });
+
+    test('should parse and execute character literal assignment (A=\'A\')', () => {
+        interpreter.loadScript("A='A'");
+        const gen = interpreter.run();
+        
+        gen.next(); // A='A'
+        
+        expect(interpreter.getVariable('A')).toBe(65); // ASCII code for 'A'
+    });
+
+    test('should parse and execute lowercase character literal (B=\'z\')', () => {
+        interpreter.loadScript("B='z'");
+        const gen = interpreter.run();
+        
+        gen.next(); // B='z'
+        
+        expect(interpreter.getVariable('B')).toBe(122); // ASCII code for 'z'
+    });
+
+    test('should parse and execute numeric character literal (C=\'5\')', () => {
+        interpreter.loadScript("C='5'");
+        const gen = interpreter.run();
+        
+        gen.next(); // C='5'
+        
+        expect(interpreter.getVariable('C')).toBe(53); // ASCII code for '5'
+    });
+
+    test('should parse and execute space character literal (D=\' \')', () => {
+        interpreter.loadScript("D=' '");
+        const gen = interpreter.run();
+        
+        gen.next(); // D=' '
+        
+        expect(interpreter.getVariable('D')).toBe(32); // ASCII code for ' '
+    });
+
+    test('should parse and execute single quote character literal', () => {
+        interpreter.loadScript("A='''");
+        const gen = interpreter.run();
+        
+        gen.next(); // A='''
+        
+        expect(interpreter.getVariable('A')).toBe(39);  // "'"
+    });
+
+    test('should use character literals in expressions', () => {
+        interpreter.loadScript("A='A' B='B' C=A+B ?=C");
+        const gen = interpreter.run();
+        
+        gen.next(); // A='A'
+        gen.next(); // B='B'
+        gen.next(); // C=A+B
+        gen.next(); // ?=C
+        
+        expect(interpreter.getVariable('A')).toBe(65);  // 'A'
+        expect(interpreter.getVariable('B')).toBe(66);  // 'B'
+        expect(interpreter.getVariable('C')).toBe(131); // 65 + 66
+        expect(mockLogFn).toHaveBeenCalledWith(131);
+    });
+
+    test('should use character literals in comparisons', () => {
+        interpreter.loadScript("A='A' B='B' C=A<B ?=C");
+        const gen = interpreter.run();
+        
+        gen.next(); // A='A'
+        gen.next(); // B='B'
+        gen.next(); // C=A<B
+        gen.next(); // ?=C
+        
+        expect(interpreter.getVariable('C')).toBe(1); // 'A' < 'B' is true
+        expect(mockLogFn).toHaveBeenCalledWith(1);
+    });
+
+    test('should handle character literals in output statements', () => {
+        interpreter.loadScript("?='H' ?='i' ?=' '");
+        const gen = interpreter.run();
+        
+        gen.next(); // ?='H'
+        gen.next(); // ?='i'
+        gen.next(); // ?=' '
+        
+        expect(mockLogFn).toHaveBeenCalledWith(72);  // 'H'
+        expect(mockLogFn).toHaveBeenCalledWith(105); // 'i'
+        expect(mockLogFn).toHaveBeenCalledWith(32);  // ' '
     });
 });

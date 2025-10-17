@@ -516,6 +516,15 @@ class WorkerInterpreter {
             };
         }
 
+        if (token.type === TokenType.CHAR_LITERAL) {
+            return {
+                type: 'CharLiteralExpression',
+                line: token.line,
+                column: token.column,
+                value: token.value,
+            };
+        }
+
         throw new Error(`構文エラー: 無効な式トークン '${token.value}' (行: ${token.line + 1})`);
     }
 
@@ -744,6 +753,7 @@ class WorkerInterpreter {
             TokenType.RIGHT_PAREN,
             TokenType.BACKTICK,
             TokenType.TILDE,
+            TokenType.CHAR_LITERAL,
             ...this.getBinaryOperatorTypes(),
         ].includes(tokenType);
     }
@@ -822,6 +832,21 @@ class WorkerInterpreter {
                     // 文字列の開始
                     current += char;
                     inString = true;
+                    i++;
+                    continue;
+                }
+            }
+
+            if (char === "'" && !inString) {
+                // シングルクォートの処理：'X' 形式の文字リテラルかチェック
+                if (i + 2 < line.length && line[i + 2] === "'") {
+                    // 文字リテラル 'X' を一括処理
+                    current += line.substring(i, i + 3); // 'X' を追加
+                    i += 3;
+                    continue;
+                } else {
+                    // 不正な形式または未完了の文字リテラル
+                    current += char;
                     i++;
                     continue;
                 }
@@ -1560,6 +1585,18 @@ class WorkerInterpreter {
                 {
                     // ランダム数生成: 0-32767の範囲
                     return Math.floor(Math.random() * 32768);
+                }
+
+            case 'CharLiteralExpression':
+                {
+                    // 文字リテラルをASCIIコードに変換
+                    const charValue = expr.value;
+                    if (charValue.length === 1) {
+                        return charValue.charCodeAt(0);
+                    } else {
+                        // エスケープシーケンス等で処理済みの文字
+                        return charValue.charCodeAt(0);
+                    }
                 }
             
             default:
