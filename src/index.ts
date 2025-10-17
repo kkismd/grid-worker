@@ -37,6 +37,7 @@ let currentStepsPerFrame = 1000; // Default to "Fast"
 // --- Keyboard Input State ---
 let currentKeyCode = 0; // 現在押されているキーのASCIIコード（0 = 何も押されていない）
 const keyQueue: number[] = []; // キーの入力キュー
+let keyboardInputEnabled = false; // キーボード入力の有効/無効状態
 
 // --- DOM Elements ---
 const canvas = document.getElementById('grid-canvas') as HTMLCanvasElement;
@@ -256,6 +257,9 @@ function updateWorkerStatus(workerId: number) {
         statusElement.textContent = `${worker.status} (${worker.stepCount} steps)`;
         statusElement.className = `worker-status status-${worker.status}`;
     }
+    
+    // ワーカーの状態が変わったらキーボード状態も更新
+    updateKeyboardStatus();
 }
 
 /**
@@ -405,7 +409,7 @@ function addWorker() {
         <textarea class="worker-script" id="script-${workerId}" placeholder="Enter WorkerScript here...">: Worker ${workerId}
 I=0,99
   X=I Y=${workerId * 5}
-  $=255
+  \`=255
   @=I
 ?="Worker ${workerId} done!"</textarea>
         <div class="worker-controls">
@@ -522,6 +526,11 @@ workersContainer.addEventListener('click', (e) => {
 
 // --- Keyboard Input Handling ---
 document.addEventListener('keydown', (e) => {
+    // キーボード入力が有効でない場合は何もしない
+    if (!shouldCaptureKeyboard()) {
+        return;
+    }
+    
     // 特殊なキーは無視（F1-F12、Ctrl、Alt、Shiftなど）
     if (e.ctrlKey || e.altKey || e.metaKey || 
         e.key.length > 1 && !['Enter', 'Escape', 'Backspace', 'Tab', ' '].includes(e.key)) {
@@ -561,10 +570,8 @@ document.addEventListener('keydown', (e) => {
         // デバッグ表示
         console.log(`Key pressed: ${e.key} (ASCII: ${keyCode})`);
         
-        // イベントのデフォルト動作を無効化（必要に応じて）
-        if (['Tab', 'Backspace'].includes(e.key)) {
-            e.preventDefault();
-        }
+        // キーボード入力をキャプチャしている場合のみイベントを無効化
+        e.preventDefault();
     }
 });
 
@@ -572,9 +579,72 @@ document.addEventListener('keyup', (e) => {
     // キーが離されたときは currentKeyCode をクリア
     currentKeyCode = 0;
     
-    // キーボード状態表示を通常状態に戻す
-    if (keyQueue.length === 0) {
-        keyboardStatus.textContent = 'Ready - Press any key to interact with workers';
+    // キーボード状態表示を更新
+    updateKeyboardStatus();
+});
+
+// フォーカスイベントでキーボード状態を更新
+document.addEventListener('focusin', updateKeyboardStatus);
+document.addEventListener('focusout', updateKeyboardStatus);
+
+// キーボード状態エリアをクリックして手動切り替え
+keyboardStatus.addEventListener('click', () => {
+    keyboardInputEnabled = !keyboardInputEnabled;
+    updateKeyboardStatus();
+    
+    if (keyboardInputEnabled) {
+        console.log('Keyboard input manually enabled');
+    } else {
+        console.log('Keyboard input manually disabled');
+        // 手動で無効化した場合はキューもクリア
+        keyQueue.length = 0;
+    }
+});
+
+// キーボード入力が有効かどうかをチェックする関数
+function shouldCaptureKeyboard(): boolean {
+    // テキストエリアや入力フィールドにフォーカスがある場合は無効
+    const activeElement = document.activeElement;
+    if (activeElement && (
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.tagName === 'INPUT' ||
+        (activeElement as HTMLElement).contentEditable === 'true'
+    )) {
+        return false;
+    }
+    
+    // 実行中のワーカーがない場合は無効
+    const hasRunningWorkers = Array.from(workers.values()).some(worker => worker.status === 'running');
+    if (!hasRunningWorkers) {
+        return false;
+    }
+    
+    // 明示的に無効化されている場合
+    if (!keyboardInputEnabled) {
+        return false;
+    }
+    
+    return true;
+}
+
+// キーボード状態表示を更新する関数
+function updateKeyboardStatus() {
+    if (!shouldCaptureKeyboard()) {
+        if (document.activeElement && (
+            document.activeElement.tagName === 'TEXTAREA' ||
+            document.activeElement.tagName === 'INPUT'
+        )) {
+            keyboardStatus.textContent = 'Keyboard disabled - Text input has focus';
+        } else if (!Array.from(workers.values()).some(worker => worker.status === 'running')) {
+            keyboardStatus.textContent = 'Keyboard disabled - No workers running';
+        } else if (!keyboardInputEnabled) {
+            keyboardStatus.textContent = 'Keyboard disabled - Click to enable';
+        }
+        keyboardStatus.style.backgroundColor = '#f5f5f5';
+        keyboardStatus.style.borderColor = '#ccc';
+        keyboardStatus.style.color = '#666';
+    } else if (keyQueue.length === 0) {
+        keyboardStatus.textContent = 'Ready - Press any key (Click to disable)';
         keyboardStatus.style.backgroundColor = '#e8f5e8';
         keyboardStatus.style.borderColor = '#4CAF50';
         keyboardStatus.style.color = '#2E7D32';
@@ -584,27 +654,14 @@ document.addEventListener('keyup', (e) => {
         keyboardStatus.style.borderColor = '#2196f3';
         keyboardStatus.style.color = '#1565c0';
     }
-});
+}
 
 // getFn: キー入力を取得する関数
 function getKeyInput(): number {
     // キューから最初のキーを取得（FIFO）
     if (keyQueue.length > 0) {
         const key = keyQueue.shift()!;
-        
-        // キューの状態を表示更新
-        if (keyQueue.length === 0) {
-            keyboardStatus.textContent = 'Ready - Press any key to interact with workers';
-            keyboardStatus.style.backgroundColor = '#e8f5e8';
-            keyboardStatus.style.borderColor = '#4CAF50';
-            keyboardStatus.style.color = '#2E7D32';
-        } else {
-            keyboardStatus.textContent = `Queue: ${keyQueue.length} keys waiting`;
-            keyboardStatus.style.backgroundColor = '#e3f2fd';
-            keyboardStatus.style.borderColor = '#2196f3';
-            keyboardStatus.style.color = '#1565c0';
-        }
-        
+        updateKeyboardStatus();
         return key;
     }
     // 何も押されていない場合は0を返す
@@ -619,6 +676,9 @@ const defaultPreset = SPEED_PRESETS[2]; // "Fast"
 if (defaultPreset) {
     speedInfo.textContent = `${defaultPreset.name} (${defaultPreset.stepsPerFrame} steps/frame)`;
 }
+
+// Initialize keyboard status
+updateKeyboardStatus();
 
 log('Multi-Worker System initialized.');
 log('Click "Add New Worker" to create workers.');
