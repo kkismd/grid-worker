@@ -6,7 +6,8 @@
   "scripts": {
     "test": "jest",
     "build": "tsc",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "serve": "node server.js"
   },
   "keywords": [],
   "author": "",

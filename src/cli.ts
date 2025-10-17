@@ -14,7 +14,7 @@ interface CLIOptions {
     help: boolean;
 }
 
-function parseArgs(args: string[]): { options: CLIOptions; scriptFile?: string } {
+function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
     const options: CLIOptions = {
         interactive: false,
         debug: false,
@@ -42,14 +42,17 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile?: string }
                 break;
             case '--output':
             case '-o':
-                options.output = args[++i];
+                const nextArg = args[++i];
+                if (nextArg) {
+                    options.output = nextArg;
+                }
                 break;
             case '--help':
             case '-h':
                 options.help = true;
                 break;
             default:
-                if (!arg.startsWith('-') && !scriptFile) {
+                if (arg && !arg.startsWith('-') && !scriptFile) {
                     scriptFile = arg;
                 }
                 break;
@@ -99,7 +102,7 @@ async function main() {
     const runner = new CLIRunner({
         debug: options.debug,
         verbose: options.verbose,
-        outputFile: options.output
+        ...(options.output && { outputFile: options.output })
     });
 
     try {

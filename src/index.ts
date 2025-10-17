@@ -34,6 +34,10 @@ let nextWorkerId = 1;
 let globalInterval: number | null = null;
 let currentStepsPerFrame = 1000; // Default to "Fast"
 
+// --- Keyboard Input State ---
+let currentKeyCode = 0; // 現在押されているキーのASCIIコード（0 = 何も押されていない）
+const keyQueue: number[] = []; // キーの入力キュー
+
 // --- DOM Elements ---
 const canvas = document.getElementById('grid-canvas') as HTMLCanvasElement;
 const workersContainer = document.getElementById('workers-container') as HTMLDivElement;
@@ -43,6 +47,7 @@ const startAllButton = document.getElementById('start-all-btn') as HTMLButtonEle
 const clearButton = document.getElementById('clear-btn') as HTMLButtonElement;
 const speedSlider = document.getElementById('speed-slider') as HTMLInputElement;
 const speedInfo = document.getElementById('speed-info') as HTMLDivElement;
+const keyboardStatus = document.getElementById('keyboard-status') as HTMLDivElement;
 const transcriptArea = document.getElementById('transcript-area') as HTMLDivElement;
 const ctx = canvas.getContext('2d');
 
@@ -132,6 +137,41 @@ function log(...args: any[]): void {
     
     const logEntry = document.createElement('div');
     logEntry.textContent = message;
+    transcriptArea.appendChild(logEntry);
+    transcriptArea.scrollTop = transcriptArea.scrollTop; // Auto-scroll
+}
+
+/**
+ * VTL互換 1byte出力処理
+ * @param workerId ワーカーID 
+ * @param value 出力する値（0-255）
+ */
+function putOutput(workerId: number, value: number): void {
+    // 値を0-255の範囲にクランプ
+    const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+    
+    let outputChar = '';
+    
+    // ASCII文字として出力（印刷可能文字の場合）
+    if (clampedValue >= 32 && clampedValue <= 126) {
+        outputChar = String.fromCharCode(clampedValue);
+    } else if (clampedValue === 10) {
+        // 改行文字
+        outputChar = '\n';
+    } else if (clampedValue === 13) {
+        // キャリッジリターン
+        outputChar = '\r';
+    } else {
+        // その他の制御文字は16進数で表示
+        outputChar = `[0x${clampedValue.toString(16).padStart(2, '0')}]`;
+    }
+    
+    // トランスクリプトエリアに出力（ワーカーIDと共に）
+    const logEntry = document.createElement('span');
+    logEntry.textContent = `[W${workerId}:$] ${outputChar}`;
+    logEntry.style.fontFamily = 'Courier New, monospace';
+    logEntry.style.color = '#006600';
+    
     transcriptArea.appendChild(logEntry);
     transcriptArea.scrollTop = transcriptArea.scrollHeight; // Auto-scroll
 }
@@ -241,6 +281,8 @@ function startWorker(workerId: number) {
             peekFn: peek,
             pokeFn: (x, y, value) => poke(x, y, value),
             logFn: (...args) => log(`[Worker ${workerId}]`, ...args),
+            getFn: getKeyInput,
+            putFn: (value: number) => putOutput(workerId, value),
         });
         
         worker.interpreter.loadScript(script);
@@ -477,6 +519,97 @@ workersContainer.addEventListener('click', (e) => {
         removeWorker(workerId);
     }
 });
+
+// --- Keyboard Input Handling ---
+document.addEventListener('keydown', (e) => {
+    // 特殊なキーは無視（F1-F12、Ctrl、Alt、Shiftなど）
+    if (e.ctrlKey || e.altKey || e.metaKey || 
+        e.key.length > 1 && !['Enter', 'Escape', 'Backspace', 'Tab', ' '].includes(e.key)) {
+        return;
+    }
+    
+    let keyCode = 0;
+    
+    // 特殊キーのマッピング
+    switch (e.key) {
+        case 'Enter': keyCode = 13; break;
+        case 'Escape': keyCode = 27; break;
+        case 'Backspace': keyCode = 8; break;
+        case 'Tab': keyCode = 9; break;
+        case ' ': keyCode = 32; break;
+        default:
+            // 通常の文字キー
+            if (e.key.length === 1) {
+                keyCode = e.key.charCodeAt(0);
+            }
+            break;
+    }
+    
+    if (keyCode > 0) {
+        currentKeyCode = keyCode;
+        keyQueue.push(keyCode);
+        
+        // キーボード状態表示を更新
+        const displayChar = keyCode >= 32 && keyCode <= 126 ? 
+            String.fromCharCode(keyCode) : 
+            `[${keyCode}]`;
+        keyboardStatus.textContent = `Key pressed: "${displayChar}" (ASCII: ${keyCode}) - Queue: ${keyQueue.length}`;
+        keyboardStatus.style.backgroundColor = '#fff3cd';
+        keyboardStatus.style.borderColor = '#ffc107';
+        keyboardStatus.style.color = '#856404';
+        
+        // デバッグ表示
+        console.log(`Key pressed: ${e.key} (ASCII: ${keyCode})`);
+        
+        // イベントのデフォルト動作を無効化（必要に応じて）
+        if (['Tab', 'Backspace'].includes(e.key)) {
+            e.preventDefault();
+        }
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    // キーが離されたときは currentKeyCode をクリア
+    currentKeyCode = 0;
+    
+    // キーボード状態表示を通常状態に戻す
+    if (keyQueue.length === 0) {
+        keyboardStatus.textContent = 'Ready - Press any key to interact with workers';
+        keyboardStatus.style.backgroundColor = '#e8f5e8';
+        keyboardStatus.style.borderColor = '#4CAF50';
+        keyboardStatus.style.color = '#2E7D32';
+    } else {
+        keyboardStatus.textContent = `Queue: ${keyQueue.length} keys waiting`;
+        keyboardStatus.style.backgroundColor = '#e3f2fd';
+        keyboardStatus.style.borderColor = '#2196f3';
+        keyboardStatus.style.color = '#1565c0';
+    }
+});
+
+// getFn: キー入力を取得する関数
+function getKeyInput(): number {
+    // キューから最初のキーを取得（FIFO）
+    if (keyQueue.length > 0) {
+        const key = keyQueue.shift()!;
+        
+        // キューの状態を表示更新
+        if (keyQueue.length === 0) {
+            keyboardStatus.textContent = 'Ready - Press any key to interact with workers';
+            keyboardStatus.style.backgroundColor = '#e8f5e8';
+            keyboardStatus.style.borderColor = '#4CAF50';
+            keyboardStatus.style.color = '#2E7D32';
+        } else {
+            keyboardStatus.textContent = `Queue: ${keyQueue.length} keys waiting`;
+            keyboardStatus.style.backgroundColor = '#e3f2fd';
+            keyboardStatus.style.borderColor = '#2196f3';
+            keyboardStatus.style.color = '#1565c0';
+        }
+        
+        return key;
+    }
+    // 何も押されていない場合は0を返す
+    return 0;
+}
 
 // --- Initialization ---
 drawGrid(); // Draw the initial grid on load.

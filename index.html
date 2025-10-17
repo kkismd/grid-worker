@@ -104,6 +104,27 @@
             background: #e68900;
         }
         
+        /* キーボード入力状態（グローバルコントロール内） */
+        .keyboard-section {
+            margin-top: 15px;
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
+        }
+        .keyboard-section h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        #keyboard-status {
+            padding: 8px 12px;
+            background-color: #e8f5e8;
+            border: 1px solid #4CAF50;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #2E7D32;
+        }
+        
         /* トランスクリプト（グローバルコントロール内） */
         .transcript-section {
             margin-top: 15px;
@@ -278,6 +299,10 @@
                     <button class="clone-btn" id="clone-btn">📋 Clone 1st Worker</button>
                     <button class="start-all-btn" id="start-all-btn">▶ Start All</button>
                     <button class="clear-btn" id="clear-btn">🗑 Clear Grid</button>
+                </div>
+                <div class="keyboard-section">
+                    <h3>⌨️ Keyboard Input Status</h3>
+                    <div id="keyboard-status">Ready - Press any key to interact with workers</div>
                 </div>
                 <div class="transcript-section">
                     <h3>Transcript</h3>
