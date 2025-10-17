@@ -6,6 +6,7 @@
   "scripts": {
     "test": "jest",
     "build": "tsc",
+    "build:gh": "tsc && cp index.html dist/ && cp -r examples dist/",
     "cli": "tsx src/cli.ts",
     "serve": "node server.js"
   },
