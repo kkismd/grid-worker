@@ -1,43 +1,65 @@
 # リファクタリング分析レポート
 
 **作成日**: 2025年10月19日  
-**対象ファイル**: `src/workerInterpreter.ts` (2513行)  
-**現状**: パーサーとインタプリタが単一ファイル・単一クラスに混在
+**最終更新**: 2025年10月19日  
+**開始時**: `src/workerInterpreter.ts` (2670行)  
+**現在**: `src/workerInterpreter.ts` (2579行) ← **91行削減！**
 
 ---
 
-## 📊 現状分析
+## ✅ 完了したリファクタリング（2025-10-19）
+
+### 1. ✅ executeStatementメソッドの分割
+- **完了日**: 2025年10月19日
+- **変更**: 280行 → 約50行（15個のメソッドに分離）
+- **削減**: 約230行
+- **テスト**: ✅ 全266テスト（1 skipped）PASS
+
+### 2. ✅ evaluateExpressionメソッドの分割
+- **完了日**: 2025年10月19日
+- **変更**: 160行 → 約30行（10個のメソッドに分離）
+- **削減**: 約130行
+- **テスト**: ✅ 全266テスト（1 skipped）PASS
+
+### 3. ✅ MemorySpaceクラスの分離
+- **完了日**: 2025年10月19日
+- **新規ファイル**: `src/memorySpace.ts` (92行)
+- **削減**: 約91行（workerInterpreter.tsから移動）
+- **テスト**: ✅ 全266テスト（1 skipped）PASS
+
+**累計削減**: 約91行（2670行 → 2579行）  
+**コード品質**: 大幅に改善（単一責任の原則に準拠、メソッド分割による可読性向上）
+
+---
+
+## 📊 現状分析（更新後）
 
 ### ファイル構成
-- **総行数**: 2513行
-- **クラス数**: 2個 (MemorySpace, WorkerInterpreter)
-- **主要メソッド数**: 約40個
-- **最大メソッド**: `executeStatement` (280行), `parsePrimaryExpression` (136行)
+- **総行数**: 2579行（開始時: 2670行）
+- **クラス数**: 1個 (WorkerInterpreter) ← MemorySpaceを分離
+- **主要メソッド数**: 約50個（execute*/evaluate*メソッドが追加）
+- **最大メソッド**: `buildProgramAST` (約140行), `parsePrimaryExpression` (136行)
 
-### 責務の混在
+### 責務の混在（改善中）
 現在の`WorkerInterpreter`クラスは以下の責務を持つ:
 1. **字句解析**: Lexerの管理
 2. **構文解析**: ASTの構築
 3. **意味解析**: 変数スコープ、型チェック
-4. **実行**: ステートメントの実行、式の評価
+4. **実行**: ステートメントの実行、式の評価 ← **改善済み**
 5. **状態管理**: 変数、コールスタック、ループスタック
 
 ---
 
-## 🔴 優先度：高（High Priority）
+## 🔴 優先度：高（High Priority） - 次のターゲット
 
-### 1. executeStatementメソッドの分割
+### 1. ~~executeStatementメソッドの分割~~ ✅ 完了
 - **優先度**: ⭐⭐⭐⭐⭐ (最高)
 - **難易度**: 🔧🔧 (中)
 - **所要時間**: 2-3時間
-- **行数**: 280行 (2074-2354行)
+- **実績時間**: 約1.5時間
+- **行数**: 280行 → 50行
 
-**問題点**:
-- 巨大なswitch文で15種類以上のステートメントを処理
-- 各caseが10-40行の長さ
-- テストしにくい、デバッグしにくい
-
-**提案**:
+**完了内容**:
 ```typescript
 private executeAssignment(stmt: AssignmentStatement): ExecutionResult
 private executeOutput(stmt: OutputStatement): ExecutionResult
