@@ -71,17 +71,17 @@ export class GridRenderer {
     }
 
     /**
-     * 数値をASCII文字に変換
+     * 数値をASCII文字に変換 (0-255の値を輝度階調で表現)
      * @param value 0-255の値
      * @returns 対応する文字
      */
     private valueToChar(value: number): string {
-        if (value === 0) return '.';  // 空白
-        if (value === 1) return '#';  // 基本ピクセル
-        if (value <= 16) return '░';  // 薄い
-        if (value <= 64) return '▒';  // 中間
-        if (value <= 192) return '▓'; // 濃い
-        return '█'; // 最大
+        if (value === 0) return '.';   // 空白/黒 (0)
+        if (value <= 32) return '░';   // 薄い (1-32)
+        if (value <= 96) return '▒';   // 中間薄い (33-96) 
+        if (value <= 160) return '▓';  // 中間濃い (97-160)
+        if (value <= 224) return '█';  // 濃い (161-224)
+        return '█'; // 最大/白 (225-255)
     }
 
     /**
