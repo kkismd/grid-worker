@@ -2,6 +2,14 @@
 
 import { Lexer, TokenType, type Token } from './lexer.js';
 import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
+import {
+    isForStatement,
+    isWhileStatement,
+    isIfStatement,
+    isForBlockStatement,
+    isWhileBlockStatement,
+    isIfBlockStatement,
+} from './ast.js';
 import { MemorySpace } from './memorySpace.js';
 
 /**
@@ -437,16 +445,16 @@ class WorkerInterpreter {
             if (parsedStatements.length === 1) {
                 const stmt = parsedStatements[0];
                 
-                if (stmt?.type === 'ForStatement') {
+                if (stmt && isForStatement(stmt)) {
                     // 内側のFORループを再帰的にパース
                     const innerBody = this.collectLoopBlock(i + 1);
                     const forBlockStmt: any = {
                         type: 'ForBlockStatement',
                         line: i,
-                        variable: (stmt as any).variable,
-                        start: (stmt as any).start,
-                        end: (stmt as any).end,
-                        step: (stmt as any).step,
+                        variable: stmt.variable,
+                        start: stmt.start,
+                        end: stmt.end,
+                        step: stmt.step,
                         body: innerBody.body,
                     };
                     currentBody.push(forBlockStmt);
@@ -455,13 +463,13 @@ class WorkerInterpreter {
                     continue;
                 }
                 
-                if (stmt?.type === 'WhileStatement') {
+                if (stmt && isWhileStatement(stmt)) {
                     // 内側のWHILEループを再帰的にパース
                     const innerBody = this.collectLoopBlock(i + 1);
                     const whileBlockStmt: any = {
                         type: 'WhileBlockStatement',
                         line: i,
-                        condition: (stmt as any).condition,
+                        condition: stmt.condition,
                         body: innerBody.body,
                     };
                     currentBody.push(whileBlockStmt);
@@ -470,12 +478,12 @@ class WorkerInterpreter {
                     continue;
                 }
                 
-                if (stmt?.type === 'IfStatement') {
+                if (stmt && isIfStatement(stmt)) {
                     // 内側のブロックIFを再帰的にパース
                     const ifBlockStmt: any = {
                         type: 'IfBlockStatement',
                         line: i,
-                        condition: (stmt as any).condition,
+                        condition: stmt.condition,
                         thenBody: [],
                         elseBody: [],
                     };
@@ -543,16 +551,16 @@ class WorkerInterpreter {
             if (parsedStatements.length === 1) {
                 const stmt = parsedStatements[0];
                 
-                if (stmt?.type === 'ForStatement') {
+                if (stmt && isForStatement(stmt)) {
                     // 内側のFORループを再帰的にパース
                     const innerBody = this.collectLoopBlock(i + 1);
                     const forBlockStmt: any = {
                         type: 'ForBlockStatement',
                         line: i,
-                        variable: (stmt as any).variable,
-                        start: (stmt as any).start,
-                        end: (stmt as any).end,
-                        step: (stmt as any).step,
+                        variable: stmt.variable,
+                        start: stmt.start,
+                        end: stmt.end,
+                        step: stmt.step,
                         body: innerBody.body,
                     };
                     body.push(forBlockStmt);
@@ -561,13 +569,13 @@ class WorkerInterpreter {
                     continue;
                 }
                 
-                if (stmt?.type === 'WhileStatement') {
+                if (stmt && isWhileStatement(stmt)) {
                     // 内側のWHILEループを再帰的にパース
                     const innerBody = this.collectLoopBlock(i + 1);
                     const whileBlockStmt: any = {
                         type: 'WhileBlockStatement',
                         line: i,
-                        condition: (stmt as any).condition,
+                        condition: stmt.condition,
                         body: innerBody.body,
                     };
                     body.push(whileBlockStmt);
