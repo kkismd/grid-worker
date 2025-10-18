@@ -9,6 +9,9 @@ export interface CLIRunnerConfig {
     debug: boolean;
     verbose: boolean;
     outputFile?: string;
+    unlimitedSteps?: boolean;
+    maxSteps?: number;
+    quiet?: boolean;
 }
 
 export class CLIRunner {
@@ -61,15 +64,25 @@ export class CLIRunner {
 
             while (!result.done) {
                 step++;
-                if (this.config.debug && step % 100 === 0) {
-                    console.log(`[DEBUG] ステップ ${step} 実行中...`);
+                
+                // 進捗表示（quietモードでは無効化）
+                if (!this.config.quiet) {
+                    if (this.config.debug && step % 100 === 0) {
+                        console.error(`[DEBUG] ステップ ${step} 実行中...`);
+                    } else if (this.config.unlimitedSteps && step % 10000 === 0) {
+                        console.error(`🔄 実行中... ${step.toLocaleString()} ステップ`);
+                    }
                 }
+                
                 result = generator.next();
                 
-                // 無限ループ防止（10万ステップで打ち切り）
-                if (step > 100000) {
-                    console.log('⚠️  実行ステップ数が上限に達しました（10万ステップ）');
-                    break;
+                // ステップ制限チェック
+                if (!this.config.unlimitedSteps) {
+                    const maxSteps = this.config.maxSteps || 100000;
+                    if (step > maxSteps) {
+                        console.log(`⚠️  実行ステップ数が上限に達しました（${maxSteps.toLocaleString()}ステップ）`);
+                        break;
+                    }
                 }
             }
 

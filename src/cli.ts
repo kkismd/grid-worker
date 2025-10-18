@@ -5,6 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { CLIRunner } from './cliRunner.js';
+import type { CLIRunnerConfig } from './cliRunner.js';
 
 interface CLIOptions {
     interactive: boolean;
@@ -12,6 +13,9 @@ interface CLIOptions {
     verbose: boolean;
     output?: string;
     help: boolean;
+    maxSteps?: number;
+    unlimitedSteps: boolean;
+    quiet: boolean;
 }
 
 function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
@@ -19,7 +23,9 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
         interactive: false,
         debug: false,
         verbose: false,
-        help: false
+        help: false,
+        unlimitedSteps: false,
+        quiet: false
     };
 
     let scriptFile: string | undefined;
@@ -51,6 +57,24 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
             case '-h':
                 options.help = true;
                 break;
+            case '--unlimited':
+            case '-u':
+                options.unlimitedSteps = true;
+                break;
+            case '--max-steps':
+            case '-m':
+                const nextStepsArg = args[++i];
+                if (nextStepsArg) {
+                    const steps = parseInt(nextStepsArg, 10);
+                    if (!isNaN(steps) && steps > 0) {
+                        options.maxSteps = steps;
+                    }
+                }
+                break;
+            case '--quiet':
+            case '-q':
+                options.quiet = true;
+                break;
             default:
                 if (arg && !arg.startsWith('-') && !scriptFile) {
                     scriptFile = arg;
@@ -75,11 +99,16 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   -d, --debug          デバッグ情報を表示
   -v, --verbose        詳細なログを出力
   -o, --output FILE    出力をファイルに保存
+  -u, --unlimited      ステップ数無制限で実行
+  -m, --max-steps N    最大ステップ数を指定（デフォルト: 100000）
+  -q, --quiet          進捗表示を無効化（クリーンな出力）
   -h, --help          このヘルプを表示
 
 例:
   npm run cli examples/hello.ws
   npm run cli examples/mandelbrot.ws --debug
+  npm run cli -- examples/mandelbrot.ws --unlimited --quiet
+  npm run cli -- examples/large-program.ws --max-steps 1000000
   npm run cli --interactive
 `);
 }
@@ -99,11 +128,15 @@ async function main() {
         if (scriptFile) console.log(`Script file: ${scriptFile}`);
     }
 
-    const runner = new CLIRunner({
+    const runnerConfig: CLIRunnerConfig = {
         debug: options.debug,
         verbose: options.verbose,
+        unlimitedSteps: options.unlimitedSteps,
+        quiet: options.quiet,
+        ...(options.maxSteps && { maxSteps: options.maxSteps }),
         ...(options.output && { outputFile: options.output })
-    });
+    };
+    const runner = new CLIRunner(runnerConfig);
 
     try {
         if (options.interactive) {
