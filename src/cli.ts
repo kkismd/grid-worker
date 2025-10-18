@@ -22,6 +22,8 @@ interface CLIOptions {
     frameRate?: number;
     stepsPerFrame?: number;
     showFPS: boolean;
+    showGrid: boolean;
+    gridSize?: number;
 }
 
 function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
@@ -33,7 +35,8 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
         unlimitedSteps: false,
         quiet: false,
         realtime: false,
-        showFPS: false
+        showFPS: false,
+        showGrid: false
     };
 
     let scriptFile: string | undefined;
@@ -108,6 +111,19 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
             case '--show-fps':
                 options.showFPS = true;
                 break;
+            case '--show-grid':
+            case '-g':
+                options.showGrid = true;
+                break;
+            case '--grid-size':
+                const nextGridSizeArg = args[++i];
+                if (nextGridSizeArg) {
+                    const size = parseInt(nextGridSizeArg, 10);
+                    if (!isNaN(size) && size > 0) {
+                        options.gridSize = size;
+                    }
+                }
+                break;
             default:
                 if (arg && !arg.startsWith('-') && !scriptFile) {
                     scriptFile = arg;
@@ -139,6 +155,8 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   --fps N                 フレームレート指定（デフォルト: 30）
   --steps-per-frame N     1フレームあたりの実行ステップ数（デフォルト: 1000）
   --show-fps              FPS表示を有効化
+  -g, --show-grid         グリッド表示を有効化（リアルタイムモード専用）
+  --grid-size N           グリッド表示サイズ（デフォルト: 20x20）
   -h, --help              このヘルプを表示
 
 例:
@@ -148,7 +166,8 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   npm run cli -- examples/large-program.ws --max-steps 1000000
   npm run cli --interactive
   npm run cli -- examples/realtime_tests/01-key-echo.ws --realtime
-  npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-fps
+  npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid
+  npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid --grid-size 30
 `);
 }
 
@@ -199,7 +218,9 @@ async function main() {
                     verbose: options.verbose,
                     ...(options.frameRate && { frameRate: options.frameRate }),
                     ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
-                    showFPS: options.showFPS
+                    showFPS: options.showFPS,
+                    showGrid: options.showGrid,
+                    ...(options.gridSize && { gridDisplaySize: options.gridSize })
                 };
                 const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
                 await realtimeRunner.executeRealTime(script, path.basename(scriptFile));

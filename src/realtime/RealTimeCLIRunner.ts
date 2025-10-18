@@ -3,6 +3,7 @@
 import WorkerInterpreter from '../workerInterpreter.js';
 import { GridRenderer } from '../gridRenderer.js';
 import { KeyboardInput } from './KeyboardInput.js';
+import { GridDiffRenderer } from './GridDiffRenderer.js';
 
 export interface RealTimeCLIRunnerConfig {
     debug?: boolean;
@@ -10,6 +11,8 @@ export interface RealTimeCLIRunnerConfig {
     frameRate?: number;        // FPS（デフォルト: 30）
     stepsPerFrame?: number;    // 1フレームあたりの実行ステップ数（デフォルト: 1000）
     showFPS?: boolean;         // FPS表示（デフォルト: false）
+    showGrid?: boolean;        // グリッド表示（デフォルト: false）
+    gridDisplaySize?: number;  // グリッド表示サイズ（デフォルト: 20x20）
 }
 
 /**
@@ -22,6 +25,7 @@ export class RealTimeCLIRunner {
     private config: Required<RealTimeCLIRunnerConfig>;
     private gridData: number[];
     private gridRenderer: GridRenderer;
+    private gridDiffRenderer: GridDiffRenderer;
     private keyboard: KeyboardInput;
     private transcript: string[] = [];
     private shouldStop: boolean = false;
@@ -36,11 +40,21 @@ export class RealTimeCLIRunner {
             frameRate: config.frameRate ?? 30,
             stepsPerFrame: config.stepsPerFrame ?? 1000,
             showFPS: config.showFPS ?? false,
+            showGrid: config.showGrid ?? false,
+            gridDisplaySize: config.gridDisplaySize ?? 20,
         };
 
         // 100x100 グリッドを初期化
         this.gridData = new Array(10000).fill(0);
         this.gridRenderer = new GridRenderer(100, 100);
+        
+        // グリッド差分レンダラーを初期化
+        this.gridDiffRenderer = new GridDiffRenderer(
+            100, 
+            100, 
+            this.config.gridDisplaySize, 
+            this.config.gridDisplaySize
+        );
         
         // キーボード入力を初期化
         this.keyboard = new KeyboardInput({
@@ -91,6 +105,12 @@ export class RealTimeCLIRunner {
                 console.log('🚀 実行開始...\n');
             }
 
+            // グリッド表示の初期化
+            if (this.config.showGrid) {
+                process.stdout.write(GridDiffRenderer.hideCursor());
+                process.stdout.write(this.gridDiffRenderer.initScreen());
+            }
+
             // 実行ジェネレーター取得
             const generator = interpreter.run();
 
@@ -111,6 +131,12 @@ export class RealTimeCLIRunner {
                 console.error('スタックトレース:', error.stack);
             }
         } finally {
+            // グリッド表示を終了
+            if (this.config.showGrid) {
+                process.stdout.write(GridDiffRenderer.showCursor());
+                console.log('\n');  // グリッドの下に改行
+            }
+            
             // キーボード入力を無効化
             this.keyboard.disable();
         }
@@ -138,8 +164,17 @@ export class RealTimeCLIRunner {
             
             this.frameCount++;
 
+            // グリッド差分描画
+            if (this.config.showGrid) {
+                const diffOutput = this.gridDiffRenderer.renderDiff(this.gridData);
+                if (diffOutput) {
+                    process.stdout.write(diffOutput);
+                }
+            }
+
             // FPS表示（1秒ごと）
-            if (this.config.showFPS) {
+            if (this.config.showFPS && !this.config.showGrid) {
+                // showGrid有効時はFPS表示をグリッド下に配置するので、ここでは表示しない
                 const now = Date.now();
                 if (now - this.lastFPSDisplay >= 1000) {
                     const actualFPS = this.frameCount / ((now - this.lastFPSDisplay) / 1000);
@@ -197,7 +232,11 @@ export class RealTimeCLIRunner {
     private log(...args: any[]): void {
         const message = args.join(' ');
         this.transcript.push(message);
-        console.log(message);
+        
+        // グリッド表示モードではコンソール出力を抑制
+        if (!this.config.showGrid) {
+            console.log(message);
+        }
     }
 
     /**
@@ -206,7 +245,11 @@ export class RealTimeCLIRunner {
     private put1Byte(value: number): void {
         // 0-255の範囲にクランプ
         const byte = Math.max(0, Math.min(255, Math.floor(value)));
-        process.stdout.write(String.fromCharCode(byte));
+        
+        // グリッド表示モードでは文字出力を抑制
+        if (!this.config.showGrid) {
+            process.stdout.write(String.fromCharCode(byte));
+        }
     }
 
     /**
