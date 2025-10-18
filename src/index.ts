@@ -442,10 +442,10 @@ function addWorker() {
             <button class="remove-btn" data-worker-id="${workerId}">×</button>
         </div>
         <textarea class="worker-script" id="script-${workerId}" placeholder="Enter WorkerScript here...">: Worker ${workerId}
-I=0,99
+@=I,0,99
   X=I Y=${workerId * 5}
   \`=255
-  @=I
+#=@
 ?="Worker ${workerId} done!"</textarea>
         <div class="worker-controls">
             <button class="start-btn" data-worker-id="${workerId}">Start</button>

@@ -119,7 +119,8 @@ export interface HaltStatement extends ASTNode {
 }
 
 /**
- * FORループステートメント (例: I=1,100 または I=100,1,-1)
+ * FORループステートメント（統一構文）
+ * 例: @=I,1,100 または @=I,100,1,-1
  * ループ変数の初期化と範囲設定
  */
 export interface ForStatement extends ASTNode {
