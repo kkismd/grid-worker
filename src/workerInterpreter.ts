@@ -2454,148 +2454,202 @@ class WorkerInterpreter {
      * @param expr 評価する式
      * @returns 評価結果の数値または文字列
      */
+    /**
+     * 数値リテラルを評価
+     */
+    private evaluateNumericLiteral(expr: { type: 'NumericLiteral'; value: number }): number {
+        return expr.value;
+    }
+
+    /**
+     * 文字列リテラルを評価
+     */
+    private evaluateStringLiteral(expr: { type: 'StringLiteral'; value: string }): string {
+        return expr.value;
+    }
+
+    /**
+     * 識別子（変数）を評価
+     */
+    private evaluateIdentifier(expr: { type: 'Identifier'; name: string }): number {
+        const value = this.variables.get(expr.name);
+        if (value === undefined) {
+            // 未初期化の変数は0として扱う
+            return 0;
+        }
+        return value;
+    }
+
+    /**
+     * 単項演算式を評価
+     */
+    private evaluateUnaryExpression(expr: { type: 'UnaryExpression'; operator: string; operand: Expression }): number {
+        const operand = this.evaluateExpression(expr.operand);
+        
+        // 文字列を含む演算は未サポート
+        if (typeof operand === 'string') {
+            throw new Error('文字列演算はサポートされていません');
+        }
+        
+        switch (expr.operator) {
+            case '!': return operand === 0 ? 1 : 0; // NOT演算子
+            case '-': return -operand; // 単項マイナス
+            case '+': return operand; // 単項プラス
+            default:
+                // TypeScriptのexhaustive checkのため、到達不可能
+                throw new Error(`未実装の単項演算子`);
+        }
+    }
+
+    /**
+     * 二項演算式を評価
+     */
+    private evaluateBinaryExpression(expr: { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }): number {
+        const left = this.evaluateExpression(expr.left);
+        const right = this.evaluateExpression(expr.right);
+        
+        // 文字列を含む演算は未サポート
+        if (typeof left === 'string' || typeof right === 'string') {
+            throw new Error('文字列演算はサポートされていません');
+        }
+        
+        switch (expr.operator) {
+            case '+': return left + right;
+            case '-': return left - right;
+            case '*': return left * right;
+            case '/': 
+                if (right === 0) {
+                    throw new Error('ゼロ除算エラー');
+                }
+                return Math.floor(left / right); // 整数除算
+            case '%':
+                if (right === 0) {
+                    throw new Error('ゼロ除算エラー（剰余演算）');
+                }
+                return ((left % right) + right) % right; // 正の剰余を保証
+            
+            // 比較演算子（真=1, 偽=0）
+            case '>': return left > right ? 1 : 0;
+            case '<': return left < right ? 1 : 0;
+            case '>=': return left >= right ? 1 : 0;
+            case '<=': return left <= right ? 1 : 0;
+            case '=': return left === right ? 1 : 0;
+            case '<>': return left !== right ? 1 : 0;
+            
+            // 論理演算子（0=偽, 非0=真）
+            case '&': return (left !== 0 && right !== 0) ? 1 : 0;
+            case '|': return (left !== 0 || right !== 0) ? 1 : 0;
+            
+            default:
+                throw new Error(`未実装の演算子: ${expr.operator}`);
+        }
+    }
+
+    /**
+     * PEEK式を評価（グリッド読み取り）
+     */
+    private evaluatePeekExpression(): number {
+        // PEEK: グリッドから読み取り
+        // $の値は、X, Y システム変数を使ってgridDataから取得
+        const x = this.variables.get('X') ?? 0;
+        const y = this.variables.get('Y') ?? 0;
+        
+        // X, Yを0-99の範囲に正規化（負の値も対応）
+        const xMod = ((Math.floor(x) % 100) + 100) % 100;
+        const yMod = ((Math.floor(y) % 100) + 100) % 100;
+        
+        // グリッドインデックスを計算: x * 100 + y
+        const index = xMod * 100 + yMod;
+        
+        // gridDataから値を読み取り
+        return this.peekFn(index);
+    }
+
+    /**
+     * ランダム式を評価
+     */
+    private evaluateRandomExpression(): number {
+        // ランダム数生成: 0-32767の範囲
+        return Math.floor(Math.random() * 32768);
+    }
+
+    /**
+     * 文字リテラル式を評価（ASCIIコード変換）
+     */
+    private evaluateCharLiteralExpression(expr: { type: 'CharLiteralExpression'; value: string }): number {
+        // 文字リテラルをASCIIコードに変換
+        const charValue = expr.value;
+        if (charValue.length === 1) {
+            return charValue.charCodeAt(0);
+        } else {
+            // エスケープシーケンス等で処理済みの文字
+            return charValue.charCodeAt(0);
+        }
+    }
+
+    /**
+     * IO GET式を評価（1byte入力）
+     */
+    private evaluateIoGetExpression(): number {
+        // VTL互換 1byte入力: $システム変数から値を読み取り
+        if (this.getFn) {
+            const value = this.getFn();
+            // 0-255の範囲に制限
+            return Math.max(0, Math.min(255, Math.floor(value)));
+        } else {
+            throw new Error('1byte入力機能が設定されていません');
+        }
+    }
+
+    /**
+     * 配列アクセス式を評価
+     */
+    private evaluateArrayAccessExpression(expr: { type: 'ArrayAccessExpression'; index: Expression; isLiteral?: boolean }): number {
+        // 配列アクセス: [index] または [-1]（スタック）
+        if (expr.isLiteral) {
+            // [-1]: スタックからpop
+            return this.memorySpace.popStack();
+        } else {
+            // 通常の配列アクセス
+            const index = this.evaluateExpression(expr.index);
+            if (typeof index === 'string') {
+                throw new Error('配列のインデックスは数値でなければなりません');
+            }
+            return this.memorySpace.readArray(Math.floor(index));
+        }
+    }
+
     private evaluateExpression(expr: Expression): number | string {
         switch (expr.type) {
             case 'NumericLiteral':
-                return expr.value;
+                return this.evaluateNumericLiteral(expr as any);
             
             case 'StringLiteral':
-                return expr.value;
+                return this.evaluateStringLiteral(expr as any);
             
             case 'Identifier':
-                {
-                    const value = this.variables.get(expr.name);
-                    if (value === undefined) {
-                        // 未初期化の変数は0として扱う
-                        return 0;
-                    }
-                    return value;
-                }
+                return this.evaluateIdentifier(expr as any);
             
             case 'UnaryExpression':
-                {
-                    const operand = this.evaluateExpression(expr.operand);
-                    
-                    // 文字列を含む演算は未サポート
-                    if (typeof operand === 'string') {
-                        throw new Error('文字列演算はサポートされていません');
-                    }
-                    
-                    switch (expr.operator) {
-                        case '!': return operand === 0 ? 1 : 0; // NOT演算子
-                        case '-': return -operand; // 単項マイナス
-                        case '+': return operand; // 単項プラス
-                        default:
-                            // TypeScriptのexhaustive checkのため、到達不可能
-                            throw new Error(`未実装の単項演算子`);
-                    }
-                }
+                return this.evaluateUnaryExpression(expr as any);
             
             case 'BinaryExpression':
-                {
-                    const left = this.evaluateExpression(expr.left);
-                    const right = this.evaluateExpression(expr.right);
-                    
-                    // 文字列を含む演算は未サポート
-                    if (typeof left === 'string' || typeof right === 'string') {
-                        throw new Error('文字列演算はサポートされていません');
-                    }
-                    
-                    switch (expr.operator) {
-                        case '+': return left + right;
-                        case '-': return left - right;
-                        case '*': return left * right;
-                        case '/': 
-                            if (right === 0) {
-                                throw new Error('ゼロ除算エラー');
-                            }
-                            return Math.floor(left / right); // 整数除算
-                        case '%':
-                            if (right === 0) {
-                                throw new Error('ゼロ除算エラー（剰余演算）');
-                            }
-                            return ((left % right) + right) % right; // 正の剰余を保証
-                        
-                        // 比較演算子（真=1, 偽=0）
-                        case '>': return left > right ? 1 : 0;
-                        case '<': return left < right ? 1 : 0;
-                        case '>=': return left >= right ? 1 : 0;
-                        case '<=': return left <= right ? 1 : 0;
-                        case '=': return left === right ? 1 : 0;
-                        case '<>': return left !== right ? 1 : 0;
-                        
-                        // 論理演算子（0=偽, 非0=真）
-                        case '&': return (left !== 0 && right !== 0) ? 1 : 0;
-                        case '|': return (left !== 0 || right !== 0) ? 1 : 0;
-                        
-                        default:
-                            throw new Error(`未実装の演算子: ${expr.operator}`);
-                    }
-                }
+                return this.evaluateBinaryExpression(expr as any);
             
             case 'PeekExpression':
-                {
-                    // PEEK: グリッドから読み取り
-                    // $の値は、X, Y システム変数を使ってgridDataから取得
-                    const x = this.variables.get('X') ?? 0;
-                    const y = this.variables.get('Y') ?? 0;
-                    
-                    // X, Yを0-99の範囲に正規化（負の値も対応）
-                    const xMod = ((Math.floor(x) % 100) + 100) % 100;
-                    const yMod = ((Math.floor(y) % 100) + 100) % 100;
-                    
-                    // グリッドインデックスを計算: x * 100 + y
-                    const index = xMod * 100 + yMod;
-                    
-                    // gridDataから値を読み取り
-                    return this.peekFn(index);
-                }
+                return this.evaluatePeekExpression();
             
             case 'RandomExpression':
-                {
-                    // ランダム数生成: 0-32767の範囲
-                    return Math.floor(Math.random() * 32768);
-                }
+                return this.evaluateRandomExpression();
 
             case 'CharLiteralExpression':
-                {
-                    // 文字リテラルをASCIIコードに変換
-                    const charValue = expr.value;
-                    if (charValue.length === 1) {
-                        return charValue.charCodeAt(0);
-                    } else {
-                        // エスケープシーケンス等で処理済みの文字
-                        return charValue.charCodeAt(0);
-                    }
-                }
+                return this.evaluateCharLiteralExpression(expr as any);
 
             case 'IoGetExpression':
-                {
-                    // VTL互換 1byte入力: $システム変数から値を読み取り
-                    if (this.getFn) {
-                        const value = this.getFn();
-                        // 0-255の範囲に制限
-                        return Math.max(0, Math.min(255, Math.floor(value)));
-                    } else {
-                        throw new Error('1byte入力機能が設定されていません');
-                    }
-                }
+                return this.evaluateIoGetExpression();
 
             case 'ArrayAccessExpression':
-                {
-                    // 配列アクセス: [index] または [-1]（スタック）
-                    if (expr.isLiteral) {
-                        // [-1]: スタックからpop
-                        return this.memorySpace.popStack();
-                    } else {
-                        // 通常の配列アクセス
-                        const index = this.evaluateExpression(expr.index);
-                        if (typeof index === 'string') {
-                            throw new Error('配列のインデックスは数値でなければなりません');
-                        }
-                        return this.memorySpace.readArray(Math.floor(index));
-                    }
-                }
+                return this.evaluateArrayAccessExpression(expr as any);
             
             default:
                 throw new Error(`未実装の式タイプ: ${(expr as any).type}`);
