@@ -107,6 +107,24 @@ interface InterpreterState {
 }
 
 /**
+ * ブロック構造ループの実行状態を保持するインターフェース。
+ * 
+ * マルチワーカー協調動作のため、ループ内の各ステートメントごとにyieldする必要があります。
+ * このインターフェースはループの実行状態を保持し、next()呼び出しごとに1ステートメントずつ実行します。
+ */
+interface LoopBlockInfo {
+    type: 'for' | 'while'; // ループの種類
+    variable?: string; // ループ変数名 (FORの場合のみ)
+    start?: number; // 開始値 (FORのみ)
+    end?: number; // 終了値 (FORのみ)
+    step?: number; // ステップ値 (FORのみ)
+    condition?: Expression; // WHILE条件式 (WHILEのみ)
+    body: Statement[]; // ループ本体のステートメント配列
+    bodyIndex: number; // 現在実行中のステートメントインデックス
+    currentValue?: number; // 現在のループ変数値 (FORのみ)
+}
+
+/**
  * WorkerScriptインタプリタのコアクラス。
  * スクリプトのロード、解析、および1ステートメントごとの実行を制御します。
  */
@@ -125,6 +143,7 @@ class WorkerInterpreter {
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
+    private loopStack: LoopBlockInfo[] = []; // ループブロックの実行状態スタック
     private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
@@ -447,8 +466,9 @@ class WorkerInterpreter {
 
     /**
      * ブロックIF構造の本体を収集します。
-     * ;=<condition> から #=; までの間のステートメントを収集し、
+     * ;=<condition> から #=; までの間のステートメントを再帰的にパースします。
      * ELSE (;) があればthenBodyとelseBodyに分けます。
+     * ネストされたループやIF文も正しく処理します。
      * 
      * @param blockStmt IfBlockStatementノード（condition設定済み）
      * @param startLine ;=<condition> の次の行番号
@@ -481,13 +501,75 @@ class WorkerInterpreter {
                 continue;
             }
 
-            // ステートメントをパース
+            // 行をステートメント文字列に分割
             const stmtStrings = this.splitLineByWhitespace(sourceText);
+            const parsedStatements: Statement[] = [];
+            
+            // 各ステートメント文字列を基本パース
             for (const stmtString of stmtStrings) {
                 const stmt = this.parseStatementString(stmtString, i);
                 if (stmt) {
-                    currentBody.push(stmt);
+                    parsedStatements.push(stmt);
                 }
+            }
+            
+            // ブロック構造を検出（ForStatement/WhileStatement/IfStatementが単独の場合）
+            if (parsedStatements.length === 1) {
+                const stmt = parsedStatements[0];
+                
+                if (stmt?.type === 'ForStatement') {
+                    // 内側のFORループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const forBlockStmt: any = {
+                        type: 'ForBlockStatement',
+                        line: i,
+                        variable: (stmt as any).variable,
+                        start: (stmt as any).start,
+                        end: (stmt as any).end,
+                        step: (stmt as any).step,
+                        body: innerBody.body,
+                    };
+                    currentBody.push(forBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+                
+                if (stmt?.type === 'WhileStatement') {
+                    // 内側のWHILEループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const whileBlockStmt: any = {
+                        type: 'WhileBlockStatement',
+                        line: i,
+                        condition: (stmt as any).condition,
+                        body: innerBody.body,
+                    };
+                    currentBody.push(whileBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+                
+                if (stmt?.type === 'IfStatement') {
+                    // 内側のブロックIFを再帰的にパース
+                    const ifBlockStmt: any = {
+                        type: 'IfBlockStatement',
+                        line: i,
+                        condition: (stmt as any).condition,
+                        thenBody: [],
+                        elseBody: [],
+                    };
+                    const endLine = this.collectIfBlock(ifBlockStmt, i + 1);
+                    currentBody.push(ifBlockStmt);
+                    // 内側IFの終端（#=;）までスキップ
+                    i = endLine;
+                    continue;
+                }
+            }
+            
+            // 通常のステートメントを追加
+            for (const stmt of parsedStatements) {
+                currentBody.push(stmt);
             }
         }
 
@@ -507,7 +589,7 @@ class WorkerInterpreter {
 
     /**
      * ループブロック構造の本体を収集します。
-     * @=... から #=@ までの間のステートメントを収集します。
+     * @=... から #=@ までの間のステートメントを再帰的にパースします。
      * ネストされたループも正しく処理します。
      * 
      * @param startLine @=... の次の行番号
@@ -515,44 +597,74 @@ class WorkerInterpreter {
      */
     private collectLoopBlock(startLine: number): { body: Statement[]; endLine: number } {
         const body: Statement[] = [];
-        let nestLevel = 0; // ネストレベル
-        let foundEndLoop = false;
 
         for (let i = startLine; i < this.scriptLines.length; i++) {
             const sourceText = this.scriptLines[i];
             if (!sourceText) continue;
 
-            // #=@ を見つけたらネストレベルを確認
+            // #=@ を見つけたら、このループの終端
             if (this.isLoopEndStatement(sourceText)) {
-                if (nestLevel === 0) {
-                    // 対応する終端が見つかった
-                    foundEndLoop = true;
-                    return { body, endLine: i };
-                } else {
-                    // ネストされたループの終端
-                    nestLevel--;
-                }
+                return { body, endLine: i };
             }
 
-            // ステートメントをパース
+            // 行をステートメント文字列に分割
             const stmtStrings = this.splitLineByWhitespace(sourceText);
+            const parsedStatements: Statement[] = [];
+            
+            // 各ステートメント文字列を基本パース
             for (const stmtString of stmtStrings) {
                 const stmt = this.parseStatementString(stmtString, i);
                 if (stmt) {
-                    // ネストされたループの開始を検出
-                    if (stmt.type === 'ForStatement' || stmt.type === 'WhileStatement') {
-                        nestLevel++;
-                    }
-                    body.push(stmt);
+                    parsedStatements.push(stmt);
                 }
+            }
+            
+            // ブロック構造を検出（ForStatement/WhileStatementが単独の場合）
+            if (parsedStatements.length === 1) {
+                const stmt = parsedStatements[0];
+                
+                if (stmt?.type === 'ForStatement') {
+                    // 内側のFORループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const forBlockStmt: any = {
+                        type: 'ForBlockStatement',
+                        line: i,
+                        variable: (stmt as any).variable,
+                        start: (stmt as any).start,
+                        end: (stmt as any).end,
+                        step: (stmt as any).step,
+                        body: innerBody.body,
+                    };
+                    body.push(forBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+                
+                if (stmt?.type === 'WhileStatement') {
+                    // 内側のWHILEループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const whileBlockStmt: any = {
+                        type: 'WhileBlockStatement',
+                        line: i,
+                        condition: (stmt as any).condition,
+                        body: innerBody.body,
+                    };
+                    body.push(whileBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+            }
+            
+            // 通常のステートメントを追加
+            for (const stmt of parsedStatements) {
+                body.push(stmt);
             }
         }
 
-        if (!foundEndLoop) {
-            throw new Error(`ループ構造が #=@ で終了していません (開始行: ${startLine})`);
-        }
-
-        return { body, endLine: -1 }; // 到達しない
+        // #=@ が見つからずにスクリプト終端に到達
+        throw new Error(`ループ構造が #=@ で終了していません (開始行: ${startLine})`);
     }
 
     /**
@@ -1826,9 +1938,91 @@ class WorkerInterpreter {
         this.variables.clear();
         this.currentLineIndex = 0;
         this.callStack = [];
+        this.loopStack = [];
 
-        // プログラム実行ループ
-        while (this.currentLineIndex < this.program.body.length) {
+        // プログラム実行ループ（loopStackに処理が残っている場合も継続）
+        while (this.currentLineIndex < this.program.body.length || this.loopStack.length > 0) {
+            // loopStackがある場合、ループ内のステートメントを優先実行
+            if (this.loopStack.length > 0) {
+                const currentLoop = this.loopStack[this.loopStack.length - 1]!;
+                
+                // bodyIndex が body.length に達した場合、ループの次のイテレーション
+                if (currentLoop.bodyIndex >= currentLoop.body.length) {
+                    if (currentLoop.type === 'for') {
+                        // FORループ: 変数を更新して条件チェック
+                        const newValue = currentLoop.currentValue! + currentLoop.step!;
+                        const shouldContinue = currentLoop.step! > 0
+                            ? newValue <= currentLoop.end!
+                            : newValue >= currentLoop.end!;
+                        
+                        if (shouldContinue) {
+                            // 次のイテレーション
+                            this.variables.set(currentLoop.variable!, newValue);
+                            currentLoop.currentValue = newValue;
+                            currentLoop.bodyIndex = 0;
+                            
+                            // 最初のステートメントを実行
+                            if (currentLoop.body.length > 0) {
+                                const stmt = currentLoop.body[0]!;
+                                const result = this.executeStatement(stmt);
+                                if (result.jump || result.halt) {
+                                    if (result.halt) return;
+                                }
+                                currentLoop.bodyIndex = 1;
+                                yield;
+                                continue;
+                            }
+                        } else {
+                            // ループ終了
+                            this.loopStack.pop();
+                            yield;
+                            continue;
+                        }
+                    } else if (currentLoop.type === 'while') {
+                        // WHILEループ: 条件を再評価
+                        const condition = this.evaluateExpression(currentLoop.condition!);
+                        
+                        if (typeof condition === 'string') {
+                            throw new Error('WHILEループの条件は数値でなければなりません');
+                        }
+                        
+                        if (condition !== 0) {
+                            // 次のイテレーション
+                            currentLoop.bodyIndex = 0;
+                            
+                            // 最初のステートメントを実行
+                            if (currentLoop.body.length > 0) {
+                                const stmt = currentLoop.body[0]!;
+                                const result = this.executeStatement(stmt);
+                                if (result.jump || result.halt) {
+                                    if (result.halt) return;
+                                }
+                                currentLoop.bodyIndex = 1;
+                                yield;
+                                continue;
+                            }
+                        } else {
+                            // ループ終了
+                            this.loopStack.pop();
+                            yield;
+                            continue;
+                        }
+                    }
+                }
+                
+                // 次のステートメントを実行
+                if (currentLoop.bodyIndex < currentLoop.body.length) {
+                    const stmt = currentLoop.body[currentLoop.bodyIndex]!;
+                    const result = this.executeStatement(stmt);
+                    if (result.jump || result.halt) {
+                        if (result.halt) return;
+                    }
+                    currentLoop.bodyIndex++;
+                    yield;
+                    continue;
+                }
+            }
+            
             const line = this.program.body[this.currentLineIndex];
             if (!line) break;
 
@@ -1962,24 +2156,32 @@ class WorkerInterpreter {
                         throw new Error('FORループのステップ値は0にできません');
                     }
                     
+                    // 初回のループ条件チェック
+                    const shouldExecute = stepValue > 0 
+                        ? startValue <= endValue 
+                        : startValue >= endValue;
+                    
+                    if (!shouldExecute) {
+                        // ループをスキップ（bodyを実行しない）
+                        break;
+                    }
+                    
                     // ループ変数に開始値を設定
                     this.variables.set(varName, startValue);
                     
-                    // ループ実行
-                    let currentValue = startValue;
-                    while (stepValue > 0 ? currentValue <= endValue : currentValue >= endValue) {
-                        // body内の各ステートメントを実行
-                        for (const bodyStmt of forStmt.body) {
-                            const result = this.executeStatement(bodyStmt);
-                            if (result.jump || result.halt) {
-                                return result;
-                            }
-                        }
-                        
-                        // ループ変数を更新
-                        currentValue += stepValue;
-                        this.variables.set(varName, currentValue);
-                    }
+                    // ループ情報をスタックにpush（最初のステートメントは実行しない）
+                    this.loopStack.push({
+                        type: 'for',
+                        variable: varName,
+                        start: startValue,
+                        end: endValue,
+                        step: stepValue,
+                        body: forStmt.body,
+                        bodyIndex: 0,
+                        currentValue: startValue,
+                    });
+                    
+                    // run()のloopStack処理に任せる
                 }
                 break;
             
@@ -1987,28 +2189,28 @@ class WorkerInterpreter {
                 {
                     const whileStmt = statement as any;
                     
-                    // 条件が真の間ループ
-                    while (true) {
-                        const condition = this.evaluateExpression(whileStmt.condition);
-                        
-                        // 型チェック
-                        if (typeof condition === 'string') {
-                            throw new Error('WHILEループの条件は数値でなければなりません');
-                        }
-                        
-                        // 条件が偽ならループ終了
-                        if (condition === 0) {
-                            break;
-                        }
-                        
-                        // body内の各ステートメントを実行
-                        for (const bodyStmt of whileStmt.body) {
-                            const result = this.executeStatement(bodyStmt);
-                            if (result.jump || result.halt) {
-                                return result;
-                            }
-                        }
+                    // 条件を評価
+                    const condition = this.evaluateExpression(whileStmt.condition);
+                    
+                    // 型チェック
+                    if (typeof condition === 'string') {
+                        throw new Error('WHILEループの条件は数値でなければなりません');
                     }
+                    
+                    // 条件が偽ならループをスキップ
+                    if (condition === 0) {
+                        break;
+                    }
+                    
+                    // ループ情報をスタックにpush（最初のステートメントは実行しない）
+                    this.loopStack.push({
+                        type: 'while',
+                        condition: whileStmt.condition,
+                        body: whileStmt.body,
+                        bodyIndex: 0,
+                    });
+                    
+                    // run()のloopStack処理に任せる
                 }
                 break;
             
