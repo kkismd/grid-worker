@@ -16,6 +16,17 @@ npm install
 # 基本実行
 npm run cli examples/hello.ws
 
+# リアルタイムモード（30fps、キーボード入力対応）
+npm run cli -- examples/hello.ws --realtime
+
+# グリッド表示付きリアルタイム実行
+npm run cli -- examples/pattern.ws --realtime --show-grid
+
+# キャラクターVRAMモード（ASCII文字+ANSIカラー表示）
+npm run cli -- examples/realtime_tests/06-color-text.ws --realtime --show-grid --char-mode
+# または短縮形
+npm run cli -- examples/realtime_tests/06-color-text.ws --realtime --show-grid -c
+
 # 詳細モード
 npm run cli -- examples/pattern.ws --verbose
 
@@ -25,6 +36,22 @@ npm run cli -- examples/square.ws --debug
 # 出力をファイルに保存
 npm run cli -- examples/hello.ws --output result.json
 ```
+
+### リアルタイムモードのオプション
+
+- `--realtime`, `-r` - リアルタイム実行モード（30fps、Raw Mode）
+- `--show-grid`, `-g` - グリッド表示を有効化
+- `--char-mode`, `-c` - キャラクターVRAMモード（16ビット値をASCII+カラーとして表示）
+- `--split-screen`, `-s` - 上下分割画面モード（グリッド+トランスクリプト）
+- `--verbose`, `-v` - 詳細情報を表示
+
+**キャラクターVRAMモード** (`--char-mode`):
+- グリッド値（0-65535）を16ビット値として解釈
+- ビット 0-7: ASCII文字コード
+- ビット 8-11: 前景色（0-15、ANSI 16色）
+- ビット 12-15: 背景色（0-15、ANSI 16色）
+- エンコーディング計算式: `value = ASCII + (fg_color * 256) + (bg_color * 4096)`
+- 16進数リテラル使用例: `0x7148` = 'H'（0x48） + 前景色1（赤） + 背景色7（白）
 
 ### インタラクティブモード
 
@@ -46,12 +73,22 @@ npm run cli -- --interactive
 ```workerscript
 : コメント
 A=10           : 変数Aに10を代入
+B=0xFF         : 16進数リテラル（10進数255）
+C=0x1A2B       : 16進数リテラル（10進数6699）
 ?="Hello"      : 文字列を出力
 ?=A            : 変数Aの値を出力
 /              : 改行を出力
-C='A'          : 文字リテラル（ASCII値65）
-D='''          : シングルクォート文字（ASCII値39）
+D='A'          : 文字リテラル（ASCII値65）
+E='''          : シングルクォート文字（ASCII値39）
 ```
+
+### 数値リテラル
+
+- **10進数**: `123`, `0`, `-45`
+- **16進数**: `0xFF`, `0x1A2B`, `0X7FFF`（`0x`または`0X`で始まる）
+  - 大文字・小文字の16進数字をサポート
+  - 例: `0xABCD`, `0xabcd`, `0xAbCd` すべて有効
+  - 内部的には10進数に変換されて処理される
 
 ### グリッド操作
 
@@ -60,8 +97,27 @@ D='''          : シングルクォート文字（ASCII値39）
 : (0,0)は左上、(99,99)は右下
 
 X=5 Y=10       : 座標を設定（右に5、下に10）
-`=255          : 現在座標にピクセルを設定
+`=255          : 現在座標にピクセルを設定（グレースケール）
+`=0x7148       : キャラクターVRAMモード: 'H'+カラー
 A=`            : 現在座標の値を読み取り
+```
+
+### キャラクターVRAMモードでの値のエンコーディング
+
+```workerscript
+: 16ビット値 = ASCII + (前景色 * 256) + (背景色 * 4096)
+: または 16進数で: ASCII + (fg_color << 8) + (bg_color << 12)
+
+: 例1: 'H' を白背景・赤文字で表示
+X=0 Y=0
+`=0x7148       : 0x48('H') + 0x0100(赤) + 0x7000(白bg)
+
+: 例2: 計算式で同じ結果
+`='H' + 256 + 7*4096
+
+: ANSI 16色:
+: 0:黒, 1:赤, 2:緑, 3:黄, 4:青, 5:マゼンタ, 6:シアン, 7:白
+: 8-15: 明るいバリエーション
 ```
 
 ### 制御構造

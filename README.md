@@ -4,7 +4,18 @@ VTL（Very Tiny Language）互換のWorkerScriptプログラミング言語と�
 
 ## 🌐 オンラインデモ
 
-**▶️ [https://kkismd.github.io/grid-worker/](https://kkismd.github.io/grid-worker/)**
+**▶️ [https://kkismd.github.io/grid### 4. キーボード入力例 (`examples/realtime-keyboard.ws`)
+```workerscript
+: Real-time keyboard input demo  
+?="Press keys (ESC to exit):" /
+^LOOP
+  K=$                    : Get keyboard input
+  ;=K=27 #=-1           : Exit on ESC
+  ;=K>0 ?="Key: " ?=K / : Show key if pressed
+#=^LOOP
+```
+
+### 5. グリッド描画例 (`examples/pattern.ws`)tps://kkismd.github.io/grid-worker/)**
 
 ブラウザで直接WorkerScript言語を体験できます！
 
@@ -24,9 +35,11 @@ VTL（Very Tiny Language）互換のWorkerScriptプログラミング言語と�
 ### 🔤 WorkerScript言語機能
 - **VTL互換記号** - `$`(I/O), `` ` ``(グリッド), `~`(ランダム)
 - **文字リテラル** - `'A'` 形式での文字操作
+- **16進数リテラル** - `0xFF`, `0x1A2B` などの16進数表記対応
 - **統一制御構造** - IF, FOR/WHILE (`@=`開始、`#=@`終了), GOTO/GOSUB (`#=!`でRETURN)
 - **演算子** - 算術、比較、論理演算子完備
 - **インラインコメント** - `:` でのコメント記述
+- **キャラクターVRAMモード** - 16ビット値でASCII文字+ANSIカラー表示
 
 ## 📦 インストール
 
@@ -47,9 +60,18 @@ npm run serve        # ビルド版プレビュー
 
 ### CLI環境での実行
 ```bash
-npm run cli examples/hello.ws    # ファイル実行
-npm run cli                      # REPLモード
+npm run cli examples/hello.ws              # ファイル実行
+npm run cli examples/hello.ws --realtime   # リアルタイム実行
+npm run cli examples/hello.ws --realtime --show-grid           # グリッド表示
+npm run cli examples/hello.ws --realtime --show-grid --char-mode  # キャラクターVRAMモード
+npm run cli                                # REPLモード
 ```
+
+**キャラクターVRAMモード** (`--char-mode`):
+- グリッド値を16ビット値として解釈（ASCII文字+色情報）
+- ANSI 16色カラー対応（前景色・背景色）
+- エンコーディング: `value = ASCII + (fg_color * 256) + (bg_color * 4096)`
+- 16進数リテラルで簡潔に記述: `0x7148` = 白背景・赤文字で'H'
 
 ### テスト実行
 ```bash
@@ -124,14 +146,37 @@ X=50 Y=50              : グリッド座標設定
 
 ## 🎯 サンプルスクリプト
 
-### 1. 文字リテラル例 (`examples/char-literals.ws`)
+### 1. 16進数リテラル例 (`examples/realtime_tests/11-hex-literal-test.ws`)
+```workerscript
+: Hexadecimal literal examples
+X=0 Y=0
+`=0x41      : 'A' (hex 0x41 = decimal 65)
+X=1 Y=0
+`=0xFF      : ÿ (hex 0xFF = decimal 255)
+X=2 Y=0
+`=0x7148    : 'H' with color (white bg, red fg)
+```
+
+### 2. キャラクターVRAMモード例 (`examples/realtime_tests/06-color-text.ws`)
+```workerscript
+: Character VRAM with colors
+: Encoding: ASCII + (fg_color * 256) + (bg_color * 4096)
+: Example: 'H' + red(1) + white_bg(7)
+X=0 Y=0
+`=0x7148    : White background, red text 'H'
+X=1 Y=0
+`='e'+256+7*4096  : Same with calculation
+```
+実行: `npm run cli examples/realtime_tests/06-color-text.ws --realtime --show-grid --char-mode`
+
+### 3. 文字リテラル例 (`examples/char-literals.ws`)
 ```workerscript
 : Character literal examples
 A='A' B='Z' C='0'
 ?="ASCII values: " ?=A ?=" " ?=B ?=" " ?=C /
 ```
 
-### 2. キーボード入力例 (`examples/realtime-keyboard.ws`)
+### 4. キーボード入力例 (`examples/realtime-keyboard.ws`)
 ```workerscript
 : Real-time keyboard input demo  
 ?="Press keys (ESC to exit):" /

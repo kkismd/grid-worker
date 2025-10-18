@@ -93,6 +93,40 @@ export class Lexer {
             // 数値リテラル
             if (/[0-9]/.test(char)) {
                 let value = '';
+                let isHex = false;
+                
+                // 0xまたは0Xで始まる場合は16進数
+                if (char === '0' && cursor + 1 < lineText.length) {
+                    const nextChar = lineText[cursor + 1];
+                    if (nextChar === 'x' || nextChar === 'X') {
+                        isHex = true;
+                        cursor += 2; // '0x'をスキップ
+                        
+                        // 16進数の読み取り
+                        while (cursor < lineText.length) {
+                            const currentChar = lineText[cursor];
+                            if (currentChar && /[0-9A-Fa-f]/.test(currentChar)) {
+                                value += currentChar;
+                                cursor++;
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        if (value.length === 0) {
+                            throw new Error(`Invalid hexadecimal literal at line ${lineNumber + 1}`);
+                        }
+                        
+                        // 16進数を10進数に変換して格納
+                        const decimalValue = parseInt(value, 16).toString();
+                        tokens.push({ type: TokenType.NUMBER, value: decimalValue, line: lineNumber, column: cursor - value.length - 2 });
+                        continue;
+                    }
+                }
+                
+                // 通常の10進数
+                value = char;
+                cursor++;
                 while (cursor < lineText.length) {
                     const currentChar = lineText[cursor];
                     if (currentChar && /[0-9]/.test(currentChar)) {
