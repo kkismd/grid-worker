@@ -17,6 +17,7 @@ lerna-debug.log*
 # Directory for compiled output
 dist/
 build/
+lib/ # TypeScript compiled output
 .next/ # Next.js build output
 
 # Dependencies

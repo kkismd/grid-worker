@@ -1,11 +1,9 @@
 {
   // Visit https://aka.ms/tsconfig to read more about this file
   "compilerOptions": {
-    // File Layout
-    "rootDir": "./src",
-    "outDir": "./dist",
-
-    // Environment Settings
+  // File Layout
+  "rootDir": "./src",
+  "outDir": "./lib",    // Environment Settings
     // See also https://aka.ms/tsconfig/module
     "module": "es2022",
     "target": "es2022",
@@ -38,5 +36,6 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-  }
+  },
+  "exclude": ["vite.config.ts"]
 }
