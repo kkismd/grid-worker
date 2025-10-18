@@ -43,8 +43,10 @@ export type Statement =
     | ReturnStatement
     | HaltStatement
     | ForStatement
+    | ForBlockStatement
     | NextStatement
     | WhileStatement
+    | WhileBlockStatement
     | PokeStatement
     | IoPutStatement
     | ArrayAssignmentStatement
@@ -146,6 +148,20 @@ export interface ForStatement extends ASTNode {
 }
 
 /**
+ * FORループブロックステートメント（統一構文・ブロック構造）
+ * 例: @=I,1,100 ... #=@
+ * ループボディを明示的に保持するブロック構造
+ */
+export interface ForBlockStatement extends ASTNode {
+    type: 'ForBlockStatement';
+    variable: Identifier;    // ループ変数
+    start: Expression;       // 開始値
+    end: Expression;         // 終了値
+    step?: Expression;       // ステップ値（省略時は1）
+    body: Statement[];       // ループボディ
+}
+
+/**
  * NEXTステートメント (例: #=@)
  * FORループの終了処理（統一構造）
  */
@@ -161,6 +177,17 @@ export interface NextStatement extends ASTNode {
 export interface WhileStatement extends ASTNode {
     type: 'WhileStatement';
     condition: Expression;    // 継続条件
+}
+
+/**
+ * WHILEループブロックステートメント（統一構文・ブロック構造）
+ * 例: @=(X<100) ... #=@
+ * ループボディを明示的に保持するブロック構造
+ */
+export interface WhileBlockStatement extends ASTNode {
+    type: 'WhileBlockStatement';
+    condition: Expression;    // 継続条件
+    body: Statement[];        // ループボディ
 }
 
 /**
