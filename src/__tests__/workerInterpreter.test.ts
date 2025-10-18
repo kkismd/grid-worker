@@ -3253,3 +3253,131 @@ describe('Array Access Expression - Parser', () => {
     });
 });
 
+describe('Array Statement - Parser', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse array assignment with numeric index ([0]=100)', () => {
+        interpreter.loadScript('[0]=100');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        expect(line).toBeDefined();
+        expect(line!.statements).toHaveLength(1);
+        expect(line!.statements[0]!.type).toBe('ArrayAssignmentStatement');
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.index.type).toBe('NumericLiteral');
+        expect(assignment.index.value).toBe(0);
+        expect(assignment.value.type).toBe('NumericLiteral');
+        expect(assignment.value.value).toBe(100);
+        expect(assignment.isLiteral).toBe(false);
+    });
+
+    test('should parse array assignment with variable index ([A]=B)', () => {
+        interpreter.loadScript('[A]=B');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.type).toBe('ArrayAssignmentStatement');
+        expect(assignment.index.type).toBe('Identifier');
+        expect(assignment.index.name).toBe('A');
+        expect(assignment.value.type).toBe('Identifier');
+        expect(assignment.value.name).toBe('B');
+        expect(assignment.isLiteral).toBe(false);
+    });
+
+    test('should parse array assignment with expression index ([A+5]=100)', () => {
+        interpreter.loadScript('[A+5]=100');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.type).toBe('ArrayAssignmentStatement');
+        expect(assignment.index.type).toBe('BinaryExpression');
+        expect(assignment.index.operator).toBe('+');
+        expect(assignment.value.value).toBe(100);
+    });
+
+    test('should parse stack push ([-1]=A)', () => {
+        interpreter.loadScript('[-1]=A');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.type).toBe('ArrayAssignmentStatement');
+        expect(assignment.isLiteral).toBe(true);
+        expect(assignment.index.type).toBe('UnaryExpression');
+        expect(assignment.index.operator).toBe('-');
+    });
+
+    test('should parse array initialization with numeric values ([1000]=1,2,3)', () => {
+        interpreter.loadScript('[1000]=1,2,3');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        expect(line!.statements[0]!.type).toBe('ArrayInitializationStatement');
+        const init = line!.statements[0] as any;
+        expect(init.index.type).toBe('NumericLiteral');
+        expect(init.index.value).toBe(1000);
+        expect(init.values).toHaveLength(3);
+        expect(init.values[0].type).toBe('NumericLiteral');
+        expect(init.values[0].value).toBe(1);
+        expect(init.values[1].value).toBe(2);
+        expect(init.values[2].value).toBe(3);
+    });
+
+    test('should parse array initialization with variable index ([A]=10,20,30)', () => {
+        interpreter.loadScript('[A]=10,20,30');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const init = line!.statements[0] as any;
+        expect(init.type).toBe('ArrayInitializationStatement');
+        expect(init.index.type).toBe('Identifier');
+        expect(init.index.name).toBe('A');
+        expect(init.values).toHaveLength(3);
+    });
+
+    test('should parse array initialization with expression values ([A]=B,C+5,D*2)', () => {
+        interpreter.loadScript('[A]=B,C+5,D*2');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const init = line!.statements[0] as any;
+        expect(init.values).toHaveLength(3);
+        expect(init.values[0].type).toBe('Identifier');
+        expect(init.values[1].type).toBe('BinaryExpression');
+        expect(init.values[1].operator).toBe('+');
+        expect(init.values[2].type).toBe('BinaryExpression');
+        expect(init.values[2].operator).toBe('*');
+    });
+
+    test('should reject array initialization with literal [-1]', () => {
+        expect(() => {
+            interpreter.loadScript('[-1]=1,2,3');
+        }).toThrow(/配列初期化でスタックアクセス\[-1\]は使用できません/);
+    });
+
+    test('should throw error for array statement without equals', () => {
+        expect(() => {
+            interpreter.loadScript('[A]');
+        }).toThrow(/配列ステートメントには = が必要です/);
+    });
+
+    test('should throw error for array statement with empty right side', () => {
+        expect(() => {
+            interpreter.loadScript('[A]=');
+        }).toThrow(/配列ステートメントの右辺が空です/);
+    });
+});
+

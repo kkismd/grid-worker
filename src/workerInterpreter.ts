@@ -545,6 +545,13 @@ class WorkerInterpreter {
             return this.parseIdentifierStatement(tokens, startIndex);
         }
 
+        // 配列代入・初期化ステートメント ([expression]=...)
+        if (token.type === TokenType.LEFT_BRACKET) {
+            const statement = this.parseArrayStatement(tokens, startIndex);
+            // nextIndexの計算: 全トークンを消費したと仮定
+            return { statement, nextIndex: tokens.length };
+        }
+
         throw new Error(`構文エラー: 未知のステートメント形式: ${token.value}`);
     }
 
@@ -766,6 +773,115 @@ class WorkerInterpreter {
         }
 
         throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+    }
+
+    /**
+     * [ で始まるステートメント ([expression]=...) を解析します
+     * 配列代入 ([A]=100) と配列初期化 ([A]=1,2,3) を処理
+     */
+    private parseArrayStatement(tokens: Token[], startIndex: number): Statement {
+        const firstToken = tokens[startIndex]!;
+        
+        if (firstToken.type !== TokenType.LEFT_BRACKET) {
+            throw new Error(`構文エラー: 配列ステートメントは [ で始まる必要があります`);
+        }
+
+        // 対応する ] を見つける
+        let depth = 1;
+        let endIndex = startIndex + 1;
+        while (endIndex < tokens.length && depth > 0) {
+            if (tokens[endIndex]?.type === TokenType.LEFT_BRACKET) {
+                depth++;
+            } else if (tokens[endIndex]?.type === TokenType.RIGHT_BRACKET) {
+                depth--;
+            }
+            if (depth > 0) {
+                endIndex++;
+            }
+        }
+
+        if (depth !== 0) {
+            throw new Error(`構文エラー: 配列括弧が閉じられていません (行: ${firstToken.line + 1})`);
+        }
+
+        // インデックス式を解析
+        const indexTokens = tokens.slice(startIndex + 1, endIndex);
+        if (indexTokens.length === 0) {
+            throw new Error(`構文エラー: 配列インデックスが空です (行: ${firstToken.line + 1})`);
+        }
+
+        const indexExpr = this.parseBinaryExpression(indexTokens, 0);
+
+        // リテラル[-1]の検出
+        const isLiteral = 
+            indexTokens.length === 2 &&
+            indexTokens[0]!.type === TokenType.MINUS &&
+            indexTokens[1]!.type === TokenType.NUMBER &&
+            indexTokens[1]!.value === '1';
+
+        // = トークンを確認
+        const equalsToken = tokens[endIndex + 1];
+        if (!equalsToken || equalsToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: 配列ステートメントには = が必要です (行: ${firstToken.line + 1})`);
+        }
+
+        // 右辺のトークンを取得
+        const valueTokens = tokens.slice(endIndex + 2);
+        if (valueTokens.length === 0) {
+            throw new Error(`構文エラー: 配列ステートメントの右辺が空です (行: ${firstToken.line + 1})`);
+        }
+
+        // カンマが含まれているか確認（配列初期化の判定）
+        const hasComma = valueTokens.some(token => token.type === TokenType.COMMA);
+
+        if (hasComma) {
+            // 配列初期化: [A]=1,2,3
+            const values: Expression[] = [];
+            let currentTokens: Token[] = [];
+
+            for (const token of valueTokens) {
+                if (token.type === TokenType.COMMA) {
+                    if (currentTokens.length > 0) {
+                        const valueExpr = this.parseBinaryExpression(currentTokens, 0);
+                        values.push(valueExpr.expr);
+                        currentTokens = [];
+                    }
+                } else {
+                    currentTokens.push(token);
+                }
+            }
+
+            // 最後の値を追加
+            if (currentTokens.length > 0) {
+                const valueExpr = this.parseBinaryExpression(currentTokens, 0);
+                values.push(valueExpr.expr);
+            }
+
+            // 配列初期化ではスタック操作は不可（リテラル[-1]は無効）
+            if (isLiteral) {
+                throw new Error(`構文エラー: 配列初期化でスタックアクセス[-1]は使用できません (行: ${firstToken.line + 1})`);
+            }
+
+            return {
+                type: 'ArrayInitializationStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                index: indexExpr.expr,
+                values,
+            };
+        } else {
+            // 配列代入: [A]=100
+            const valueExpr = this.parseBinaryExpression(valueTokens, 0);
+
+            return {
+                type: 'ArrayAssignmentStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                index: indexExpr.expr,
+                value: valueExpr.expr,
+                isLiteral,
+            };
+        }
     }
 
     /**
@@ -1374,6 +1490,11 @@ class WorkerInterpreter {
         if (firstToken.type === TokenType.IDENTIFIER && secondToken.type === TokenType.EQUALS) {
             const result = this.parseIdentifierStatement(tokens, 0);
             return result.statement;
+        }
+
+        // 配列代入・初期化ステートメント ([expression]=...)
+        if (firstToken.type === TokenType.LEFT_BRACKET) {
+            return this.parseArrayStatement(tokens, 0);
         }
 
         throw new Error(`構文エラー: 未知のステートメント形式: ${stmtString}`);
