@@ -298,6 +298,19 @@ class WorkerInterpreter {
                 };
             }
 
+            // #=@ パターン（NEXT文）- 統一構造
+            if (thirdToken.type === TokenType.AT) {
+                return {
+                    statement: {
+                        type: 'NextStatement',
+                        line: token.line,
+                        column: token.column,
+                        // variable: undefined, // #=@は変数指定なし（統一構造）
+                    },
+                    nextIndex: startIndex + 3
+                };
+            }
+
             // #=^LABEL パターン（通常のGOTO）
             if (thirdToken.type === TokenType.LABEL_DEFINITION) {
                 const labelName = thirdToken.value.substring(1);
@@ -513,26 +526,10 @@ class WorkerInterpreter {
                         nextIndex: startIndex + 4 + exprResult.consumed
                     };
                 }
-            } else {
-                // @=I (NEXTステートメント)
-                return {
-                    statement: {
-                        type: 'NextStatement',
-                        line: token.line,
-                        column: token.column,
-                        variable: {
-                            type: 'Identifier',
-                            name: thirdToken.value,
-                            line: thirdToken.line,
-                            column: thirdToken.column,
-                        },
-                    },
-                    nextIndex: startIndex + 3
-                };
             }
         }
         
-        throw new Error(`構文エラー: @ の後には変数名が必要です`);
+        throw new Error(`構文エラー: @ で始まるステートメントは @=変数,開始,終了[,ステップ] の形式である必要があります`);
     }
 
     /**
@@ -545,66 +542,22 @@ class WorkerInterpreter {
         const exprTokens = tokens.slice(startIndex + 2);
         const exprResult = this.parseExpressionFromTokens(exprTokens);
 
-        // カンマ式かどうかでFORループか代入かを判定
-        if (this.isCommaExpression(exprResult.expr)) {
-            const parts = this.extractCommaExpressionParts(exprResult.expr);
-            
-            if (parts.length === 2) {
-                return {
-                    statement: {
-                        type: 'ForStatement',
-                        line: token.line,
-                        column: token.column,
-                        variable: {
-                            type: 'Identifier',
-                            name: token.value,
-                            line: token.line,
-                            column: token.column,
-                        },
-                        start: parts[0]!,
-                        end: parts[1]!,
-                        // stepは省略（デフォルト1）
-                    },
-                    nextIndex: startIndex + 2 + exprResult.consumed
-                };
-            } else if (parts.length === 3) {
-                return {
-                    statement: {
-                        type: 'ForStatement',
-                        line: token.line,
-                        column: token.column,
-                        variable: {
-                            type: 'Identifier',
-                            name: token.value,
-                            line: token.line,
-                            column: token.column,
-                        },
-                        start: parts[0]!,
-                        end: parts[1]!,
-                        step: parts[2]!,
-                    },
-                    nextIndex: startIndex + 2 + exprResult.consumed
-                };
-            } else {
-                throw new Error(`構文エラー: FORループの形式が不正です`);
-            }
-        } else {
-            return {
-                statement: {
-                    type: 'AssignmentStatement',
+        // 代入文専用メソッド（FORループは@=構文で処理）
+        return {
+            statement: {
+                type: 'AssignmentStatement',
+                line: token.line,
+                column: token.column,
+                variable: {
+                    type: 'Identifier',
+                    name: token.value,
                     line: token.line,
                     column: token.column,
-                    variable: {
-                        type: 'Identifier',
-                        name: token.value,
-                        line: token.line,
-                        column: token.column,
-                    },
-                    value: exprResult.expr,
                 },
-                nextIndex: startIndex + 2 + exprResult.consumed
-            };
-        }
+                value: exprResult.expr,
+            },
+            nextIndex: startIndex + 2 + exprResult.consumed
+        };
     }
 
     /**
@@ -1463,7 +1416,7 @@ class WorkerInterpreter {
                     
                     if (!shouldExecute) {
                         // ループをスキップ: NEXTを検索してその次の行にジャンプ
-                        const nextLineIndex = this.findMatchingNext(varName, this.currentLineIndex);
+                        const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
                         if (nextLineIndex !== -1) {
                             this.currentLineIndex = nextLineIndex + 1;
                             // NEXTはスキップするので、ループ情報をpop
@@ -1477,8 +1430,7 @@ class WorkerInterpreter {
             
             case 'NextStatement':
                 {
-                    // NEXT文: @=I
-                    const varName = statement.variable.name;
+                    // NEXT文: #=@ (統一構造 - 変数指定なし)
                     
                     // ループスタックが空の場合はエラー
                     if (this.loopStack.length === 0) {
@@ -1491,10 +1443,8 @@ class WorkerInterpreter {
                         throw new Error('NEXT文に対応するFORループがありません');
                     }
                     
-                    // ループ変数が一致するかチェック
-                    if (currentLoop.variable !== varName) {
-                        throw new Error(`NEXT文のループ変数${varName}が現在のFORループの変数${currentLoop.variable}と一致しません`);
-                    }
+                    // 統一構造では変数チェックは不要（最新のループを自動処理）
+                    const varName = currentLoop.variable;
                     
                     // ループ変数をインクリメント
                     const currentValue = this.variables.get(varName) || 0;
@@ -1563,12 +1513,11 @@ class WorkerInterpreter {
     }
 
     /**
-     * 指定された変数名に対応するNEXT文の行番号を検索します。
-     * @param varName ループ変数名
+     * 次のNEXT文 (#=@) の行番号を検索します（統一構造）。
      * @param startLine 検索開始行番号
      * @returns NEXT文の行番号。見つからない場合は-1
      */
-    private findMatchingNext(varName: string, startLine: number): number {
+    private findMatchingNext(startLine: number): number {
         if (!this.program) return -1;
         
         let nestLevel = 1; // 現在のFORのネストレベル
@@ -1578,12 +1527,12 @@ class WorkerInterpreter {
             if (!line) continue;
             
             for (const statement of line.statements) {
-                // 同じ変数のFORが見つかったらネストレベルを上げる
-                if (statement.type === 'ForStatement' && statement.variable.name === varName) {
+                // FORが見つかったらネストレベルを上げる
+                if (statement.type === 'ForStatement') {
                     nestLevel++;
                 }
-                // 同じ変数のNEXTが見つかった
-                if (statement.type === 'NextStatement' && statement.variable.name === varName) {
+                // NEXTが見つかった（統一構造では変数チェック不要）
+                if (statement.type === 'NextStatement') {
                     nestLevel--;
                     if (nestLevel === 0) {
                         // 対応するNEXTが見つかった

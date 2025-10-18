@@ -135,7 +135,7 @@ export interface ForStatement extends ASTNode {
  */
 export interface NextStatement extends ASTNode {
     type: 'NextStatement';
-    variable: Identifier;    // ループ変数
+    variable?: Identifier;    // ループ変数（統一構造 #=@ では省略）
 }
 
 /**
