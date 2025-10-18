@@ -2,97 +2,15 @@
 
 import { Lexer, TokenType, type Token } from './lexer.js';
 import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
-
-/**
- * メモリ空間クラス
- * VTLオリジナルに準拠した配列とスタックの統合メモリ空間を提供します。
- * 
- * 仕様:
- * - 共有メモリ空間: 65536要素（0-65535）
- * - スタックは上位アドレスから下に向かって伸びる（65535から開始）
- * - 配列とスタックは別々のメソッドでアクセス
- */
-class MemorySpace {
-    private memory: Int16Array = new Int16Array(65536);  // 共有メモリ空間
-    private stackPointer: number = 65535;                // スタックポインタ（内部管理）
-    
-    /**
-     * 配列から値を読み取ります。
-     * @param index 配列インデックス（0-65535）
-     * @returns 読み取った値（16bit符号付き整数）
-     */
-    readArray(index: number): number {
-        const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
-        return this.memory[normalizedIndex] || 0;
-    }
-    
-    /**
-     * 配列に値を書き込みます。
-     * @param index 配列インデックス（0-65535）
-     * @param value 書き込む値（16bit符号付き整数）
-     */
-    writeArray(index: number, value: number): void {
-        const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
-        this.memory[normalizedIndex] = value & 0xFFFF; // 16bitに正規化
-    }
-    
-    /**
-     * 配列初期化：連続する複数の値をメモリに書き込みます。
-     * @param startIndex 開始インデックス
-     * @param values 書き込む値の配列
-     */
-    initializeArray(startIndex: number, values: number[]): void {
-        let index = startIndex & 0xFFFF; // 0-65535に正規化
-        for (const value of values) {
-            this.memory[index] = value & 0xFFFF; // 16bitに正規化
-            index = (index + 1) & 0xFFFF; // 次のインデックス（ラップアラウンド対応）
-        }
-    }
-    
-    /**
-     * スタックに値をプッシュします。
-     * @param value プッシュする値
-     */
-    pushStack(value: number): void {
-        this.memory[this.stackPointer] = value & 0xFFFF;
-        this.stackPointer = (this.stackPointer - 1) & 0xFFFF;
-        // 注意: スタックオーバーフローのチェックなし（VTL仕様に準拠）
-    }
-    
-    /**
-     * スタックから値をポップします。
-     * @returns ポップした値
-     */
-    popStack(): number {
-        this.stackPointer = (this.stackPointer + 1) & 0xFFFF;
-        return this.memory[this.stackPointer] || 0;
-        // 注意: スタックアンダーフローのチェックなし（VTL仕様に準拠）
-    }
-    
-    /**
-     * 現在のスタックポインタを取得します（デバッグ・システム変数用）。
-     * @returns 現在のスタックポインタ値（0-65535）
-     */
-    getStackPointer(): number {
-        return this.stackPointer;
-    }
-    
-    /**
-     * スタックポインタを設定します（システム変数用）。
-     * @param value 新しいスタックポインタ値
-     */
-    setStackPointer(value: number): void {
-        this.stackPointer = value & 0xFFFF; // 0-65535に正規化
-    }
-    
-    /**
-     * メモリをリセットします（テスト用）。
-     */
-    reset(): void {
-        this.memory.fill(0);
-        this.stackPointer = 65535;
-    }
-}
+import {
+    isForStatement,
+    isWhileStatement,
+    isIfStatement,
+    isForBlockStatement,
+    isWhileBlockStatement,
+    isIfBlockStatement,
+} from './ast.js';
+import { MemorySpace } from './memorySpace.js';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。
@@ -103,29 +21,35 @@ interface InterpreterState {
     variables: Map<string, number>; // ユーザー変数 (A-Z)
     systemVariables: Map<string, number>; // システム変数 (%, X, Yなど)
     callStack: number[]; // GOSUBのリターンアドレススタック
-    loopStack: LoopInfo[]; // FORループの状態スタック
     // ... その他、インタプリタが必要とする状態
 }
 
 /**
- * ループ（FOR/WHILE）の状態を保持するインターフェース。
+ * ブロック構造ループの実行状態を保持するインターフェース。
  * 
- * NOTE: 現在の実装は行ベースのジャンプのみをサポートしています。
- * forLineIndex は行番号を指し、同じ行内の特定のステートメント位置は追跡しません。
- * これにより、1行に複数のステートメントが混在する場合、ループの制御フローが
- * 制限される可能性があります。
- * 
- * TODO: 将来的にステートメント単位の実行制御が必要になった場合、
- * { lineIndex: number; statementIndex: number } のような構造に移行する必要があります。
+ * マルチワーカー協調動作のため、ループ内の各ステートメントごとにyieldする必要があります。
+ * このインターフェースはループの実行状態を保持し、next()呼び出しごとに1ステートメントずつ実行します。
  */
-interface LoopInfo {
-    variable: string; // ループ変数名 (例: "I") or WHILE識別子
-    start: number;    // 開始値 (FORのみ)
-    end: number;      // 終了値 (FORのみ)
-    step: number;     // ステップ値 (FORのみ)
-    forLineIndex: number; // ループ開始ステートメントの行番号（ループの先頭に戻るため）
-    isWhile?: boolean; // WHILEループか判定フラグ
-    whileCondition?: Expression; // WHILE条件式（isWhile=trueの場合のみ）
+interface LoopBlockInfo {
+    type: 'for' | 'while'; // ループの種類
+    variable?: string; // ループ変数名 (FORの場合のみ)
+    start?: number; // 開始値 (FORのみ)
+    end?: number; // 終了値 (FORのみ)
+    step?: number; // ステップ値 (FORのみ)
+    condition?: Expression; // WHILE条件式 (WHILEのみ)
+    body: Statement[]; // ループ本体のステートメント配列
+    bodyIndex: number; // 現在実行中のステートメントインデックス
+    currentValue?: number; // 現在のループ変数値 (FORのみ)
+}
+
+/**
+ * ステートメント実行結果を表すインターフェース。
+ * ジャンプ、停止、スキップの情報を保持します。
+ */
+interface ExecutionResult {
+    jump: boolean;         // GOTO/GOSUB/RETURNによるジャンプが発生したか
+    halt: boolean;         // HaltStatementによるプログラム停止か
+    skipRemaining: boolean; // IF条件が偽の場合、この行の残りをスキップするか
 }
 
 /**
@@ -147,7 +71,7 @@ class WorkerInterpreter {
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
-    private loopStack: LoopInfo[] = []; // ループの状態スタック
+    private loopStack: LoopBlockInfo[] = []; // ループブロックの実行状態スタック
     private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
@@ -244,71 +168,19 @@ class WorkerInterpreter {
             const lineTokens = this.tokens[i];
             if (!lineTokens) continue;
 
-            // コメント行、空行、ラベル定義行はステートメントなしの行として扱う
-            if (lineTokens.length === 0 || 
-                (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.COMMENT)) {
-                const line: Line = {
-                    lineNumber: i,
-                    statements: [],
-                };
-                const sourceText = this.scriptLines[i];
-                if (sourceText !== undefined) {
-                    line.sourceText = sourceText;
-                }
-                lines.push(line);
+            // コメント行、空行の処理
+            const emptyLine = this.tryProcessEmptyOrCommentLine(i, lineTokens);
+            if (emptyLine) {
+                lines.push(emptyLine);
                 continue;
             }
 
             // 通常の行をパース
             try {
-                // 新しいアプローチ: 行を空白で分割してから各ステートメントをパース
-                const sourceText = this.scriptLines[i];
-                if (sourceText) {
-                    const stmtStrings = this.splitLineByWhitespace(sourceText);
-                    const parsedStatements: Statement[] = [];
-                    
-                    for (const stmtString of stmtStrings) {
-                        const stmt = this.parseStatementString(stmtString, i);
-                        if (stmt) {
-                            parsedStatements.push(stmt);
-                        }
-                    }
-                    
-                    // ブロックIF検出: 1行に1つだけIfStatementがある場合
-                    if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'IfStatement') {
-                        const inlineIf = parsedStatements[0] as any;
-                        
-                        // IfBlockStatementに変換
-                        const blockIf: any = {
-                            type: 'IfBlockStatement',
-                            line: i,
-                            condition: inlineIf.condition,
-                            thenBody: [],
-                            elseBody: undefined,
-                        };
-                        
-                        // #=; まで本体を収集
-                        const endLine = this.collectIfBlock(blockIf, i + 1);
-                        
-                        // ブロック全体を1つのステートメントとして追加
-                        const line: Line = {
-                            lineNumber: i,
-                            statements: [blockIf],
-                            sourceText: sourceText,
-                        };
-                        lines.push(line);
-                        
-                        // endLine まで進める（途中の行はスキップ）
-                        i = endLine;
-                        continue;
-                    }
-                    
-                    const line: Line = {
-                        lineNumber: i,
-                        statements: parsedStatements,
-                        sourceText: sourceText,
-                    };
-                    lines.push(line);
+                const result = this.processNormalLine(i);
+                if (result) {
+                    lines.push(result.line);
+                    i = result.endLine;
                 }
             } catch (error: any) {
                 throw new Error(`構文解析エラー (行: ${i + 1}): ${error.message}`);
@@ -320,6 +192,190 @@ class WorkerInterpreter {
             line: 0,
             body: lines,
         };
+    }
+
+    /**
+     * コメント行または空行の処理を試行します。
+     */
+    private tryProcessEmptyOrCommentLine(lineNumber: number, lineTokens: Token[]): Line | null {
+        // コメント行、空行、ラベル定義行はステートメントなしの行として扱う
+        if (lineTokens.length === 0 || 
+            (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.COMMENT)) {
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [],
+            };
+            const sourceText = this.scriptLines[lineNumber];
+            if (sourceText !== undefined) {
+                line.sourceText = sourceText;
+            }
+            return line;
+        }
+        return null;
+    }
+
+    /**
+     * 通常の行（ステートメントを含む行）を処理します。
+     * ブロック構造の検出も含みます。
+     */
+    private processNormalLine(lineNumber: number): { line: Line; endLine: number } | null {
+        const sourceText = this.scriptLines[lineNumber];
+        if (!sourceText) return null;
+
+        // 行を空白で分割してから各ステートメントをパース
+        const stmtStrings = this.splitLineByWhitespace(sourceText);
+        const parsedStatements: Statement[] = [];
+        
+        for (const stmtString of stmtStrings) {
+            const stmt = this.parseStatementString(stmtString, lineNumber);
+            if (stmt) {
+                parsedStatements.push(stmt);
+            }
+        }
+        
+        // ブロック構造を試行
+        const ifBlock = this.tryProcessIfBlock(parsedStatements, sourceText, lineNumber);
+        if (ifBlock) {
+            return ifBlock;
+        }
+        
+        const forBlock = this.tryProcessForBlock(parsedStatements, sourceText, lineNumber);
+        if (forBlock) {
+            return forBlock;
+        }
+        
+        const whileBlock = this.tryProcessWhileBlock(parsedStatements, sourceText, lineNumber);
+        if (whileBlock) {
+            return whileBlock;
+        }
+        
+        // ブロック構造でなければ通常の行として返す
+        const line: Line = {
+            lineNumber: lineNumber,
+            statements: parsedStatements,
+            sourceText: sourceText,
+        };
+        return { line, endLine: lineNumber };
+    }
+
+    /**
+     * パースされたステートメントがブロックIF構造かどうかを判定し、
+     * ブロックIFの場合はそれを処理してLineを返します。
+     * ブロックIFでない場合はnullを返します。
+     */
+    private tryProcessIfBlock(
+        parsedStatements: Statement[],
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } | null {
+        // ブロックIF検出: 1行に1つだけIfStatementがある場合
+        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'IfStatement') {
+            const inlineIf = parsedStatements[0] as any;
+            
+            // IfBlockStatementに変換
+            const blockIf: any = {
+                type: 'IfBlockStatement',
+                line: lineNumber,
+                condition: inlineIf.condition,
+                thenBody: [],
+                elseBody: undefined,
+            };
+            
+            // #=; まで本体を収集
+            const endLine = this.collectIfBlock(blockIf, lineNumber + 1);
+            
+            // ブロック全体を1つのステートメントとして追加
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [blockIf],
+                sourceText: sourceText,
+            };
+            
+            return { line, endLine };
+        }
+        
+        return null;
+    }
+
+    /**
+     * パースされたステートメントがブロックFORループかどうかを判定し、
+     * ブロックFORの場合はそれを処理してLineを返します。
+     * ブロックFORでない場合はnullを返します。
+     */
+    private tryProcessForBlock(
+        parsedStatements: Statement[],
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } | null {
+        // ブロックFORループ検出: 1行に1つだけForStatementがある場合
+        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'ForStatement') {
+            const inlineFor = parsedStatements[0] as any;
+            
+            // ForBlockStatementに変換
+            const blockFor: any = {
+                type: 'ForBlockStatement',
+                line: lineNumber,
+                variable: inlineFor.variable,
+                start: inlineFor.start,
+                end: inlineFor.end,
+                step: inlineFor.step,
+                body: [],
+            };
+            
+            // #=@ まで本体を収集
+            const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
+            blockFor.body = body;
+            
+            // ブロック全体を1つのステートメントとして追加
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [blockFor],
+                sourceText: sourceText,
+            };
+            
+            return { line, endLine };
+        }
+        
+        return null;
+    }
+
+    /**
+     * パースされたステートメントがブロックWHILEループかどうかを判定し、
+     * ブロックWHILEの場合はそれを処理してLineを返します。
+     * ブロックWHILEでない場合はnullを返します。
+     */
+    private tryProcessWhileBlock(
+        parsedStatements: Statement[],
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } | null {
+        // ブロックWHILEループ検出: 1行に1つだけWhileStatementがある場合
+        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'WhileStatement') {
+            const inlineWhile = parsedStatements[0] as any;
+            
+            // WhileBlockStatementに変換
+            const blockWhile: any = {
+                type: 'WhileBlockStatement',
+                line: lineNumber,
+                condition: inlineWhile.condition,
+                body: [],
+            };
+            
+            // #=@ まで本体を収集
+            const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
+            blockWhile.body = body;
+            
+            // ブロック全体を1つのステートメントとして追加
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [blockWhile],
+                sourceText: sourceText,
+            };
+            
+            return { line, endLine };
+        }
+        
+        return null;
     }
 
     /**
@@ -338,8 +394,9 @@ class WorkerInterpreter {
 
     /**
      * ブロックIF構造の本体を収集します。
-     * ;=<condition> から #=; までの間のステートメントを収集し、
+     * ;=<condition> から #=; までの間のステートメントを再帰的にパースします。
      * ELSE (;) があればthenBodyとelseBodyに分けます。
+     * ネストされたループやIF文も正しく処理します。
      * 
      * @param blockStmt IfBlockStatementノード（condition設定済み）
      * @param startLine ;=<condition> の次の行番号
@@ -372,13 +429,75 @@ class WorkerInterpreter {
                 continue;
             }
 
-            // ステートメントをパース
+            // 行をステートメント文字列に分割
             const stmtStrings = this.splitLineByWhitespace(sourceText);
+            const parsedStatements: Statement[] = [];
+            
+            // 各ステートメント文字列を基本パース
             for (const stmtString of stmtStrings) {
                 const stmt = this.parseStatementString(stmtString, i);
                 if (stmt) {
-                    currentBody.push(stmt);
+                    parsedStatements.push(stmt);
                 }
+            }
+            
+            // ブロック構造を検出（ForStatement/WhileStatement/IfStatementが単独の場合）
+            if (parsedStatements.length === 1) {
+                const stmt = parsedStatements[0];
+                
+                if (stmt && isForStatement(stmt)) {
+                    // 内側のFORループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const forBlockStmt: any = {
+                        type: 'ForBlockStatement',
+                        line: i,
+                        variable: stmt.variable,
+                        start: stmt.start,
+                        end: stmt.end,
+                        step: stmt.step,
+                        body: innerBody.body,
+                    };
+                    currentBody.push(forBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+                
+                if (stmt && isWhileStatement(stmt)) {
+                    // 内側のWHILEループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const whileBlockStmt: any = {
+                        type: 'WhileBlockStatement',
+                        line: i,
+                        condition: stmt.condition,
+                        body: innerBody.body,
+                    };
+                    currentBody.push(whileBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+                
+                if (stmt && isIfStatement(stmt)) {
+                    // 内側のブロックIFを再帰的にパース
+                    const ifBlockStmt: any = {
+                        type: 'IfBlockStatement',
+                        line: i,
+                        condition: stmt.condition,
+                        thenBody: [],
+                        elseBody: [],
+                    };
+                    const endLine = this.collectIfBlock(ifBlockStmt, i + 1);
+                    currentBody.push(ifBlockStmt);
+                    // 内側IFの終端（#=;）までスキップ
+                    i = endLine;
+                    continue;
+                }
+            }
+            
+            // 通常のステートメントを追加
+            for (const stmt of parsedStatements) {
+                currentBody.push(stmt);
             }
         }
 
@@ -387,6 +506,93 @@ class WorkerInterpreter {
         }
 
         return -1; // 到達しない
+    }
+
+    /**
+     * 指定された行が #=@ (ループ終端) かどうかを判定します。
+     */
+    private isLoopEndStatement(sourceText: string): boolean {
+        return sourceText.trim() === '#=@';
+    }
+
+    /**
+     * ループブロック構造の本体を収集します。
+     * @=... から #=@ までの間のステートメントを再帰的にパースします。
+     * ネストされたループも正しく処理します。
+     * 
+     * @param startLine @=... の次の行番号
+     * @returns ループ本体のステートメント配列と終了行番号
+     */
+    private collectLoopBlock(startLine: number): { body: Statement[]; endLine: number } {
+        const body: Statement[] = [];
+
+        for (let i = startLine; i < this.scriptLines.length; i++) {
+            const sourceText = this.scriptLines[i];
+            if (!sourceText) continue;
+
+            // #=@ を見つけたら、このループの終端
+            if (this.isLoopEndStatement(sourceText)) {
+                return { body, endLine: i };
+            }
+
+            // 行をステートメント文字列に分割
+            const stmtStrings = this.splitLineByWhitespace(sourceText);
+            const parsedStatements: Statement[] = [];
+            
+            // 各ステートメント文字列を基本パース
+            for (const stmtString of stmtStrings) {
+                const stmt = this.parseStatementString(stmtString, i);
+                if (stmt) {
+                    parsedStatements.push(stmt);
+                }
+            }
+            
+            // ブロック構造を検出（ForStatement/WhileStatementが単独の場合）
+            if (parsedStatements.length === 1) {
+                const stmt = parsedStatements[0];
+                
+                if (stmt && isForStatement(stmt)) {
+                    // 内側のFORループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const forBlockStmt: any = {
+                        type: 'ForBlockStatement',
+                        line: i,
+                        variable: stmt.variable,
+                        start: stmt.start,
+                        end: stmt.end,
+                        step: stmt.step,
+                        body: innerBody.body,
+                    };
+                    body.push(forBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+                
+                if (stmt && isWhileStatement(stmt)) {
+                    // 内側のWHILEループを再帰的にパース
+                    const innerBody = this.collectLoopBlock(i + 1);
+                    const whileBlockStmt: any = {
+                        type: 'WhileBlockStatement',
+                        line: i,
+                        condition: stmt.condition,
+                        body: innerBody.body,
+                    };
+                    body.push(whileBlockStmt);
+                    // 内側ループの終端（#=@）までスキップ
+                    i = innerBody.endLine;
+                    continue;
+                }
+            }
+            
+            // 通常のステートメントを追加
+            for (const stmt of parsedStatements) {
+                body.push(stmt);
+            }
+        }
+
+        // #=@ が見つからずにスクリプト終端に到達
+        throw new Error(`ループ構造が #=@ で終了していません (開始行: ${startLine})`);
     }
 
     /**
@@ -1662,8 +1868,89 @@ class WorkerInterpreter {
         this.callStack = [];
         this.loopStack = [];
 
-        // プログラム実行ループ
-        while (this.currentLineIndex < this.program.body.length) {
+        // プログラム実行ループ（loopStackに処理が残っている場合も継続）
+        while (this.currentLineIndex < this.program.body.length || this.loopStack.length > 0) {
+            // loopStackがある場合、ループ内のステートメントを優先実行
+            if (this.loopStack.length > 0) {
+                const currentLoop = this.loopStack[this.loopStack.length - 1]!;
+                
+                // bodyIndex が body.length に達した場合、ループの次のイテレーション
+                if (currentLoop.bodyIndex >= currentLoop.body.length) {
+                    if (currentLoop.type === 'for') {
+                        // FORループ: 変数を更新して条件チェック
+                        const newValue = currentLoop.currentValue! + currentLoop.step!;
+                        const shouldContinue = currentLoop.step! > 0
+                            ? newValue <= currentLoop.end!
+                            : newValue >= currentLoop.end!;
+                        
+                        if (shouldContinue) {
+                            // 次のイテレーション
+                            this.variables.set(currentLoop.variable!, newValue);
+                            currentLoop.currentValue = newValue;
+                            currentLoop.bodyIndex = 0;
+                            
+                            // 最初のステートメントを実行
+                            if (currentLoop.body.length > 0) {
+                                const stmt = currentLoop.body[0]!;
+                                const result = this.executeStatement(stmt);
+                                if (result.jump || result.halt) {
+                                    if (result.halt) return;
+                                }
+                                currentLoop.bodyIndex = 1;
+                                yield;
+                                continue;
+                            }
+                        } else {
+                            // ループ終了
+                            this.loopStack.pop();
+                            yield;
+                            continue;
+                        }
+                    } else if (currentLoop.type === 'while') {
+                        // WHILEループ: 条件を再評価
+                        const condition = this.evaluateExpression(currentLoop.condition!);
+                        
+                        if (typeof condition === 'string') {
+                            throw new Error('WHILEループの条件は数値でなければなりません');
+                        }
+                        
+                        if (condition !== 0) {
+                            // 次のイテレーション
+                            currentLoop.bodyIndex = 0;
+                            
+                            // 最初のステートメントを実行
+                            if (currentLoop.body.length > 0) {
+                                const stmt = currentLoop.body[0]!;
+                                const result = this.executeStatement(stmt);
+                                if (result.jump || result.halt) {
+                                    if (result.halt) return;
+                                }
+                                currentLoop.bodyIndex = 1;
+                                yield;
+                                continue;
+                            }
+                        } else {
+                            // ループ終了
+                            this.loopStack.pop();
+                            yield;
+                            continue;
+                        }
+                    }
+                }
+                
+                // 次のステートメントを実行
+                if (currentLoop.bodyIndex < currentLoop.body.length) {
+                    const stmt = currentLoop.body[currentLoop.bodyIndex]!;
+                    const result = this.executeStatement(stmt);
+                    if (result.jump || result.halt) {
+                        if (result.halt) return;
+                    }
+                    currentLoop.bodyIndex++;
+                    yield;
+                    continue;
+                }
+            }
+            
             const line = this.program.body[this.currentLineIndex];
             if (!line) break;
 
@@ -1707,228 +1994,91 @@ class WorkerInterpreter {
         }
     }
 
+    // ==================== ステートメント実行メソッド ====================
+
     /**
-     * 単一のステートメントを実行します。
-     * @param statement 実行するステートメント
-     * @returns 実行結果（ジャンプ、停止、スキップの情報）
+     * 代入ステートメントを実行します。
      */
-    private executeStatement(statement: Statement): { jump: boolean; halt: boolean; skipRemaining: boolean } {
-        switch (statement.type) {
-            case 'AssignmentStatement':
-                {
-                    const value = this.evaluateExpression(statement.value);
-                    if (typeof value === 'string') {
-                        throw new Error('変数には数値のみを代入できます');
-                    }
-                    this.variables.set(statement.variable.name, value);
-                }
-                break;
-            
-            case 'OutputStatement':
-                {
-                    const value = this.evaluateExpression(statement.expression);
-                    this.logFn(value);
-                }
-                break;
-            
-            case 'NewlineStatement':
-                {
-                    this.logFn('\n');
-                }
-                break;
-            
-            case 'IfStatement':
-                {
-                    const condition = this.evaluateExpression(statement.condition);
-                    if (typeof condition === 'string') {
-                        throw new Error('IF条件は数値でなければなりません');
-                    }
-                    // 条件が0（偽）の場合、この行の残りをスキップ
-                    if (condition === 0) {
-                        return { jump: false, halt: false, skipRemaining: true };
-                    }
-                }
-                break;
-            
-            case 'IfBlockStatement':
-                {
-                    const condition = this.evaluateExpression((statement as any).condition);
-                    if (typeof condition === 'string') {
-                        throw new Error('IF条件は数値でなければなりません');
-                    }
-                    
-                    // 条件が真（非0）の場合、thenBodyを実行
-                    if (condition !== 0) {
-                        for (const stmt of (statement as any).thenBody || []) {
-                            const result = this.executeStatement(stmt);
-                            if (result.jump || result.halt) {
-                                return result;
-                            }
-                        }
-                    } else {
-                        // 条件が偽（0）の場合、elseBodyを実行
-                        for (const stmt of (statement as any).elseBody || []) {
-                            const result = this.executeStatement(stmt);
-                            if (result.jump || result.halt) {
-                                return result;
-                            }
-                        }
-                    }
-                }
-                break;
-            
-            case 'GotoStatement':
-                {
-                    const targetLine = this.labels.get(statement.target);
-                    if (targetLine === undefined) {
-                        throw new Error(`ラベル ${statement.target} が見つかりません`);
-                    }
-                    this.currentLineIndex = targetLine;
-                    return { jump: true, halt: false, skipRemaining: false };
-                }
-            
-            case 'GosubStatement':
-                {
-                    const targetLine = this.labels.get(statement.target);
-                    if (targetLine === undefined) {
-                        throw new Error(`ラベル ${statement.target} が見つかりません`);
-                    }
-                    // 現在の次の行をスタックにプッシュ
-                    // NOTE: 行ベースのリターンアドレス保存。同じ行の次のステートメント位置は保存されません。
-                    this.callStack.push(this.currentLineIndex + 1);
-                    this.currentLineIndex = targetLine;
-                    return { jump: true, halt: false, skipRemaining: false };
-                }
-            
-            case 'ReturnStatement':
-                {
-                    if (this.callStack.length === 0) {
-                        throw new Error('RETURN文がありますがGOSUBの呼び出しがありません');
-                    }
-                    const returnLine = this.callStack.pop()!;
-                    // NOTE: 行ベースのリターン。GOSUB呼び出しがあった行の次の行に戻ります。
-                    // 同じ行内の特定のステートメント位置には戻れません。
-                    this.currentLineIndex = returnLine;
-                    return { jump: true, halt: false, skipRemaining: false };
-                }
-            
-            case 'HaltStatement':
-                {
-                    return { jump: false, halt: true, skipRemaining: false };
-                }
-            
-            case 'ForStatement':
-                return this.executeForStatement(statement);
-            
-            case 'WhileStatement':
-                return this.executeWhileStatement(statement);
-            
-            case 'NextStatement':
-                return this.executeNextStatement(statement);
-            
-            case 'PokeStatement': {
-                // POKE: グリッドに書き込み
-                // X, Y 変数を使ってgridDataに書き込む
-                const x = this.variables.get('X') ?? 0;
-                const y = this.variables.get('Y') ?? 0;
-                
-                // 値を評価
-                const value = this.evaluateExpression(statement.value);
-                
-                // 文字列は不可
-                if (typeof value === 'string') {
-                    throw new Error('POKEには数値が必要です');
-                }
-                
-                // 値を0-65535の範囲にクランプ（16ビット値対応）
-                const clampedValue = Math.max(0, Math.min(65535, Math.floor(value)));
-                
-                // pokeFnを呼び出し（X, Y座標と値を渡す）
-                this.pokeFn(Math.floor(x), Math.floor(y), clampedValue);
-                break;
-            }
+    private executeAssignment(statement: any): ExecutionResult {
+        const value = this.evaluateExpression(statement.value);
+        if (typeof value === 'string') {
+            throw new Error('変数には数値のみを代入できます');
+        }
+        this.variables.set(statement.variable.name, value);
+        return { jump: false, halt: false, skipRemaining: false };
+    }
 
-            case 'IoPutStatement': {
-                // VTL互換 1byte出力: $システム変数に値を書き込み
-                const value = this.evaluateExpression(statement.value);
-                
-                // 文字列は不可
-                if (typeof value === 'string') {
-                    throw new Error('1byte出力には数値が必要です');
-                }
-                
-                if (this.putFn) {
-                    // 値を0-255の範囲にクランプ
-                    const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
-                    this.putFn(clampedValue);
-                } else {
-                    throw new Error('1byte出力機能が設定されていません');
-                }
-                break;
-            }
+    /**
+     * 出力ステートメントを実行します。
+     */
+    private executeOutput(statement: any): ExecutionResult {
+        const value = this.evaluateExpression(statement.expression);
+        this.logFn(value);
+        return { jump: false, halt: false, skipRemaining: false };
+    }
 
-            case 'ArrayAssignmentStatement': {
-                // 配列への代入: [index]=value または [-1]=value（スタックプッシュ）
-                const value = this.evaluateExpression(statement.value);
-                
-                // 文字列は不可
-                if (typeof value === 'string') {
-                    throw new Error('配列には数値のみを代入できます');
-                }
-                
-                if (statement.isLiteral) {
-                    // [-1]=value: スタックにプッシュ
-                    this.memorySpace.pushStack(Math.floor(value));
-                } else {
-                    // 通常の配列代入
-                    const index = this.evaluateExpression(statement.index);
-                    if (typeof index === 'string') {
-                        throw new Error('配列のインデックスは数値でなければなりません');
-                    }
-                    this.memorySpace.writeArray(Math.floor(index), Math.floor(value));
-                }
-                break;
-            }
+    /**
+     * 改行ステートメントを実行します。
+     */
+    private executeNewline(): ExecutionResult {
+        this.logFn('\n');
+        return { jump: false, halt: false, skipRemaining: false };
+    }
 
-            case 'ArrayInitializationStatement': {
-                // 配列の初期化: [index]=value1,value2,value3,...
-                const index = this.evaluateExpression(statement.index);
-                
-                // インデックスは数値でなければならない
-                if (typeof index === 'string') {
-                    throw new Error('配列のインデックスは数値でなければなりません');
+    /**
+     * インラインIF文を実行します。
+     */
+    private executeIf(statement: any): ExecutionResult {
+        const condition = this.evaluateExpression(statement.condition);
+        if (typeof condition === 'string') {
+            throw new Error('IF条件は数値でなければなりません');
+        }
+        // 条件が0（偽）の場合、この行の残りをスキップ
+        if (condition === 0) {
+            return { jump: false, halt: false, skipRemaining: true };
+        }
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * ブロックIF文を実行します。
+     */
+    private executeIfBlock(statement: any): ExecutionResult {
+        const condition = this.evaluateExpression(statement.condition);
+        if (typeof condition === 'string') {
+            throw new Error('IF条件は数値でなければなりません');
+        }
+        
+        // 条件が真（非0）の場合、thenBodyを実行
+        if (condition !== 0) {
+            for (const stmt of statement.thenBody || []) {
+                const result = this.executeStatement(stmt);
+                if (result.jump || result.halt) {
+                    return result;
                 }
-                
-                // 値を評価
-                const values: number[] = [];
-                for (const expr of statement.values) {
-                    const value = this.evaluateExpression(expr);
-                    if (typeof value === 'string') {
-                        throw new Error('配列初期化の値は数値でなければなりません');
-                    }
-                    values.push(Math.floor(value));
+            }
+        } else {
+            // 条件が偽（0）の場合、elseBodyを実行
+            for (const stmt of statement.elseBody || []) {
+                const result = this.executeStatement(stmt);
+                if (result.jump || result.halt) {
+                    return result;
                 }
-                
-                // 配列を初期化
-                this.memorySpace.initializeArray(Math.floor(index), values);
-                break;
             }
         }
         return { jump: false, halt: false, skipRemaining: false };
     }
 
     /**
-     * FORステートメントを実行します。
-     * @param statement FORステートメント
-     * @returns 実行結果（ジャンプ、停止、残りスキップのフラグ）
+     * FORブロック文を実行します。
      */
-    private executeForStatement(statement: Statement & { type: 'ForStatement' }): { jump: boolean; halt: boolean; skipRemaining: boolean } {
-        // FOR文: I=start,end[,step]
-        const varName = statement.variable.name;
-        const startValue = this.evaluateExpression(statement.start);
-        const endValue = this.evaluateExpression(statement.end);
-        const stepValue = statement.step 
-            ? this.evaluateExpression(statement.step) 
+    private executeForBlock(statement: any): ExecutionResult {
+        const forStmt = statement;
+        const varName = forStmt.variable.name;
+        const startValue = this.evaluateExpression(forStmt.start);
+        const endValue = this.evaluateExpression(forStmt.end);
+        const stepValue = forStmt.step 
+            ? this.evaluateExpression(forStmt.step) 
             : 1;
         
         // 型チェック
@@ -1941,372 +2091,492 @@ class WorkerInterpreter {
             throw new Error('FORループのステップ値は0にできません');
         }
         
-        // ネストチェック: 同じ変数が既にループスタックにあるか
-        if (this.loopStack.some(loop => loop.variable === varName)) {
-            throw new Error(`ループ変数${varName}は既に使用されています`);
-        }
-        
-        // ネストの最大深度チェック
-        if (this.loopStack.length >= 256) {
-            throw new Error('FORループのネストが最大深度256を超えました');
-        }
-        
-        // ループ変数に開始値を設定
-        this.variables.set(varName, startValue);
-        
         // 初回のループ条件チェック
         const shouldExecute = stepValue > 0 
             ? startValue <= endValue 
             : startValue >= endValue;
         
-        // ループ情報をスタックにpush
+        if (!shouldExecute) {
+            // ループをスキップ（bodyを実行しない）
+            return { jump: false, halt: false, skipRemaining: false };
+        }
+        
+        // ループ変数に開始値を設定
+        this.variables.set(varName, startValue);
+        
+        // ループ情報をスタックにpush（最初のステートメントは実行しない）
         this.loopStack.push({
+            type: 'for',
             variable: varName,
             start: startValue,
             end: endValue,
             step: stepValue,
-            forLineIndex: this.currentLineIndex,
+            body: forStmt.body,
+            bodyIndex: 0,
+            currentValue: startValue,
         });
         
-        if (!shouldExecute) {
-            // ループをスキップ: #=@ を検索してその次にジャンプ
-            const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
-            if (nextLineIndex !== -1) {
-                // ループ情報をpop（スキップするので）
-                this.loopStack.pop();
-                
-                if (nextLineIndex === this.currentLineIndex) {
-                    // #=@ が同じ行にある場合、この行の残りをスキップ
-                    return { jump: false, halt: false, skipRemaining: true };
-                } else {
-                    // #=@ が別の行にある場合、その行の次にジャンプ
-                    this.currentLineIndex = nextLineIndex + 1;
-                    return { jump: true, halt: false, skipRemaining: false };
-                }
-            }
-            // #=@ が見つからない場合は続行（実行時エラーになる可能性）
-        }
-        
+        // run()のloopStack処理に任せる
         return { jump: false, halt: false, skipRemaining: false };
     }
 
     /**
-     * WHILEステートメントを実行します。
-     * @param statement WHILEステートメント
-     * @returns 実行結果（ジャンプ、停止、残りスキップのフラグ）
+     * WHILEブロック文を実行します。
      */
-    private executeWhileStatement(statement: Statement & { type: 'WhileStatement' }): { jump: boolean; halt: boolean; skipRemaining: boolean } {
-        // WHILE文: @=(condition) 〜 #=@
+    private executeWhileBlock(statement: any): ExecutionResult {
+        const whileStmt = statement;
+        
         // 条件を評価
-        const condition = this.evaluateExpression(statement.condition);
+        const condition = this.evaluateExpression(whileStmt.condition);
         
         // 型チェック
         if (typeof condition === 'string') {
             throw new Error('WHILEループの条件は数値でなければなりません');
         }
         
-        // ネストの最大深度チェック
-        if (this.loopStack.length >= 256) {
-            throw new Error('WHILEループのネストが最大深度256を超えました');
+        // 条件が偽ならループをスキップ
+        if (condition === 0) {
+            return { jump: false, halt: false, skipRemaining: false };
         }
         
-        // 条件が真（非ゼロ）の場合、ループに入る
-        if (condition !== 0) {
-            // ループ情報をスタックにpush
-            // WHILEループには変数がないため、内部識別用に特殊な名前を使用
-            this.loopStack.push({
-                variable: `__WHILE_${this.currentLineIndex}__`,
-                start: 0,
-                end: 0,
-                step: 1,
-                forLineIndex: this.currentLineIndex,
-                isWhile: true, // WHILE判別フラグ
-                whileCondition: statement.condition, // 条件式を保存
-            });
-        } else {
-            // 条件が偽の場合、ループをスキップして #=@ の次にジャンプ
-            const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
-            if (nextLineIndex !== -1) {
-                if (nextLineIndex === this.currentLineIndex) {
-                    // #=@ が同じ行にある場合、この行の残りをスキップ
-                    return { jump: false, halt: false, skipRemaining: true };
-                } else {
-                    // #=@ が別の行にある場合、その行の次にジャンプ
-                    this.currentLineIndex = nextLineIndex + 1;
-                    return { jump: true, halt: false, skipRemaining: false };
-                }
-            }
-            // 対応する #=@ が見つからない場合はエラー
-            throw new Error('WHILEループに対応する #=@ が見つかりません');
-        }
+        // ループ情報をスタックにpush（最初のステートメントは実行しない）
+        this.loopStack.push({
+            type: 'while',
+            condition: whileStmt.condition,
+            body: whileStmt.body,
+            bodyIndex: 0,
+        });
         
+        // run()のloopStack処理に任せる
         return { jump: false, halt: false, skipRemaining: false };
     }
 
     /**
-     * NEXTステートメント（#=@）を実行します。
-     * FORループとWHILEループの両方に対応した統一構造。
-     * @param statement NEXTステートメント
-     * @returns 実行結果（ジャンプ、停止、残りスキップのフラグ）
+     * GOTO文を実行します。
      */
-    private executeNextStatement(statement: Statement & { type: 'NextStatement' }): { jump: boolean; halt: boolean; skipRemaining: boolean } {
-        // NEXT文: #=@ (統一構造 - FOR/WHILEループの終端)
+    private executeGoto(statement: any): ExecutionResult {
+        const targetLine = this.labels.get(statement.target);
+        if (targetLine === undefined) {
+            throw new Error(`ラベル ${statement.target} が見つかりません`);
+        }
+        this.currentLineIndex = targetLine;
+        return { jump: true, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * GOSUB文を実行します。
+     */
+    private executeGosub(statement: any): ExecutionResult {
+        const targetLine = this.labels.get(statement.target);
+        if (targetLine === undefined) {
+            throw new Error(`ラベル ${statement.target} が見つかりません`);
+        }
+        // 現在の次の行をスタックにプッシュ
+        // NOTE: 行ベースのリターンアドレス保存。同じ行の次のステートメント位置は保存されません。
+        this.callStack.push(this.currentLineIndex + 1);
+        this.currentLineIndex = targetLine;
+        return { jump: true, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * RETURN文を実行します。
+     */
+    private executeReturn(): ExecutionResult {
+        if (this.callStack.length === 0) {
+            throw new Error('RETURN文がありますがGOSUBの呼び出しがありません');
+        }
+        const returnLine = this.callStack.pop()!;
+        // NOTE: 行ベースのリターン。GOSUB呼び出しがあった行の次の行に戻ります。
+        // 同じ行内の特定のステートメント位置には戻れません。
+        this.currentLineIndex = returnLine;
+        return { jump: true, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * HALT文を実行します。
+     */
+    private executeHalt(): ExecutionResult {
+        return { jump: false, halt: true, skipRemaining: false };
+    }
+
+    /**
+     * POKE文を実行します。
+     */
+    private executePoke(statement: any): ExecutionResult {
+        // POKE: グリッドに書き込み
+        // X, Y 変数を使ってgridDataに書き込む
+        const x = this.variables.get('X') ?? 0;
+        const y = this.variables.get('Y') ?? 0;
         
-        // ループスタックが空の場合はエラー
-        if (this.loopStack.length === 0) {
-            throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
+        // 値を評価
+        const value = this.evaluateExpression(statement.value);
+        
+        // 文字列は不可
+        if (typeof value === 'string') {
+            throw new Error('POKEには数値が必要です');
         }
         
-        // 最新のループ情報を取得
-        const currentLoop = this.loopStack[this.loopStack.length - 1];
-        if (!currentLoop) {
-            throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
-        }
+        // 値を0-65535の範囲にクランプ（16ビット値対応）
+        const clampedValue = Math.max(0, Math.min(65535, Math.floor(value)));
         
-        // WHILEループの場合
-        if (currentLoop.isWhile) {
-            if (!currentLoop.whileCondition) {
-                throw new Error('WHILEループの条件式が見つかりません');
-            }
-            
-            // 条件を再評価
-            const condition = this.evaluateExpression(currentLoop.whileCondition);
-            
-            // 型チェック
-            if (typeof condition === 'string') {
-                throw new Error('WHILEループの条件は数値でなければなりません');
-            }
-            
-            // 条件が真（非ゼロ）ならループ継続
-            if (condition !== 0) {
-                // WHILEステートメントの次の行にジャンプ
-                // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
-                this.currentLineIndex = currentLoop.forLineIndex + 1;
-                return { jump: true, halt: false, skipRemaining: false };
-            } else {
-                // ループ終了: ループ情報をスタックからpop
-                this.loopStack.pop();
-                // 次のステートメントに進む（jump: false）
-            }
-        } else {
-            // FORループの場合（従来のロジック）
-            const varName = currentLoop.variable;
-            
-            // ループ変数をインクリメント
-            const currentValue = this.variables.get(varName) || 0;
-            const newValue = currentValue + currentLoop.step;
-            this.variables.set(varName, newValue);
-            
-            // 次の値で条件チェック
-            const shouldContinue = currentLoop.step > 0 
-                ? newValue <= currentLoop.end 
-                : newValue >= currentLoop.end;
-            
-            if (shouldContinue) {
-                // ループ継続: FORステートメントの次の行にジャンプ
-                // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
-                this.currentLineIndex = currentLoop.forLineIndex + 1;
-                return { jump: true, halt: false, skipRemaining: false };
-            } else {
-                // ループ終了: ループ情報をスタックからpop
-                this.loopStack.pop();
-                // 次のステートメントに進む（jump: false）
-            }
-        }
-        
+        // pokeFnを呼び出し（X, Y座標と値を渡す）
+        this.pokeFn(Math.floor(x), Math.floor(y), clampedValue);
         return { jump: false, halt: false, skipRemaining: false };
     }
 
     /**
-     * 次の #=@ 文の行番号を検索します（統一構造、FOR/WHILE両対応）。
-     * 同じ行内のステートメントも含めて検索します。
-     * @param startLine 検索開始行番号
-     * @returns #=@ 文の行番号。見つからない場合は-1
+     * IO PUT文（1byte出力）を実行します。
      */
-    private findMatchingNext(startLine: number): number {
-        if (!this.program) return -1;
+    private executeIoPut(statement: any): ExecutionResult {
+        // VTL互換 1byte出力: $システム変数に値を書き込み
+        const value = this.evaluateExpression(statement.value);
         
-        let nestLevel = 0; // ネストレベル（同じ行の最初のループステートメントで1になる）
-        let foundFirst = false; // 最初のループステートメント（呼び出し元）を見つけたか
-        
-        // 同じ行から検索開始
-        for (let i = startLine; i < this.program.body.length; i++) {
-            const line = this.program.body[i];
-            if (!line) continue;
-            
-            for (const statement of line.statements) {
-                // FORまたはWHILEが見つかった
-                if (statement.type === 'ForStatement' || statement.type === 'WhileStatement') {
-                    if (!foundFirst && i === startLine) {
-                        // 呼び出し元のループステートメント（最初の1つだけ）
-                        foundFirst = true;
-                        nestLevel = 1;
-                    } else {
-                        // ネストされたループ
-                        nestLevel++;
-                    }
-                }
-                // #=@ が見つかった
-                if (statement.type === 'NextStatement') {
-                    nestLevel--;
-                    if (nestLevel === 0) {
-                        // 対応する #=@ が見つかった
-                        return i;
-                    }
-                }
-            }
+        // 文字列は不可
+        if (typeof value === 'string') {
+            throw new Error('1byte出力には数値が必要です');
         }
         
-        return -1; // 見つからなかった
+        if (this.putFn) {
+            // 値を0-255の範囲にクランプ
+            const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+            this.putFn(clampedValue);
+        } else {
+            throw new Error('1byte出力機能が設定されていません');
+        }
+        return { jump: false, halt: false, skipRemaining: false };
     }
+
+    /**
+     * 配列代入文を実行します。
+     */
+    private executeArrayAssignment(statement: any): ExecutionResult {
+        // 配列への代入: [index]=value または [-1]=value（スタックプッシュ）
+        const value = this.evaluateExpression(statement.value);
+        
+        // 文字列は不可
+        if (typeof value === 'string') {
+            throw new Error('配列には数値のみを代入できます');
+        }
+        
+        if (statement.isLiteral) {
+            // [-1]=value: スタックにプッシュ
+            this.memorySpace.pushStack(Math.floor(value));
+        } else {
+            // 通常の配列代入
+            const index = this.evaluateExpression(statement.index);
+            if (typeof index === 'string') {
+                throw new Error('配列のインデックスは数値でなければなりません');
+            }
+            this.memorySpace.writeArray(Math.floor(index), Math.floor(value));
+        }
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * 配列初期化文を実行します。
+     */
+    private executeArrayInitialization(statement: any): ExecutionResult {
+        // 配列の初期化: [index]=value1,value2,value3,...
+        const index = this.evaluateExpression(statement.index);
+        
+        // インデックスは数値でなければならない
+        if (typeof index === 'string') {
+            throw new Error('配列のインデックスは数値でなければなりません');
+        }
+        
+        // 値を評価
+        const values: number[] = [];
+        for (const expr of statement.values) {
+            const value = this.evaluateExpression(expr);
+            if (typeof value === 'string') {
+                throw new Error('配列初期化の値は数値でなければなりません');
+            }
+            values.push(Math.floor(value));
+        }
+        
+        // 配列を初期化
+        this.memorySpace.initializeArray(Math.floor(index), values);
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * 単一のステートメントを実行します。
+     * @param statement 実行するステートメント
+     * @returns 実行結果（ジャンプ、停止、スキップの情報）
+     */
+    private executeStatement(statement: Statement): ExecutionResult {
+        switch (statement.type) {
+            case 'AssignmentStatement':
+                return this.executeAssignment(statement);
+            
+            case 'OutputStatement':
+                return this.executeOutput(statement);
+            
+            case 'NewlineStatement':
+                return this.executeNewline();
+            
+            case 'IfStatement':
+                return this.executeIf(statement);
+            
+            case 'IfBlockStatement':
+                return this.executeIfBlock(statement);
+            
+            case 'ForBlockStatement':
+                return this.executeForBlock(statement);
+            
+            case 'WhileBlockStatement':
+                return this.executeWhileBlock(statement);
+            
+            case 'GotoStatement':
+                return this.executeGoto(statement);
+            
+            case 'GosubStatement':
+                return this.executeGosub(statement);
+            
+            case 'ReturnStatement':
+                return this.executeReturn();
+            
+            case 'HaltStatement':
+                return this.executeHalt();
+            
+            case 'PokeStatement':
+                return this.executePoke(statement);
+
+            case 'IoPutStatement':
+                return this.executeIoPut(statement);
+
+            case 'ArrayAssignmentStatement':
+                return this.executeArrayAssignment(statement);
+
+            case 'ArrayInitializationStatement':
+                return this.executeArrayInitialization(statement);
+            
+            case 'ForStatement':
+                // インラインスタイルのFORステートメント（例: @=I,1,3 ?=I #=@）
+                // ブロックスタイルではForBlockStatementに変換される
+                // インラインスタイルではこのステートメントは無視され、loopStackで処理される
+                return { jump: false, halt: false, skipRemaining: false };
+            
+            case 'NextStatement':
+                // NEXTステートメント（#=@）
+                // ブロックスタイル: ForBlockStatement/WhileBlockStatementの終端として処理済み
+                // インラインスタイル: loopStackで処理される
+                // スタンドアロン: 対応するループがない場合は無視
+                return { jump: false, halt: false, skipRemaining: false };
+            
+            case 'WhileStatement':
+                // インラインスタイルのWHILEステートメント（例: @=(X<10) ?=X #=@）
+                // ブロックスタイルではWhileBlockStatementに変換される
+                // インラインスタイルではこのステートメントは無視され、loopStackで処理される
+                return { jump: false, halt: false, skipRemaining: false };
+            
+            default:
+                throw new Error(`未実装のステートメントタイプ: ${(statement as any).type}`);
+        }
+    }
+
 
     /**
      * 式を評価して数値または文字列を返します。
      * @param expr 評価する式
      * @returns 評価結果の数値または文字列
      */
+    /**
+     * 数値リテラルを評価
+     */
+    private evaluateNumericLiteral(expr: { type: 'NumericLiteral'; value: number }): number {
+        return expr.value;
+    }
+
+    /**
+     * 文字列リテラルを評価
+     */
+    private evaluateStringLiteral(expr: { type: 'StringLiteral'; value: string }): string {
+        return expr.value;
+    }
+
+    /**
+     * 識別子（変数）を評価
+     */
+    private evaluateIdentifier(expr: { type: 'Identifier'; name: string }): number {
+        const value = this.variables.get(expr.name);
+        if (value === undefined) {
+            // 未初期化の変数は0として扱う
+            return 0;
+        }
+        return value;
+    }
+
+    /**
+     * 単項演算式を評価
+     */
+    private evaluateUnaryExpression(expr: { type: 'UnaryExpression'; operator: string; operand: Expression }): number {
+        const operand = this.evaluateExpression(expr.operand);
+        
+        // 文字列を含む演算は未サポート
+        if (typeof operand === 'string') {
+            throw new Error('文字列演算はサポートされていません');
+        }
+        
+        switch (expr.operator) {
+            case '!': return operand === 0 ? 1 : 0; // NOT演算子
+            case '-': return -operand; // 単項マイナス
+            case '+': return operand; // 単項プラス
+            default:
+                // TypeScriptのexhaustive checkのため、到達不可能
+                throw new Error(`未実装の単項演算子`);
+        }
+    }
+
+    /**
+     * 二項演算式を評価
+     */
+    private evaluateBinaryExpression(expr: { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }): number {
+        const left = this.evaluateExpression(expr.left);
+        const right = this.evaluateExpression(expr.right);
+        
+        // 文字列を含む演算は未サポート
+        if (typeof left === 'string' || typeof right === 'string') {
+            throw new Error('文字列演算はサポートされていません');
+        }
+        
+        switch (expr.operator) {
+            case '+': return left + right;
+            case '-': return left - right;
+            case '*': return left * right;
+            case '/': 
+                if (right === 0) {
+                    throw new Error('ゼロ除算エラー');
+                }
+                return Math.floor(left / right); // 整数除算
+            case '%':
+                if (right === 0) {
+                    throw new Error('ゼロ除算エラー（剰余演算）');
+                }
+                return ((left % right) + right) % right; // 正の剰余を保証
+            
+            // 比較演算子（真=1, 偽=0）
+            case '>': return left > right ? 1 : 0;
+            case '<': return left < right ? 1 : 0;
+            case '>=': return left >= right ? 1 : 0;
+            case '<=': return left <= right ? 1 : 0;
+            case '=': return left === right ? 1 : 0;
+            case '<>': return left !== right ? 1 : 0;
+            
+            // 論理演算子（0=偽, 非0=真）
+            case '&': return (left !== 0 && right !== 0) ? 1 : 0;
+            case '|': return (left !== 0 || right !== 0) ? 1 : 0;
+            
+            default:
+                throw new Error(`未実装の演算子: ${expr.operator}`);
+        }
+    }
+
+    /**
+     * PEEK式を評価（グリッド読み取り）
+     */
+    private evaluatePeekExpression(): number {
+        // PEEK: グリッドから読み取り
+        // $の値は、X, Y システム変数を使ってgridDataから取得
+        const x = this.variables.get('X') ?? 0;
+        const y = this.variables.get('Y') ?? 0;
+        
+        // X, Yを0-99の範囲に正規化（負の値も対応）
+        const xMod = ((Math.floor(x) % 100) + 100) % 100;
+        const yMod = ((Math.floor(y) % 100) + 100) % 100;
+        
+        // グリッドインデックスを計算: x * 100 + y
+        const index = xMod * 100 + yMod;
+        
+        // gridDataから値を読み取り
+        return this.peekFn(index);
+    }
+
+    /**
+     * ランダム式を評価
+     */
+    private evaluateRandomExpression(): number {
+        // ランダム数生成: 0-32767の範囲
+        return Math.floor(Math.random() * 32768);
+    }
+
+    /**
+     * 文字リテラル式を評価（ASCIIコード変換）
+     */
+    private evaluateCharLiteralExpression(expr: { type: 'CharLiteralExpression'; value: string }): number {
+        // 文字リテラルをASCIIコードに変換
+        const charValue = expr.value;
+        if (charValue.length === 1) {
+            return charValue.charCodeAt(0);
+        } else {
+            // エスケープシーケンス等で処理済みの文字
+            return charValue.charCodeAt(0);
+        }
+    }
+
+    /**
+     * IO GET式を評価（1byte入力）
+     */
+    private evaluateIoGetExpression(): number {
+        // VTL互換 1byte入力: $システム変数から値を読み取り
+        if (this.getFn) {
+            const value = this.getFn();
+            // 0-255の範囲に制限
+            return Math.max(0, Math.min(255, Math.floor(value)));
+        } else {
+            throw new Error('1byte入力機能が設定されていません');
+        }
+    }
+
+    /**
+     * 配列アクセス式を評価
+     */
+    private evaluateArrayAccessExpression(expr: { type: 'ArrayAccessExpression'; index: Expression; isLiteral?: boolean }): number {
+        // 配列アクセス: [index] または [-1]（スタック）
+        if (expr.isLiteral) {
+            // [-1]: スタックからpop
+            return this.memorySpace.popStack();
+        } else {
+            // 通常の配列アクセス
+            const index = this.evaluateExpression(expr.index);
+            if (typeof index === 'string') {
+                throw new Error('配列のインデックスは数値でなければなりません');
+            }
+            return this.memorySpace.readArray(Math.floor(index));
+        }
+    }
+
     private evaluateExpression(expr: Expression): number | string {
         switch (expr.type) {
             case 'NumericLiteral':
-                return expr.value;
+                return this.evaluateNumericLiteral(expr as any);
             
             case 'StringLiteral':
-                return expr.value;
+                return this.evaluateStringLiteral(expr as any);
             
             case 'Identifier':
-                {
-                    const value = this.variables.get(expr.name);
-                    if (value === undefined) {
-                        // 未初期化の変数は0として扱う
-                        return 0;
-                    }
-                    return value;
-                }
+                return this.evaluateIdentifier(expr as any);
             
             case 'UnaryExpression':
-                {
-                    const operand = this.evaluateExpression(expr.operand);
-                    
-                    // 文字列を含む演算は未サポート
-                    if (typeof operand === 'string') {
-                        throw new Error('文字列演算はサポートされていません');
-                    }
-                    
-                    switch (expr.operator) {
-                        case '!': return operand === 0 ? 1 : 0; // NOT演算子
-                        case '-': return -operand; // 単項マイナス
-                        case '+': return operand; // 単項プラス
-                        default:
-                            // TypeScriptのexhaustive checkのため、到達不可能
-                            throw new Error(`未実装の単項演算子`);
-                    }
-                }
+                return this.evaluateUnaryExpression(expr as any);
             
             case 'BinaryExpression':
-                {
-                    const left = this.evaluateExpression(expr.left);
-                    const right = this.evaluateExpression(expr.right);
-                    
-                    // 文字列を含む演算は未サポート
-                    if (typeof left === 'string' || typeof right === 'string') {
-                        throw new Error('文字列演算はサポートされていません');
-                    }
-                    
-                    switch (expr.operator) {
-                        case '+': return left + right;
-                        case '-': return left - right;
-                        case '*': return left * right;
-                        case '/': 
-                            if (right === 0) {
-                                throw new Error('ゼロ除算エラー');
-                            }
-                            return Math.floor(left / right); // 整数除算
-                        case '%':
-                            if (right === 0) {
-                                throw new Error('ゼロ除算エラー（剰余演算）');
-                            }
-                            return ((left % right) + right) % right; // 正の剰余を保証
-                        
-                        // 比較演算子（真=1, 偽=0）
-                        case '>': return left > right ? 1 : 0;
-                        case '<': return left < right ? 1 : 0;
-                        case '>=': return left >= right ? 1 : 0;
-                        case '<=': return left <= right ? 1 : 0;
-                        case '=': return left === right ? 1 : 0;
-                        case '<>': return left !== right ? 1 : 0;
-                        
-                        // 論理演算子（0=偽, 非0=真）
-                        case '&': return (left !== 0 && right !== 0) ? 1 : 0;
-                        case '|': return (left !== 0 || right !== 0) ? 1 : 0;
-                        
-                        default:
-                            throw new Error(`未実装の演算子: ${expr.operator}`);
-                    }
-                }
+                return this.evaluateBinaryExpression(expr as any);
             
             case 'PeekExpression':
-                {
-                    // PEEK: グリッドから読み取り
-                    // $の値は、X, Y システム変数を使ってgridDataから取得
-                    const x = this.variables.get('X') ?? 0;
-                    const y = this.variables.get('Y') ?? 0;
-                    
-                    // X, Yを0-99の範囲に正規化（負の値も対応）
-                    const xMod = ((Math.floor(x) % 100) + 100) % 100;
-                    const yMod = ((Math.floor(y) % 100) + 100) % 100;
-                    
-                    // グリッドインデックスを計算: x * 100 + y
-                    const index = xMod * 100 + yMod;
-                    
-                    // gridDataから値を読み取り
-                    return this.peekFn(index);
-                }
+                return this.evaluatePeekExpression();
             
             case 'RandomExpression':
-                {
-                    // ランダム数生成: 0-32767の範囲
-                    return Math.floor(Math.random() * 32768);
-                }
+                return this.evaluateRandomExpression();
 
             case 'CharLiteralExpression':
-                {
-                    // 文字リテラルをASCIIコードに変換
-                    const charValue = expr.value;
-                    if (charValue.length === 1) {
-                        return charValue.charCodeAt(0);
-                    } else {
-                        // エスケープシーケンス等で処理済みの文字
-                        return charValue.charCodeAt(0);
-                    }
-                }
+                return this.evaluateCharLiteralExpression(expr as any);
 
             case 'IoGetExpression':
-                {
-                    // VTL互換 1byte入力: $システム変数から値を読み取り
-                    if (this.getFn) {
-                        const value = this.getFn();
-                        // 0-255の範囲に制限
-                        return Math.max(0, Math.min(255, Math.floor(value)));
-                    } else {
-                        throw new Error('1byte入力機能が設定されていません');
-                    }
-                }
+                return this.evaluateIoGetExpression();
 
             case 'ArrayAccessExpression':
-                {
-                    // 配列アクセス: [index] または [-1]（スタック）
-                    if (expr.isLiteral) {
-                        // [-1]: スタックからpop
-                        return this.memorySpace.popStack();
-                    } else {
-                        // 通常の配列アクセス
-                        const index = this.evaluateExpression(expr.index);
-                        if (typeof index === 'string') {
-                            throw new Error('配列のインデックスは数値でなければなりません');
-                        }
-                        return this.memorySpace.readArray(Math.floor(index));
-                    }
-                }
+                return this.evaluateArrayAccessExpression(expr as any);
             
             default:
                 throw new Error(`未実装の式タイプ: ${(expr as any).type}`);

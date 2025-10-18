@@ -43,8 +43,10 @@ export type Statement =
     | ReturnStatement
     | HaltStatement
     | ForStatement
+    | ForBlockStatement
     | NextStatement
     | WhileStatement
+    | WhileBlockStatement
     | PokeStatement
     | IoPutStatement
     | ArrayAssignmentStatement
@@ -146,6 +148,20 @@ export interface ForStatement extends ASTNode {
 }
 
 /**
+ * FORループブロックステートメント（統一構文・ブロック構造）
+ * 例: @=I,1,100 ... #=@
+ * ループボディを明示的に保持するブロック構造
+ */
+export interface ForBlockStatement extends ASTNode {
+    type: 'ForBlockStatement';
+    variable: Identifier;    // ループ変数
+    start: Expression;       // 開始値
+    end: Expression;         // 終了値
+    step?: Expression;       // ステップ値（省略時は1）
+    body: Statement[];       // ループボディ
+}
+
+/**
  * NEXTステートメント (例: #=@)
  * FORループの終了処理（統一構造）
  */
@@ -161,6 +177,17 @@ export interface NextStatement extends ASTNode {
 export interface WhileStatement extends ASTNode {
     type: 'WhileStatement';
     condition: Expression;    // 継続条件
+}
+
+/**
+ * WHILEループブロックステートメント（統一構文・ブロック構造）
+ * 例: @=(X<100) ... #=@
+ * ループボディを明示的に保持するブロック構造
+ */
+export interface WhileBlockStatement extends ASTNode {
+    type: 'WhileBlockStatement';
+    condition: Expression;    // 継続条件
+    body: Statement[];        // ループボディ
 }
 
 /**
@@ -310,4 +337,129 @@ export interface ArrayInitializationStatement extends ASTNode {
     type: 'ArrayInitializationStatement';
     index: Expression;      // 開始インデックス式
     values: Expression[];   // 書き込む値の配列
+}
+
+// ============================================================================
+// Type Guard Functions
+// ============================================================================
+
+/**
+ * Statement型のType Guard関数群
+ * TypeScriptの型推論を活用し、型安全なコードを実現します。
+ */
+
+export function isAssignmentStatement(stmt: Statement): stmt is AssignmentStatement {
+    return stmt.type === 'AssignmentStatement';
+}
+
+export function isOutputStatement(stmt: Statement): stmt is OutputStatement {
+    return stmt.type === 'OutputStatement';
+}
+
+export function isNewlineStatement(stmt: Statement): stmt is NewlineStatement {
+    return stmt.type === 'NewlineStatement';
+}
+
+export function isIfStatement(stmt: Statement): stmt is IfStatement {
+    return stmt.type === 'IfStatement';
+}
+
+export function isIfBlockStatement(stmt: Statement): stmt is IfBlockStatement {
+    return stmt.type === 'IfBlockStatement';
+}
+
+export function isGotoStatement(stmt: Statement): stmt is GotoStatement {
+    return stmt.type === 'GotoStatement';
+}
+
+export function isGosubStatement(stmt: Statement): stmt is GosubStatement {
+    return stmt.type === 'GosubStatement';
+}
+
+export function isReturnStatement(stmt: Statement): stmt is ReturnStatement {
+    return stmt.type === 'ReturnStatement';
+}
+
+export function isHaltStatement(stmt: Statement): stmt is HaltStatement {
+    return stmt.type === 'HaltStatement';
+}
+
+export function isForStatement(stmt: Statement): stmt is ForStatement {
+    return stmt.type === 'ForStatement';
+}
+
+export function isForBlockStatement(stmt: Statement): stmt is ForBlockStatement {
+    return stmt.type === 'ForBlockStatement';
+}
+
+export function isNextStatement(stmt: Statement): stmt is NextStatement {
+    return stmt.type === 'NextStatement';
+}
+
+export function isWhileStatement(stmt: Statement): stmt is WhileStatement {
+    return stmt.type === 'WhileStatement';
+}
+
+export function isWhileBlockStatement(stmt: Statement): stmt is WhileBlockStatement {
+    return stmt.type === 'WhileBlockStatement';
+}
+
+export function isPokeStatement(stmt: Statement): stmt is PokeStatement {
+    return stmt.type === 'PokeStatement';
+}
+
+export function isIoPutStatement(stmt: Statement): stmt is IoPutStatement {
+    return stmt.type === 'IoPutStatement';
+}
+
+export function isArrayAssignmentStatement(stmt: Statement): stmt is ArrayAssignmentStatement {
+    return stmt.type === 'ArrayAssignmentStatement';
+}
+
+export function isArrayInitializationStatement(stmt: Statement): stmt is ArrayInitializationStatement {
+    return stmt.type === 'ArrayInitializationStatement';
+}
+
+/**
+ * Expression型のType Guard関数群
+ */
+
+export function isNumericLiteral(expr: Expression): expr is NumericLiteral {
+    return expr.type === 'NumericLiteral';
+}
+
+export function isStringLiteral(expr: Expression): expr is StringLiteral {
+    return expr.type === 'StringLiteral';
+}
+
+export function isIdentifier(expr: Expression): expr is Identifier {
+    return expr.type === 'Identifier';
+}
+
+export function isUnaryExpression(expr: Expression): expr is UnaryExpression {
+    return expr.type === 'UnaryExpression';
+}
+
+export function isBinaryExpression(expr: Expression): expr is BinaryExpression {
+    return expr.type === 'BinaryExpression';
+}
+
+export function isPeekExpression(expr: Expression): expr is PeekExpression {
+    return expr.type === 'PeekExpression';
+}
+
+export function isRandomExpression(expr: Expression): expr is RandomExpression {
+    return expr.type === 'RandomExpression';
+}
+
+export function isCharLiteralExpression(expr: Expression): expr is CharLiteralExpression {
+    return expr.type === 'CharLiteralExpression';
+}
+
+export function isIoGetExpression(expr: Expression): expr is IoGetExpression {
+    return expr.type === 'IoGetExpression';
+}
+
+export function isArrayAccessExpression(expr: Expression): expr is ArrayAccessExpression {
+    return expr.type === 'ArrayAccessExpression';
 }
