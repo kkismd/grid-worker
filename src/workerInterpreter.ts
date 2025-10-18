@@ -4,6 +4,113 @@ import { Lexer, TokenType, type Token } from './lexer.js';
 import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
 
 /**
+ * メモリ空間クラス
+ * VTLオリジナルに準拠した配列とスタックの統合メモリ空間を提供します。
+ * 
+ * 仕様:
+ * - 共有メモリ空間: 65536要素（0-65535）
+ * - スタックは上位アドレスから下に向かって伸びる（65535から開始）
+ * - [-1]のリテラルアクセスのみスタック操作として扱う
+ * - 変数経由のアクセスは通常のメモリアクセス
+ */
+class MemorySpace {
+    private memory: Int16Array = new Int16Array(65536);  // 共有メモリ空間
+    private stackPointer: number = 65535;                // スタックポインタ（内部管理）
+    
+    /**
+     * メモリから値を読み取ります。
+     * @param index メモリインデックス（0-65535）または-1（スタックポップ）
+     * @param isLiteral インデックスがリテラルかどうか（-1のスタック判定用）
+     * @returns 読み取った値（16bit符号付き整数）
+     */
+    readMemory(index: number, isLiteral: boolean = false): number {
+        // リテラル[-1]のみスタックポップ
+        if (index === -1 && isLiteral) {
+            return this.stackPop();
+        }
+        
+        // 通常のメモリアクセス（範囲外は0を返す）
+        const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
+        return this.memory[normalizedIndex] || 0;
+    }
+    
+    /**
+     * メモリに値を書き込みます。
+     * @param index メモリインデックス（0-65535）または-1（スタックプッシュ）
+     * @param value 書き込む値（16bit符号付き整数）
+     * @param isLiteral インデックスがリテラルかどうか（-1のスタック判定用）
+     */
+    writeMemory(index: number, value: number, isLiteral: boolean = false): void {
+        // リテラル[-1]のみスタックプッシュ
+        if (index === -1 && isLiteral) {
+            this.stackPush(value);
+            return;
+        }
+        
+        // 通常のメモリアクセス
+        const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
+        this.memory[normalizedIndex] = value & 0xFFFF; // 16bitに正規化
+    }
+    
+    /**
+     * 配列初期化：連続する複数の値をメモリに書き込みます。
+     * @param startIndex 開始インデックス
+     * @param values 書き込む値の配列
+     */
+    initializeArray(startIndex: number, values: number[]): void {
+        let index = startIndex & 0xFFFF; // 0-65535に正規化
+        for (const value of values) {
+            this.memory[index] = value & 0xFFFF; // 16bitに正規化
+            index = (index + 1) & 0xFFFF; // 次のインデックス（ラップアラウンド対応）
+        }
+    }
+    
+    /**
+     * スタックに値をプッシュします（内部使用）。
+     * @param value プッシュする値
+     */
+    private stackPush(value: number): void {
+        this.memory[this.stackPointer] = value & 0xFFFF;
+        this.stackPointer = (this.stackPointer - 1) & 0xFFFF;
+        // 注意: スタックオーバーフローのチェックなし（VTL仕様に準拠）
+    }
+    
+    /**
+     * スタックから値をポップします（内部使用）。
+     * @returns ポップした値
+     */
+    private stackPop(): number {
+        this.stackPointer = (this.stackPointer + 1) & 0xFFFF;
+        return this.memory[this.stackPointer] || 0;
+        // 注意: スタックアンダーフローのチェックなし（VTL仕様に準拠）
+    }
+    
+    /**
+     * 現在のスタックポインタを取得します（デバッグ・システム変数用）。
+     * @returns 現在のスタックポインタ値（0-65535）
+     */
+    getStackPointer(): number {
+        return this.stackPointer;
+    }
+    
+    /**
+     * スタックポインタを設定します（システム変数用）。
+     * @param value 新しいスタックポインタ値
+     */
+    setStackPointer(value: number): void {
+        this.stackPointer = value & 0xFFFF; // 0-65535に正規化
+    }
+    
+    /**
+     * メモリをリセットします（テスト用）。
+     */
+    reset(): void {
+        this.memory.fill(0);
+        this.stackPointer = 65535;
+    }
+}
+
+/**
  * インタプリタの実行状態を保持するインターフェース。
  * Generator Function内で状態を管理するために使用されます。
  */
@@ -57,6 +164,7 @@ class WorkerInterpreter {
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
     private loopStack: LoopInfo[] = []; // ループの状態スタック
+    private memory: MemorySpace; // メモリ空間（配列・スタック）
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
     // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
@@ -82,6 +190,7 @@ class WorkerInterpreter {
         this.getFn = config.getFn;
         this.putFn = config.putFn;
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
+        this.memory = new MemorySpace(); // メモリ空間の初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
     }
