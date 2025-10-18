@@ -10,44 +10,28 @@ import type { Program, Statement, Expression, Identifier, NumericLiteral, String
  * 仕様:
  * - 共有メモリ空間: 65536要素（0-65535）
  * - スタックは上位アドレスから下に向かって伸びる（65535から開始）
- * - [-1]のリテラルアクセスのみスタック操作として扱う
- * - 変数経由のアクセスは通常のメモリアクセス
+ * - 配列とスタックは別々のメソッドでアクセス
  */
 class MemorySpace {
     private memory: Int16Array = new Int16Array(65536);  // 共有メモリ空間
     private stackPointer: number = 65535;                // スタックポインタ（内部管理）
     
     /**
-     * メモリから値を読み取ります。
-     * @param index メモリインデックス（0-65535）または-1（スタックポップ）
-     * @param isLiteral インデックスがリテラルかどうか（-1のスタック判定用）
+     * 配列から値を読み取ります。
+     * @param index 配列インデックス（0-65535）
      * @returns 読み取った値（16bit符号付き整数）
      */
-    readMemory(index: number, isLiteral: boolean = false): number {
-        // リテラル[-1]のみスタックポップ
-        if (index === -1 && isLiteral) {
-            return this.stackPop();
-        }
-        
-        // 通常のメモリアクセス（範囲外は0を返す）
+    readArray(index: number): number {
         const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
         return this.memory[normalizedIndex] || 0;
     }
     
     /**
-     * メモリに値を書き込みます。
-     * @param index メモリインデックス（0-65535）または-1（スタックプッシュ）
+     * 配列に値を書き込みます。
+     * @param index 配列インデックス（0-65535）
      * @param value 書き込む値（16bit符号付き整数）
-     * @param isLiteral インデックスがリテラルかどうか（-1のスタック判定用）
      */
-    writeMemory(index: number, value: number, isLiteral: boolean = false): void {
-        // リテラル[-1]のみスタックプッシュ
-        if (index === -1 && isLiteral) {
-            this.stackPush(value);
-            return;
-        }
-        
-        // 通常のメモリアクセス
+    writeArray(index: number, value: number): void {
         const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
         this.memory[normalizedIndex] = value & 0xFFFF; // 16bitに正規化
     }
@@ -66,20 +50,20 @@ class MemorySpace {
     }
     
     /**
-     * スタックに値をプッシュします（内部使用）。
+     * スタックに値をプッシュします。
      * @param value プッシュする値
      */
-    private stackPush(value: number): void {
+    pushStack(value: number): void {
         this.memory[this.stackPointer] = value & 0xFFFF;
         this.stackPointer = (this.stackPointer - 1) & 0xFFFF;
         // 注意: スタックオーバーフローのチェックなし（VTL仕様に準拠）
     }
     
     /**
-     * スタックから値をポップします（内部使用）。
+     * スタックから値をポップします。
      * @returns ポップした値
      */
-    private stackPop(): number {
+    popStack(): number {
         this.stackPointer = (this.stackPointer + 1) & 0xFFFF;
         return this.memory[this.stackPointer] || 0;
         // 注意: スタックアンダーフローのチェックなし（VTL仕様に準拠）
@@ -164,7 +148,7 @@ class WorkerInterpreter {
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
     private loopStack: LoopInfo[] = []; // ループの状態スタック
-    private memory: MemorySpace; // メモリ空間（配列・スタック）
+    private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
     // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
@@ -190,7 +174,7 @@ class WorkerInterpreter {
         this.getFn = config.getFn;
         this.putFn = config.putFn;
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
-        this.memory = new MemorySpace(); // メモリ空間の初期化
+        this.memorySpace = new MemorySpace(); // メモリ空間の初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
     }
@@ -1759,6 +1743,53 @@ class WorkerInterpreter {
                 }
                 break;
             }
+
+            case 'ArrayAssignmentStatement': {
+                // 配列への代入: [index]=value または [-1]=value（スタックプッシュ）
+                const value = this.evaluateExpression(statement.value);
+                
+                // 文字列は不可
+                if (typeof value === 'string') {
+                    throw new Error('配列には数値のみを代入できます');
+                }
+                
+                if (statement.isLiteral) {
+                    // [-1]=value: スタックにプッシュ
+                    this.memorySpace.pushStack(Math.floor(value));
+                } else {
+                    // 通常の配列代入
+                    const index = this.evaluateExpression(statement.index);
+                    if (typeof index === 'string') {
+                        throw new Error('配列のインデックスは数値でなければなりません');
+                    }
+                    this.memorySpace.writeArray(Math.floor(index), Math.floor(value));
+                }
+                break;
+            }
+
+            case 'ArrayInitializationStatement': {
+                // 配列の初期化: [index]=value1,value2,value3,...
+                const index = this.evaluateExpression(statement.index);
+                
+                // インデックスは数値でなければならない
+                if (typeof index === 'string') {
+                    throw new Error('配列のインデックスは数値でなければなりません');
+                }
+                
+                // 値を評価
+                const values: number[] = [];
+                for (const expr of statement.values) {
+                    const value = this.evaluateExpression(expr);
+                    if (typeof value === 'string') {
+                        throw new Error('配列初期化の値は数値でなければなりません');
+                    }
+                    values.push(Math.floor(value));
+                }
+                
+                // 配列を初期化
+                this.memorySpace.initializeArray(Math.floor(index), values);
+                break;
+            }
         }
         return { jump: false, halt: false, skipRemaining: false };
     }
@@ -2135,6 +2166,22 @@ class WorkerInterpreter {
                         return Math.max(0, Math.min(255, Math.floor(value)));
                     } else {
                         throw new Error('1byte入力機能が設定されていません');
+                    }
+                }
+
+            case 'ArrayAccessExpression':
+                {
+                    // 配列アクセス: [index] または [-1]（スタック）
+                    if (expr.isLiteral) {
+                        // [-1]: スタックからpop
+                        return this.memorySpace.popStack();
+                    } else {
+                        // 通常の配列アクセス
+                        const index = this.evaluateExpression(expr.index);
+                        if (typeof index === 'string') {
+                            throw new Error('配列のインデックスは数値でなければなりません');
+                        }
+                        return this.memorySpace.readArray(Math.floor(index));
                     }
                 }
             
