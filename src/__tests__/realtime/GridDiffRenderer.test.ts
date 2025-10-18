@@ -28,20 +28,20 @@ describe('GridDiffRenderer', () => {
             // 画面クリア + ヘッダー + グリッド行が含まれる
             expect(output).toContain('\x1b[2J');  // Clear screen
             expect(output).toContain('\x1b[H');   // Home
-            expect(output).toContain('0123456789'); // Header
-            expect(output).toContain('----------'); // Separator
+            expect(output).toContain('0 1 2 3 4 5 6 7 8 9'); // Header with spaces
+            expect(output).toContain('-------------------'); // Separator (wider due to spaces)
         });
     });
 
     describe('renderDiff', () => {
         test('変更がない場合は空文字を返す', () => {
             const gridData = new Array(10000).fill(0);
+            
+            // 初回は差分なし（全て0で初期化済み）
             const output = renderer.renderDiff(gridData);
+            expect(output).toBe('');
             
-            // 初回は全体が変更とみなされる
-            expect(output).not.toBe('');
-            
-            // 2回目は変更なし
+            // 2回目も変更なし
             const output2 = renderer.renderDiff(gridData);
             expect(output2).toBe('');
         });

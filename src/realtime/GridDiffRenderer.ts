@@ -51,23 +51,29 @@ export class GridDiffRenderer {
         output += '\x1b[2J';  // Clear entire screen
         output += '\x1b[H';   // Move cursor to home (1,1)
         
-        // ヘッダー行（X座標）
-        output += '  ';  // 左マージン（Y座標用）
+        // ヘッダー行（X座標）文字間に空白挿入
+        output += '   ';  // 左マージン（Y座標用）
         for (let x = 0; x < this.displayWidth; x++) {
             output += (x % 10).toString();
+            if (x < this.displayWidth - 1) {
+                output += ' ';  // 文字間に空白
+            }
         }
         output += '\n';
         
-        // 区切り線
-        output += '  ';
-        output += '-'.repeat(this.displayWidth);
+        // 区切り線（空白を含めた長さ）
+        output += '   ';
+        output += '-'.repeat(this.displayWidth * 2 - 1);
         output += '\n';
         
-        // グリッド行を初期化（空白で埋める）
+        // グリッド行を初期化（文字間に空白を挿入）
         for (let y = 0; y < this.displayHeight; y++) {
-            output += `${y % 10}|`;  // Y座標
+            output += `${y % 10} |`;  // Y座標 + 空白
             for (let x = 0; x < this.displayWidth; x++) {
                 output += this.valueToChar(0);
+                if (x < this.displayWidth - 1) {
+                    output += ' ';  // 文字間に空白
+                }
             }
             output += '\n';
         }
@@ -120,9 +126,9 @@ export class GridDiffRenderer {
         let output = '';
         
         for (const { x, y, value } of changes) {
-            // カーソル位置: ヘッダー2行 + グリッド行、左マージン2文字分
+            // カーソル位置: ヘッダー2行 + グリッド行、左マージン3文字分（Y座標 + 空白 + '|'）
             const line = y + 3;  // ヘッダー（1行）+ 区切り線（1行）+ データ開始（1行目=3）
-            const column = x + 3;  // 左マージン（Y座標1文字 + '|' 1文字）+ データ開始
+            const column = x * 2 + 4;  // 左マージン3文字（"Y |"）+ x座標 * 2（文字 + 空白）+ 1
             
             // ESC[line;columnH で移動して文字描画
             output += `\x1b[${line};${column}H${this.valueToChar(value)}`;
