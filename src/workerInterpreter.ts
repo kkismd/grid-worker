@@ -274,35 +274,15 @@ class WorkerInterpreter {
                         }
                     }
                     
-                    // ブロックIF検出: 1行に1つだけIfStatementがある場合
-                    if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'IfStatement') {
-                        const inlineIf = parsedStatements[0] as any;
-                        
-                        // IfBlockStatementに変換
-                        const blockIf: any = {
-                            type: 'IfBlockStatement',
-                            line: i,
-                            condition: inlineIf.condition,
-                            thenBody: [],
-                            elseBody: undefined,
-                        };
-                        
-                        // #=; まで本体を収集
-                        const endLine = this.collectIfBlock(blockIf, i + 1);
-                        
-                        // ブロック全体を1つのステートメントとして追加
-                        const line: Line = {
-                            lineNumber: i,
-                            statements: [blockIf],
-                            sourceText: sourceText,
-                        };
-                        lines.push(line);
-                        
-                        // endLine まで進める（途中の行はスキップ）
-                        i = endLine;
+                    // ブロック構造を試行
+                    const ifBlock = this.tryProcessIfBlock(parsedStatements, sourceText, i);
+                    if (ifBlock) {
+                        lines.push(ifBlock.line);
+                        i = ifBlock.endLine;
                         continue;
                     }
                     
+                    // ブロック構造でなければ通常の行として追加
                     const line: Line = {
                         lineNumber: i,
                         statements: parsedStatements,
@@ -320,6 +300,45 @@ class WorkerInterpreter {
             line: 0,
             body: lines,
         };
+    }
+
+    /**
+     * パースされたステートメントがブロックIF構造かどうかを判定し、
+     * ブロックIFの場合はそれを処理してLineを返します。
+     * ブロックIFでない場合はnullを返します。
+     */
+    private tryProcessIfBlock(
+        parsedStatements: Statement[],
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } | null {
+        // ブロックIF検出: 1行に1つだけIfStatementがある場合
+        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'IfStatement') {
+            const inlineIf = parsedStatements[0] as any;
+            
+            // IfBlockStatementに変換
+            const blockIf: any = {
+                type: 'IfBlockStatement',
+                line: lineNumber,
+                condition: inlineIf.condition,
+                thenBody: [],
+                elseBody: undefined,
+            };
+            
+            // #=; まで本体を収集
+            const endLine = this.collectIfBlock(blockIf, lineNumber + 1);
+            
+            // ブロック全体を1つのステートメントとして追加
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [blockIf],
+                sourceText: sourceText,
+            };
+            
+            return { line, endLine };
+        }
+        
+        return null;
     }
 
     /**
