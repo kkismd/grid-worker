@@ -37,6 +37,7 @@ export type Statement =
     | OutputStatement 
     | NewlineStatement
     | IfStatement
+    | IfBlockStatement
     | GotoStatement
     | GosubStatement
     | ReturnStatement
@@ -82,6 +83,17 @@ export interface IfStatement extends ASTNode {
     type: 'IfStatement';
     condition: Expression;
     // consequentは削除：後続ステートメントは同じLine.statements[]内に独立して存在
+}
+
+/**
+ * IFブロックステートメント (例: ;=A>100 ... #=;)
+ * ブロック構造のIF文：条件が真の場合thenBodyを実行、偽の場合elseBodyを実行（あれば）
+ */
+export interface IfBlockStatement extends ASTNode {
+    type: 'IfBlockStatement';
+    condition: Expression;
+    thenBody: Statement[];      // THEN部のステートメント
+    elseBody?: Statement[];     // ELSE部のステートメント（オプション）
 }
 
 /**
