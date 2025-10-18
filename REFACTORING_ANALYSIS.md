@@ -3,7 +3,7 @@
 **作成日**: 2025年10月19日  
 **最終更新**: 2025年10月19日  
 **開始時**: `src/workerInterpreter.ts` (2670行)  
-**現在**: `src/workerInterpreter.ts` (2579行) ← **91行削減！**
+**現在**: `src/workerInterpreter.ts` (2597行) + `src/ast.ts` (+125行) + `src/memorySpace.ts` (92行)
 
 ---
 
@@ -12,31 +12,39 @@
 ### 1. ✅ executeStatementメソッドの分割
 - **完了日**: 2025年10月19日
 - **変更**: 280行 → 約50行（15個のメソッドに分離）
-- **削減**: 約230行
 - **テスト**: ✅ 全266テスト（1 skipped）PASS
 
 ### 2. ✅ evaluateExpressionメソッドの分割
 - **完了日**: 2025年10月19日
 - **変更**: 160行 → 約30行（10個のメソッドに分離）
-- **削減**: 約130行
 - **テスト**: ✅ 全266テスト（1 skipped）PASS
 
 ### 3. ✅ MemorySpaceクラスの分離
 - **完了日**: 2025年10月19日
 - **新規ファイル**: `src/memorySpace.ts` (92行)
-- **削減**: 約91行（workerInterpreter.tsから移動）
 - **テスト**: ✅ 全266テスト（1 skipped）PASS
 
-**累計削減**: 約91行（2670行 → 2579行）  
-**コード品質**: 大幅に改善（単一責任の原則に準拠、メソッド分割による可読性向上）
+### 4. ✅ 型安全性の向上
+- **完了日**: 2025年10月19日
+- **新規追加**: 29個のType Guard関数（ast.tsに125行追加）
+- **改善**: as型アサーションを全て削除、TypeScript型推論を活用
+- **テスト**: ✅ 全266テスト（1 skipped）PASS
+- **型チェック**: ✅ エラーなし
+
+**累計成果**:
+- workerInterpreter.ts: 2670行 → 2597行（73行削減）
+- 新規ファイル: memorySpace.ts (92行), ast.ts (+125行のType Guard)
+- コード品質: 大幅改善（単一責任の原則、型安全性、可読性向上）
 
 ---
 
 ## 📊 現状分析（更新後）
 
 ### ファイル構成
-- **総行数**: 2579行（開始時: 2670行）
-- **クラス数**: 1個 (WorkerInterpreter) ← MemorySpaceを分離
+- **workerInterpreter.ts**: 2597行（開始時: 2670行）
+- **ast.ts**: 466行（Type Guard関数 +125行）
+- **memorySpace.ts**: 92行（新規）
+- **クラス数**: 2個（WorkerInterpreter, MemorySpace）
 - **主要メソッド数**: 約50個（execute*/evaluate*メソッドが追加）
 - **最大メソッド**: `buildProgramAST` (約140行), `parsePrimaryExpression` (136行)
 
@@ -44,7 +52,7 @@
 現在の`WorkerInterpreter`クラスは以下の責務を持つ:
 1. **字句解析**: Lexerの管理
 2. **構文解析**: ASTの構築
-3. **意味解析**: 変数スコープ、型チェック
+3. **意味解析**: 変数スコープ、型チェック ← **型安全性向上済み**
 4. **実行**: ステートメントの実行、式の評価 ← **改善済み**
 5. **状態管理**: 変数、コールスタック、ループスタック
 
@@ -52,81 +60,7 @@
 
 ## 🔴 優先度：高（High Priority） - 次のターゲット
 
-### 1. ~~executeStatementメソッドの分割~~ ✅ 完了
-- **優先度**: ⭐⭐⭐⭐⭐ (最高)
-- **難易度**: 🔧🔧 (中)
-- **所要時間**: 2-3時間
-- **実績時間**: 約1.5時間
-- **行数**: 280行 → 50行
-
-**完了内容**:
-```typescript
-private executeAssignment(stmt: AssignmentStatement): ExecutionResult
-private executeOutput(stmt: OutputStatement): ExecutionResult
-private executeIfBlock(stmt: IfBlockStatement): ExecutionResult
-private executeForBlock(stmt: ForBlockStatement): ExecutionResult
-private executeWhileBlock(stmt: WhileBlockStatement): ExecutionResult
-private executeGoto(stmt: GotoStatement): ExecutionResult
-private executeGosub(stmt: GosubStatement): ExecutionResult
-private executeReturn(stmt: ReturnStatement): ExecutionResult
-private executePoke(stmt: PokeStatement): ExecutionResult
-private executeArrayAssignment(stmt: ArrayAssignmentStatement): ExecutionResult
-private executeArrayInitialization(stmt: ArrayInitializationStatement): ExecutionResult
-```
-
-**メリット**:
-- 各ステートメントのロジックが独立
-- 単体テストが容易
-- コードの可読性大幅向上
-- 既存テストを壊さない
-
-**実装方針**:
-1. ExecutionResult型を定義: `{ jump: boolean; halt: boolean; skipRemaining: boolean }`
-2. 各ステートメントタイプごとにprivateメソッドを作成
-3. executeStatementはswitch文でメソッドを呼び出すだけに簡素化
-4. 既存のテストを実行して動作確認
-
----
-
-### 2. evaluateExpressionメソッドの分割
-- **優先度**: ⭐⭐⭐⭐⭐ (最高)
-- **難易度**: 🔧🔧 (中)
-- **所要時間**: 2-3時間
-- **行数**: 159行 (2354-2513行)
-
-**問題点**:
-- 巨大なswitch文で10種類以上の式を評価
-- BinaryExpressionの演算子処理が特に長い（50行以上）
-- 演算子ごとのロジックが埋もれている
-
-**提案**:
-```typescript
-private evaluateNumericLiteral(expr: NumericLiteral): number
-private evaluateStringLiteral(expr: StringLiteral): string
-private evaluateIdentifier(expr: Identifier): number
-private evaluateUnaryExpression(expr: UnaryExpression): number
-private evaluateBinaryExpression(expr: BinaryExpression): number | string
-private evaluatePeek(expr: PeekExpression): number
-private evaluateRandom(expr: RandomExpression): number
-private evaluateCharLiteral(expr: CharLiteralExpression): number
-private evaluateArrayAccess(expr: ArrayAccessExpression): number
-```
-
-**メリット**:
-- 式評価ロジックの分離
-- 演算子処理の最適化が容易
-- エラーハンドリングの改善
-- 既存テストを壊さない
-
-**実装方針**:
-1. 各式タイプごとにprivateメソッドを作成
-2. evaluateExpressionはswitch文でメソッドを呼び出すだけに簡素化
-3. BinaryExpressionの演算子処理も別メソッドに分離可能
-4. 既存のテストを実行して動作確認
-
----
-
-### 3. パーサーとインタプリタの分離
+### パーサーとインタプリタの分離
 - **優先度**: ⭐⭐⭐⭐ (高)
 - **難易度**: 🔧🔧🔧🔧 (高)
 - **所要時間**: 1-2日
