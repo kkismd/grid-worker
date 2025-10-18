@@ -244,14 +244,7 @@ class WorkerInterpreter {
 
         // 改行ステートメント (/)
         if (token.type === TokenType.SLASH) {
-            return {
-                statement: {
-                    type: 'NewlineStatement',
-                    line: token.line,
-                    column: token.column,
-                },
-                nextIndex: startIndex + 1
-            };
+            return this.parseNewlineStatement(tokens, startIndex);
         }
 
         // 旧 RETURNステートメント (]) - 削除予定
@@ -366,28 +359,9 @@ class WorkerInterpreter {
             };
         }
 
-        // NEXTステートメント (@=I)
+        // @ で始まるステートメント (@=I など)
         if (token.type === TokenType.AT) {
-            const thirdToken = tokens[startIndex + 2];
-            
-            if (!thirdToken || thirdToken.type !== TokenType.IDENTIFIER) {
-                throw new Error(`構文エラー: NEXTにはループ変数が必要です`);
-            }
-
-            return {
-                statement: {
-                    type: 'NextStatement',
-                    line: token.line,
-                    column: token.column,
-                    variable: {
-                        type: 'Identifier',
-                        name: thirdToken.value,
-                        line: thirdToken.line,
-                        column: thirdToken.column,
-                    },
-                },
-                nextIndex: startIndex + 3
-            };
+            return this.parseAtStatement(tokens, startIndex);
         }
 
         // POKEステートメント (`=expression)
@@ -422,58 +396,82 @@ class WorkerInterpreter {
             };
         }
 
-        // 代入ステートメント または FORループ
+        // 変数名で始まるステートメント (代入または FORループ)
         if (token.type === TokenType.IDENTIFIER) {
-            const exprTokens = tokens.slice(startIndex + 2);
-            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            return this.parseIdentifierStatement(tokens, startIndex);
+        }
 
-            // カンマ式かどうかでFORループか代入かを判定
-            if (this.isCommaExpression(exprResult.expr)) {
-                const parts = this.extractCommaExpressionParts(exprResult.expr);
-                
-                if (parts.length === 2) {
-                    return {
-                        statement: {
-                            type: 'ForStatement',
-                            line: token.line,
-                            column: token.column,
-                            variable: {
-                                type: 'Identifier',
-                                name: token.value,
-                                line: token.line,
-                                column: token.column,
-                            },
-                            start: parts[0]!,
-                            end: parts[1]!,
-                            // stepは省略（デフォルト1）
-                        },
-                        nextIndex: startIndex + 2 + exprResult.consumed
-                    };
-                } else if (parts.length === 3) {
-                    return {
-                        statement: {
-                            type: 'ForStatement',
-                            line: token.line,
-                            column: token.column,
-                            variable: {
-                                type: 'Identifier',
-                                name: token.value,
-                                line: token.line,
-                                column: token.column,
-                            },
-                            start: parts[0]!,
-                            end: parts[1]!,
-                            step: parts[2]!,
-                        },
-                        nextIndex: startIndex + 2 + exprResult.consumed
-                    };
-                } else {
-                    throw new Error(`構文エラー: FORループの形式が不正です`);
-                }
-            } else {
+        throw new Error(`構文エラー: 未知のステートメント形式: ${token.value}`);
+    }
+
+    /**
+     * 改行ステートメント (/) を解析します
+     */
+    private parseNewlineStatement(tokens: Token[], startIndex: number): { statement: Statement; nextIndex: number } {
+        const token = tokens[startIndex]!;
+        return {
+            statement: {
+                type: 'NewlineStatement',
+                line: token.line,
+                column: token.column,
+            },
+            nextIndex: startIndex + 1
+        };
+    }
+
+    /**
+     * @ で始まるステートメント (@=I など) を解析します
+     * 現在: NEXTステートメントのみ
+     * 将来: FOR/WHILE/NEXT の統一処理
+     */
+    private parseAtStatement(tokens: Token[], startIndex: number): { statement: Statement; nextIndex: number } {
+        const token = tokens[startIndex]!;
+        const secondToken = tokens[startIndex + 1];
+        
+        if (!secondToken || secondToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: @ の後に = が必要です`);
+        }
+
+        // 現在は NEXTステートメント (@=I) のみサポート
+        const thirdToken = tokens[startIndex + 2];
+        if (!thirdToken || thirdToken.type !== TokenType.IDENTIFIER) {
+            throw new Error(`構文エラー: NEXTにはループ変数が必要です`);
+        }
+
+        return {
+            statement: {
+                type: 'NextStatement',
+                line: token.line,
+                column: token.column,
+                variable: {
+                    type: 'Identifier',
+                    name: thirdToken.value,
+                    line: thirdToken.line,
+                    column: thirdToken.column,
+                },
+            },
+            nextIndex: startIndex + 3
+        };
+    }
+
+    /**
+     * 変数名で始まるステートメント (代入または FORループ) を解析します
+     * 現在: FOR判定 + 代入判定
+     * 将来: 代入のみ（FOR判定は parseAtStatement に移行）
+     */
+    private parseIdentifierStatement(tokens: Token[], startIndex: number): { statement: Statement; nextIndex: number } {
+        const token = tokens[startIndex]!;
+        const exprTokens = tokens.slice(startIndex + 2);
+        const exprResult = this.parseExpressionFromTokens(exprTokens);
+
+        // カンマ式かどうかでFORループか代入かを判定
+        if (this.isCommaExpression(exprResult.expr)) {
+            const parts = this.extractCommaExpressionParts(exprResult.expr);
+            
+            if (parts.length === 2) {
                 return {
                     statement: {
-                        type: 'AssignmentStatement',
+                        type: 'ForStatement',
                         line: token.line,
                         column: token.column,
                         variable: {
@@ -482,14 +480,50 @@ class WorkerInterpreter {
                             line: token.line,
                             column: token.column,
                         },
-                        value: exprResult.expr,
+                        start: parts[0]!,
+                        end: parts[1]!,
+                        // stepは省略（デフォルト1）
                     },
                     nextIndex: startIndex + 2 + exprResult.consumed
                 };
+            } else if (parts.length === 3) {
+                return {
+                    statement: {
+                        type: 'ForStatement',
+                        line: token.line,
+                        column: token.column,
+                        variable: {
+                            type: 'Identifier',
+                            name: token.value,
+                            line: token.line,
+                            column: token.column,
+                        },
+                        start: parts[0]!,
+                        end: parts[1]!,
+                        step: parts[2]!,
+                    },
+                    nextIndex: startIndex + 2 + exprResult.consumed
+                };
+            } else {
+                throw new Error(`構文エラー: FORループの形式が不正です`);
             }
+        } else {
+            return {
+                statement: {
+                    type: 'AssignmentStatement',
+                    line: token.line,
+                    column: token.column,
+                    variable: {
+                        type: 'Identifier',
+                        name: token.value,
+                        line: token.line,
+                        column: token.column,
+                    },
+                    value: exprResult.expr,
+                },
+                nextIndex: startIndex + 2 + exprResult.consumed
+            };
         }
-
-        throw new Error(`構文エラー: 未知のステートメント形式: ${token.value}`);
     }
 
     /**
