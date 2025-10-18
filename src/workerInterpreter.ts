@@ -315,6 +315,16 @@ class WorkerInterpreter {
             return ifBlock;
         }
         
+        const forBlock = this.tryProcessForBlock(parsedStatements, sourceText, lineNumber);
+        if (forBlock) {
+            return forBlock;
+        }
+        
+        const whileBlock = this.tryProcessWhileBlock(parsedStatements, sourceText, lineNumber);
+        if (whileBlock) {
+            return whileBlock;
+        }
+        
         // ブロック構造でなければ通常の行として返す
         const line: Line = {
             lineNumber: lineNumber,
@@ -354,6 +364,87 @@ class WorkerInterpreter {
             const line: Line = {
                 lineNumber: lineNumber,
                 statements: [blockIf],
+                sourceText: sourceText,
+            };
+            
+            return { line, endLine };
+        }
+        
+        return null;
+    }
+
+    /**
+     * パースされたステートメントがブロックFORループかどうかを判定し、
+     * ブロックFORの場合はそれを処理してLineを返します。
+     * ブロックFORでない場合はnullを返します。
+     */
+    private tryProcessForBlock(
+        parsedStatements: Statement[],
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } | null {
+        // ブロックFORループ検出: 1行に1つだけForStatementがある場合
+        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'ForStatement') {
+            const inlineFor = parsedStatements[0] as any;
+            
+            // ForBlockStatementに変換
+            const blockFor: any = {
+                type: 'ForBlockStatement',
+                line: lineNumber,
+                variable: inlineFor.variable,
+                start: inlineFor.start,
+                end: inlineFor.end,
+                step: inlineFor.step,
+                body: [],
+            };
+            
+            // #=@ まで本体を収集
+            const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
+            blockFor.body = body;
+            
+            // ブロック全体を1つのステートメントとして追加
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [blockFor],
+                sourceText: sourceText,
+            };
+            
+            return { line, endLine };
+        }
+        
+        return null;
+    }
+
+    /**
+     * パースされたステートメントがブロックWHILEループかどうかを判定し、
+     * ブロックWHILEの場合はそれを処理してLineを返します。
+     * ブロックWHILEでない場合はnullを返します。
+     */
+    private tryProcessWhileBlock(
+        parsedStatements: Statement[],
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } | null {
+        // ブロックWHILEループ検出: 1行に1つだけWhileStatementがある場合
+        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'WhileStatement') {
+            const inlineWhile = parsedStatements[0] as any;
+            
+            // WhileBlockStatementに変換
+            const blockWhile: any = {
+                type: 'WhileBlockStatement',
+                line: lineNumber,
+                condition: inlineWhile.condition,
+                body: [],
+            };
+            
+            // #=@ まで本体を収集
+            const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
+            blockWhile.body = body;
+            
+            // ブロック全体を1つのステートメントとして追加
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [blockWhile],
                 sourceText: sourceText,
             };
             
@@ -428,6 +519,63 @@ class WorkerInterpreter {
         }
 
         return -1; // 到達しない
+    }
+
+    /**
+     * 指定された行が #=@ (ループ終端) かどうかを判定します。
+     */
+    private isLoopEndStatement(sourceText: string): boolean {
+        return sourceText.trim() === '#=@';
+    }
+
+    /**
+     * ループブロック構造の本体を収集します。
+     * @=... から #=@ までの間のステートメントを収集します。
+     * ネストされたループも正しく処理します。
+     * 
+     * @param startLine @=... の次の行番号
+     * @returns ループ本体のステートメント配列と終了行番号
+     */
+    private collectLoopBlock(startLine: number): { body: Statement[]; endLine: number } {
+        const body: Statement[] = [];
+        let nestLevel = 0; // ネストレベル
+        let foundEndLoop = false;
+
+        for (let i = startLine; i < this.scriptLines.length; i++) {
+            const sourceText = this.scriptLines[i];
+            if (!sourceText) continue;
+
+            // #=@ を見つけたらネストレベルを確認
+            if (this.isLoopEndStatement(sourceText)) {
+                if (nestLevel === 0) {
+                    // 対応する終端が見つかった
+                    foundEndLoop = true;
+                    return { body, endLine: i };
+                } else {
+                    // ネストされたループの終端
+                    nestLevel--;
+                }
+            }
+
+            // ステートメントをパース
+            const stmtStrings = this.splitLineByWhitespace(sourceText);
+            for (const stmtString of stmtStrings) {
+                const stmt = this.parseStatementString(stmtString, i);
+                if (stmt) {
+                    // ネストされたループの開始を検出
+                    if (stmt.type === 'ForStatement' || stmt.type === 'WhileStatement') {
+                        nestLevel++;
+                    }
+                    body.push(stmt);
+                }
+            }
+        }
+
+        if (!foundEndLoop) {
+            throw new Error(`ループ構造が #=@ で終了していません (開始行: ${startLine})`);
+        }
+
+        return { body, endLine: -1 }; // 到達しない
     }
 
     /**
@@ -1810,6 +1958,76 @@ class WorkerInterpreter {
                         // 条件が偽（0）の場合、elseBodyを実行
                         for (const stmt of (statement as any).elseBody || []) {
                             const result = this.executeStatement(stmt);
+                            if (result.jump || result.halt) {
+                                return result;
+                            }
+                        }
+                    }
+                }
+                break;
+            
+            case 'ForBlockStatement':
+                {
+                    const forStmt = statement as any;
+                    const varName = forStmt.variable.name;
+                    const startValue = this.evaluateExpression(forStmt.start);
+                    const endValue = this.evaluateExpression(forStmt.end);
+                    const stepValue = forStmt.step 
+                        ? this.evaluateExpression(forStmt.step) 
+                        : 1;
+                    
+                    // 型チェック
+                    if (typeof startValue === 'string' || typeof endValue === 'string' || typeof stepValue === 'string') {
+                        throw new Error('FORループのパラメータは数値でなければなりません');
+                    }
+                    
+                    // ステップ値が0の場合はエラー
+                    if (stepValue === 0) {
+                        throw new Error('FORループのステップ値は0にできません');
+                    }
+                    
+                    // ループ変数に開始値を設定
+                    this.variables.set(varName, startValue);
+                    
+                    // ループ実行
+                    let currentValue = startValue;
+                    while (stepValue > 0 ? currentValue <= endValue : currentValue >= endValue) {
+                        // body内の各ステートメントを実行
+                        for (const bodyStmt of forStmt.body) {
+                            const result = this.executeStatement(bodyStmt);
+                            if (result.jump || result.halt) {
+                                return result;
+                            }
+                        }
+                        
+                        // ループ変数を更新
+                        currentValue += stepValue;
+                        this.variables.set(varName, currentValue);
+                    }
+                }
+                break;
+            
+            case 'WhileBlockStatement':
+                {
+                    const whileStmt = statement as any;
+                    
+                    // 条件が真の間ループ
+                    while (true) {
+                        const condition = this.evaluateExpression(whileStmt.condition);
+                        
+                        // 型チェック
+                        if (typeof condition === 'string') {
+                            throw new Error('WHILEループの条件は数値でなければなりません');
+                        }
+                        
+                        // 条件が偽ならループ終了
+                        if (condition === 0) {
+                            break;
+                        }
+                        
+                        // body内の各ステートメントを実行
+                        for (const bodyStmt of whileStmt.body) {
+                            const result = this.executeStatement(bodyStmt);
                             if (result.jump || result.halt) {
                                 return result;
                             }
