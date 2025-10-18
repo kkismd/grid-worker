@@ -146,3 +146,51 @@ WHILE文:   @=(X<100)           ← ループパーサーで処理
 ```
 
 **結論**: パーサー実装の複雑度増加なし、統一パターンの美しさを完全保持可能！
+
+---
+
+## ✅ 実装状況 (2025年10月18日)
+
+### WHILE ループ実装完了
+
+**構文**: `@=(condition) ~ #=@`
+
+#### 実装内容
+1. **AST定義** (`src/ast.ts`)
+   - `WhileStatement` インターフェース追加
+   - `condition: Expression` フィールドで条件式を保持
+
+2. **パーサー** (`src/workerInterpreter.ts`)
+   - `parseAtStatement` で `@=(` パターンを検出
+   - 括弧内の条件式をパース
+   - FOR構文 `@=I,1,100` と明確に区別
+
+3. **実行エンジン** (`src/workerInterpreter.ts`)
+   - `WhileStatement` 実行で条件評価とループ情報push
+   - `NextStatement` (#=@) でWHILE/FOR両対応
+   - ループスタックで `isWhile` フラグと `whileCondition` を保持
+   - `findMatchingNext` でネストレベル管理（FOR/WHILE統一）
+
+4. **テストカバレッジ** (`src/__tests__/workerInterpreter.test.ts`)
+   - 基本WHILEループ ✅
+   - 条件が最初から偽の場合のスキップ ✅
+   - 条件変化（べき乗累積）✅
+   - FOR+WHILEネストループ ✅
+   - 複雑な条件式 (`A<B&A>0`) ✅
+   - ゼロ回イテレーション ✅
+   - WHILE+WHILEネストループ ✅
+
+#### 全テスト結果
+```
+Tests:       186 passed, 186 total
+```
+
+### 統一構造の実現
+
+| 構文 | 開始 | 終了 | 状態 |
+|------|------|------|------|
+| GOSUB | `!=^LABEL` | `#=!` | ✅ 実装済 |
+| FOR | `@=I,1,100` | `#=@` | ✅ 実装済 |
+| WHILE | `@=(condition)` | `#=@` | ✅ 実装済 |
+
+**設計目標達成**: すべての制御構造が `#` と `@` 記号による統一パターンで実装完了！

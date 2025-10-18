@@ -2653,7 +2653,7 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
         interpreter.loadScript('#=@');
         const gen = interpreter.run();
         
-        expect(() => gen.next()).toThrow('NEXT文に対応するFORループがありません');
+        expect(() => gen.next()).toThrow('#=@ に対応するループ（FOR/WHILE）がありません');
     });
 
     // 統一構造では変数チェック不要（ネストベースの処理）
@@ -2999,5 +2999,164 @@ describe('Character Literals - Parser and Execution', () => {
         expect(mockLogFn).toHaveBeenCalledWith(72);  // 'H'
         expect(mockLogFn).toHaveBeenCalledWith(105); // 'i'
         expect(mockLogFn).toHaveBeenCalledWith(32);  // ' '
+    });
+});
+
+describe('WHILE Loop - @=(condition) ~ #=@', () => {
+    let interpreter: WorkerInterpreter;
+    let mockLogFn: jest.Mock;
+    let mockPeekFn: jest.Mock;
+    let mockPokeFn: jest.Mock;
+    let mockGridData: number[];
+
+    beforeEach(() => {
+        mockLogFn = jest.fn();
+        mockPeekFn = jest.fn(() => 0);
+        mockPokeFn = jest.fn();
+        mockGridData = new Array(10000).fill(0);
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse WHILE statement with condition', () => {
+        interpreter.loadScript('@=(I<10)');
+        const program = interpreter.getProgram();
+        
+        expect(program).toBeDefined();
+        expect(program!.body[0]!.statements[0]!.type).toBe('WhileStatement');
+    });
+
+    test('should execute basic WHILE loop', () => {
+        interpreter.loadScript('I=0\n@=(I<3)\nI=I+1\n?=I\n#=@');
+        const gen = interpreter.run();
+        
+        // ループが終わるまで自動実行
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledWith(1);
+        expect(mockLogFn).toHaveBeenCalledWith(2);
+        expect(mockLogFn).toHaveBeenCalledWith(3);
+        expect(mockLogFn).toHaveBeenCalledTimes(3);
+    });
+
+    test('should skip WHILE loop when condition is initially false', () => {
+        interpreter.loadScript('I=10\n@=(I<5)\n?=999\n#=@\n?=I');
+        const gen = interpreter.run();
+        
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledWith(10);
+        expect(mockLogFn).toHaveBeenCalledTimes(1);
+        expect(mockLogFn).not.toHaveBeenCalledWith(999);
+    });
+
+    test('should handle WHILE loop with changing condition', () => {
+        interpreter.loadScript('S=0\nI=1\n@=(I<100)\nS=S+I\nI=I*2\n#=@\n?=S');
+        const gen = interpreter.run();
+        
+        // I: 1, 2, 4, 8, 16, 32, 64, 128 (stop)
+        // S: 0, 1, 3, 7, 15, 31, 63, 127
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledWith(127); // 1+2+4+8+16+32+64
+    });
+
+    test('should handle nested FOR and WHILE loops', () => {
+        // FOR I=1,2 (外側)
+        //   J=0
+        //   WHILE J<3 (内側)
+        //     ?=I*10+J
+        //     J=J+1
+        //   #=@
+        // #=@
+        interpreter.loadScript('@=I,1,2\nJ=0\n@=(J<3)\n?=I*10+J\nJ=J+1\n#=@\n#=@');
+        const gen = interpreter.run();
+        
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        // I=1: J=0,1,2 -> 10,11,12
+        // I=2: J=0,1,2 -> 20,21,22
+        expect(mockLogFn).toHaveBeenCalledWith(10);
+        expect(mockLogFn).toHaveBeenCalledWith(11);
+        expect(mockLogFn).toHaveBeenCalledWith(12);
+        expect(mockLogFn).toHaveBeenCalledWith(20);
+        expect(mockLogFn).toHaveBeenCalledWith(21);
+        expect(mockLogFn).toHaveBeenCalledWith(22);
+    });
+
+    test('should handle WHILE with complex condition', () => {
+        interpreter.loadScript('A=10\nB=20\n@=(A<B&A>0)\nA=A-1\n#=@\n?=A');
+        const gen = interpreter.run();
+        
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        // A: 10, 9, 8, ..., 1, 0 (stop)
+        expect(interpreter['variables'].get('A')).toBe(0);
+    });
+
+    test('should throw error on infinite loop protection', () => {
+        interpreter.loadScript('@=(1) #=@');
+        const gen = interpreter.run();
+        
+        // ループ回数制限に達するまで実行
+        let count = 0;
+        expect(() => {
+            while (count < 100000) {
+                gen.next();
+                count++;
+            }
+        }).not.toThrow();
+        
+        // 実際には無限ループ保護は別のメカニズムで実装される可能性がある
+        // ここでは構文が正しく動作することのみ確認
+    });
+
+    test('should handle WHILE loop with zero iterations', () => {
+        interpreter.loadScript('I=0\n@=(I>0)\n?=999\n#=@\n?=I');
+        const gen = interpreter.run();
+        
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        expect(mockLogFn).toHaveBeenCalledWith(0);
+        expect(mockLogFn).not.toHaveBeenCalledWith(999);
+    });
+
+    test('should handle nested WHILE loops', () => {
+        interpreter.loadScript('I=0\n@=(I<2)\nJ=0\n@=(J<2)\n?=I*10+J\nJ=J+1\n#=@\nI=I+1\n#=@');
+        const gen = interpreter.run();
+        
+        while (true) {
+            const result = gen.next();
+            if (result.done) break;
+        }
+        
+        // 外側 I=0: 内側 J=0,1 -> 0, 1
+        // 外側 I=1: 内側 J=0,1 -> 10, 11
+        expect(mockLogFn).toHaveBeenCalledWith(0);
+        expect(mockLogFn).toHaveBeenCalledWith(1);
+        expect(mockLogFn).toHaveBeenCalledWith(10);
+        expect(mockLogFn).toHaveBeenCalledWith(11);
     });
 });

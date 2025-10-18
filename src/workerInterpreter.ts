@@ -1,7 +1,7 @@
 // src/workerInterpreter.ts
 
 import { Lexer, TokenType, type Token } from './lexer.js';
-import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast.js';
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。
@@ -17,14 +17,16 @@ interface InterpreterState {
 }
 
 /**
- * FORループの状態を保持するインターフェース。
+ * ループ（FOR/WHILE）の状態を保持するインターフェース。
  */
 interface LoopInfo {
-    variable: string; // ループ変数名 (例: "I")
-    start: number;    // 開始値
-    end: number;      // 終了値
-    step: number;     // ステップ値
-    forLineIndex: number; // FORステートメントの行番号（ループの先頭に戻るため）
+    variable: string; // ループ変数名 (例: "I") or WHILE識別子
+    start: number;    // 開始値 (FORのみ)
+    end: number;      // 終了値 (FORのみ)
+    step: number;     // ステップ値 (FORのみ)
+    forLineIndex: number; // ループ開始ステートメントの行番号（ループの先頭に戻るため）
+    isWhile?: boolean; // WHILEループか判定フラグ
+    whileCondition?: Expression; // WHILE条件式（isWhile=trueの場合のみ）
 }
 
 /**
@@ -455,7 +457,30 @@ class WorkerInterpreter {
 
         const thirdToken = tokens[startIndex + 2];
         
-        // @=I (NEXTステートメント)
+        // @=(condition) - WHILEループ
+        if (thirdToken && thirdToken.type === TokenType.LEFT_PAREN) {
+            // 括弧内の式を解析
+            const exprTokens = tokens.slice(startIndex + 3);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            // 終了括弧を確認
+            const rparenToken = tokens[startIndex + 3 + exprResult.consumed];
+            if (!rparenToken || rparenToken.type !== TokenType.RIGHT_PAREN) {
+                throw new Error(`構文エラー: WHILEループの条件式を閉じる ) が必要です`);
+            }
+            
+            return {
+                statement: {
+                    type: 'WhileStatement',
+                    line: token.line,
+                    column: token.column,
+                    condition: exprResult.expr,
+                },
+                nextIndex: startIndex + 4 + exprResult.consumed
+            };
+        }
+        
+        // @=I (NEXTステートメントまたはFORループ)
         if (thirdToken && thirdToken.type === TokenType.IDENTIFIER) {
             const fourthToken = tokens[startIndex + 3];
             
@@ -1425,55 +1450,136 @@ class WorkerInterpreter {
                     });
                     
                     if (!shouldExecute) {
-                        // ループをスキップ: NEXTを検索してその次の行にジャンプ
+                        // ループをスキップ: #=@ を検索してその次にジャンプ
                         const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
                         if (nextLineIndex !== -1) {
-                            this.currentLineIndex = nextLineIndex + 1;
-                            // NEXTはスキップするので、ループ情報をpop
+                            // ループ情報をpop（スキップするので）
                             this.loopStack.pop();
-                            return { jump: true, halt: false, skipRemaining: false };
+                            
+                            if (nextLineIndex === this.currentLineIndex) {
+                                // #=@ が同じ行にある場合、この行の残りをスキップ
+                                return { jump: false, halt: false, skipRemaining: true };
+                            } else {
+                                // #=@ が別の行にある場合、その行の次にジャンプ
+                                this.currentLineIndex = nextLineIndex + 1;
+                                return { jump: true, halt: false, skipRemaining: false };
+                            }
                         }
-                        // NEXTが見つからない場合は続行（NEXTでpopされる）
+                        // #=@ が見つからない場合は続行（実行時エラーになる可能性）
+                    }
+                }
+                break;
+            
+            case 'WhileStatement':
+                {
+                    // WHILE文: @=(condition) 〜 #=@
+                    // 条件を評価
+                    const condition = this.evaluateExpression(statement.condition);
+                    
+                    // 型チェック
+                    if (typeof condition === 'string') {
+                        throw new Error('WHILEループの条件は数値でなければなりません');
+                    }
+                    
+                    // ネストの最大深度チェック
+                    if (this.loopStack.length >= 256) {
+                        throw new Error('WHILEループのネストが最大深度256を超えました');
+                    }
+                    
+                    // 条件が真（非ゼロ）の場合、ループに入る
+                    if (condition !== 0) {
+                        // ループ情報をスタックにpush
+                        // WHILEループには変数がないため、内部識別用に特殊な名前を使用
+                        this.loopStack.push({
+                            variable: `__WHILE_${this.currentLineIndex}__`,
+                            start: 0,
+                            end: 0,
+                            step: 1,
+                            forLineIndex: this.currentLineIndex,
+                            isWhile: true, // WHILE判別フラグ
+                            whileCondition: statement.condition, // 条件式を保存
+                        });
+                    } else {
+                        // 条件が偽の場合、ループをスキップして #=@ の次にジャンプ
+                        const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
+                        if (nextLineIndex !== -1) {
+                            if (nextLineIndex === this.currentLineIndex) {
+                                // #=@ が同じ行にある場合、この行の残りをスキップ
+                                return { jump: false, halt: false, skipRemaining: true };
+                            } else {
+                                // #=@ が別の行にある場合、その行の次にジャンプ
+                                this.currentLineIndex = nextLineIndex + 1;
+                                return { jump: true, halt: false, skipRemaining: false };
+                            }
+                        }
+                        // 対応する #=@ が見つからない場合はエラー
+                        throw new Error('WHILEループに対応する #=@ が見つかりません');
                     }
                 }
                 break;
             
             case 'NextStatement':
                 {
-                    // NEXT文: #=@ (統一構造 - 変数指定なし)
+                    // NEXT文: #=@ (統一構造 - FOR/WHILEループの終端)
                     
                     // ループスタックが空の場合はエラー
                     if (this.loopStack.length === 0) {
-                        throw new Error('NEXT文に対応するFORループがありません');
+                        throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
                     }
                     
                     // 最新のループ情報を取得
                     const currentLoop = this.loopStack[this.loopStack.length - 1];
                     if (!currentLoop) {
-                        throw new Error('NEXT文に対応するFORループがありません');
+                        throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
                     }
                     
-                    // 統一構造では変数チェックは不要（最新のループを自動処理）
-                    const varName = currentLoop.variable;
-                    
-                    // ループ変数をインクリメント
-                    const currentValue = this.variables.get(varName) || 0;
-                    const newValue = currentValue + currentLoop.step;
-                    this.variables.set(varName, newValue);
-                    
-                    // 次の値で条件チェック
-                    const shouldContinue = currentLoop.step > 0 
-                        ? newValue <= currentLoop.end 
-                        : newValue >= currentLoop.end;
-                    
-                    if (shouldContinue) {
-                        // ループ継続: FORステートメントの次の行にジャンプ
-                        this.currentLineIndex = currentLoop.forLineIndex + 1;
-                        return { jump: true, halt: false, skipRemaining: false };
+                    // WHILEループの場合
+                    if (currentLoop.isWhile) {
+                        if (!currentLoop.whileCondition) {
+                            throw new Error('WHILEループの条件式が見つかりません');
+                        }
+                        
+                        // 条件を再評価
+                        const condition = this.evaluateExpression(currentLoop.whileCondition);
+                        
+                        // 型チェック
+                        if (typeof condition === 'string') {
+                            throw new Error('WHILEループの条件は数値でなければなりません');
+                        }
+                        
+                        // 条件が真（非ゼロ）ならループ継続
+                        if (condition !== 0) {
+                            // WHILEステートメントの次の行にジャンプ
+                            this.currentLineIndex = currentLoop.forLineIndex + 1;
+                            return { jump: true, halt: false, skipRemaining: false };
+                        } else {
+                            // ループ終了: ループ情報をスタックからpop
+                            this.loopStack.pop();
+                            // 次のステートメントに進む（jump: false）
+                        }
                     } else {
-                        // ループ終了: ループ情報をスタックからpop
-                        this.loopStack.pop();
-                        // 次のステートメントに進む（jump: false）
+                        // FORループの場合（従来のロジック）
+                        const varName = currentLoop.variable;
+                        
+                        // ループ変数をインクリメント
+                        const currentValue = this.variables.get(varName) || 0;
+                        const newValue = currentValue + currentLoop.step;
+                        this.variables.set(varName, newValue);
+                        
+                        // 次の値で条件チェック
+                        const shouldContinue = currentLoop.step > 0 
+                            ? newValue <= currentLoop.end 
+                            : newValue >= currentLoop.end;
+                        
+                        if (shouldContinue) {
+                            // ループ継続: FORステートメントの次の行にジャンプ
+                            this.currentLineIndex = currentLoop.forLineIndex + 1;
+                            return { jump: true, halt: false, skipRemaining: false };
+                        } else {
+                            // ループ終了: ループ情報をスタックからpop
+                            this.loopStack.pop();
+                            // 次のステートメントに進む（jump: false）
+                        }
                     }
                 }
                 break;
@@ -1523,29 +1629,39 @@ class WorkerInterpreter {
     }
 
     /**
-     * 次のNEXT文 (#=@) の行番号を検索します（統一構造）。
+     * 次の #=@ 文の行番号を検索します（統一構造、FOR/WHILE両対応）。
+     * 同じ行内のステートメントも含めて検索します。
      * @param startLine 検索開始行番号
-     * @returns NEXT文の行番号。見つからない場合は-1
+     * @returns #=@ 文の行番号。見つからない場合は-1
      */
     private findMatchingNext(startLine: number): number {
         if (!this.program) return -1;
         
-        let nestLevel = 1; // 現在のFORのネストレベル
+        let nestLevel = 0; // ネストレベル（同じ行の最初のループステートメントで1になる）
+        let foundFirst = false; // 最初のループステートメント（呼び出し元）を見つけたか
         
-        for (let i = startLine + 1; i < this.program.body.length; i++) {
+        // 同じ行から検索開始
+        for (let i = startLine; i < this.program.body.length; i++) {
             const line = this.program.body[i];
             if (!line) continue;
             
             for (const statement of line.statements) {
-                // FORが見つかったらネストレベルを上げる
-                if (statement.type === 'ForStatement') {
-                    nestLevel++;
+                // FORまたはWHILEが見つかった
+                if (statement.type === 'ForStatement' || statement.type === 'WhileStatement') {
+                    if (!foundFirst && i === startLine) {
+                        // 呼び出し元のループステートメント（最初の1つだけ）
+                        foundFirst = true;
+                        nestLevel = 1;
+                    } else {
+                        // ネストされたループ
+                        nestLevel++;
+                    }
                 }
-                // NEXTが見つかった（統一構造では変数チェック不要）
+                // #=@ が見つかった
                 if (statement.type === 'NextStatement') {
                     nestLevel--;
                     if (nestLevel === 0) {
-                        // 対応するNEXTが見つかった
+                        // 対応する #=@ が見つかった
                         return i;
                     }
                 }
