@@ -254,17 +254,8 @@ class WorkerInterpreter {
             };
         }
 
-        // RETURNステートメント (])
-        if (token.type === TokenType.RIGHT_BRACKET) {
-            return {
-                statement: {
-                    type: 'ReturnStatement',
-                    line: token.line,
-                    column: token.column,
-                },
-                nextIndex: startIndex + 1
-            };
-        }
+        // 旧 RETURNステートメント (]) - 削除予定
+        // 新仕様では #=! を使用
 
         const secondToken = tokens[startIndex + 1];
         if (!secondToken || secondToken.type !== TokenType.EQUALS) {
@@ -292,6 +283,18 @@ class WorkerInterpreter {
                         nextIndex: startIndex + 4
                     };
                 }
+            }
+
+            // #=! パターン（新 RETURN文）
+            if (thirdToken.type === TokenType.BANG) {
+                return {
+                    statement: {
+                        type: 'ReturnStatement',
+                        line: token.line,
+                        column: token.column,
+                    },
+                    nextIndex: startIndex + 3
+                };
             }
 
             // #=^LABEL パターン（通常のGOTO）
@@ -944,14 +947,8 @@ class WorkerInterpreter {
             };
         }
 
-        // RETURNステートメント (])
-        if (firstToken.type === TokenType.RIGHT_BRACKET && tokens.length === 1) {
-            return {
-                type: 'ReturnStatement',
-                line: firstToken.line,
-                column: firstToken.column,
-            };
-        }
+        // 旧 RETURNステートメント (]) - 削除予定
+        // 新仕様では #=! を使用
 
         // COMMENTは実行時に無視（ASTに含めない）
         if (firstToken.type === TokenType.COMMENT) {
@@ -982,6 +979,15 @@ class WorkerInterpreter {
                         column: firstToken.column,
                     };
                 }
+            }
+
+            // #=! パターン（新 RETURN文）
+            if (thirdToken.type === TokenType.BANG) {
+                return {
+                    type: 'ReturnStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                };
             }
 
             // #=^LABEL パターン（通常のGOTO）

@@ -852,9 +852,11 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
         expect(gosubStmt.target).toBe('MYSUB'); // ラベル名（^なし）
     });
 
-    test('should parse RETURN statement (])', () => {
+    test('should parse RETURN statement (#=!)', () => {
         const tokens: Token[] = [
-            { type: TokenType.RIGHT_BRACKET, value: ']', line: 0, column: 0 },
+            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.BANG, value: '!', line: 0, column: 2 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -2324,7 +2326,7 @@ describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
     });
 
     test('should execute GOSUB and RETURN', () => {
-        interpreter.loadScript('A=1 !=^SUB\nA=2\n^SUB\nA=A*10 ]');
+        interpreter.loadScript('A=1 !=^SUB\nA=2\n^SUB\nA=A*10 #=!');
         const gen = interpreter.run();
         gen.next(); // A=1
         gen.next(); // GOSUB ^SUB
@@ -2336,7 +2338,7 @@ describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
     });
 
     test('should handle nested GOSUB calls', () => {
-        interpreter.loadScript('A=1 !=^SUB1\n^SUB1\nA=A+1 !=^SUB2\n]\n^SUB2\nA=A*10 ]');
+        interpreter.loadScript('A=1 !=^SUB1\n^SUB1\nA=A+1 !=^SUB2\n#=!\n^SUB2\nA=A*10 #=!');
         const gen = interpreter.run();
         gen.next(); // A=1
         gen.next(); // GOSUB ^SUB1
@@ -2370,7 +2372,7 @@ describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
     });
 
     test('should handle GOSUB with output', () => {
-        interpreter.loadScript('!=^PRINT\n^PRINT\n?="Hello" ]');
+        interpreter.loadScript('!=^PRINT\n^PRINT\n?="Hello" #=!');
         const gen = interpreter.run();
         gen.next(); // GOSUB ^PRINT
         gen.next(); // Output
@@ -2380,7 +2382,7 @@ describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
     });
 
     test('should throw error on RETURN without GOSUB', () => {
-        interpreter.loadScript(']');
+        interpreter.loadScript('#=!');
         const gen = interpreter.run();
         
         expect(() => gen.next()).toThrow('RETURN文がありますがGOSUBの呼び出しがありません');
@@ -2409,7 +2411,7 @@ describe('Phase 3.5: GOTO/GOSUB/RETURN Execution', () => {
     });
 
     test('should handle GOSUB in a loop', () => {
-        interpreter.loadScript('^LOOP\nA=A+1 !=^ADD\n;=A<2 #=^LOOP\n^ADD\nB=B+1 ]');
+        interpreter.loadScript('^LOOP\nA=A+1 !=^ADD\n;=A<2 #=^LOOP\n^ADD\nB=B+1 #=!');
         const gen = interpreter.run();
         
         // Iteration 1
