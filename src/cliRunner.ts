@@ -190,6 +190,14 @@ export class CLIRunner {
      */
     private log(...args: any[]): void {
         const message = args.map(arg => String(arg)).join(' ');
+        
+        // 改行文字の場合は実際に改行
+        if (message === '\n' || message === '\\n') {
+            this.transcript.push('\n');
+            process.stdout.write('\n');
+            return;
+        }
+        
         this.transcript.push(message);
         // 改行しないようにprocess.stdout.write()を使用
         process.stdout.write(message);

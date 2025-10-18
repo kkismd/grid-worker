@@ -26,13 +26,14 @@ export class GridRenderer {
      * コンパクト表示（最初の10x10セルを1:1表示）
      * 座標系: X=列（横方向）、Y=行（縦方向）
      * ヘッダー行はX座標、左側の数字はY座標
+     * 縦横比改善のため文字間に空白を挿入
      */
     private renderCompact(gridData: number[]): string {
         const lines: string[] = [];
 
-        // ヘッダー行（X座標 0-9）
-        lines.push('   0123456789');
-        lines.push('   ----------');
+        // ヘッダー行（X座標 0-9）文字間に空白挿入
+        lines.push('   0 1 2 3 4 5 6 7 8 9');
+        lines.push('   -------------------');
 
         for (let y = 0; y < 10; y++) {  // Y座標（行）
             let line = `${y} |`;         // 左側にY座標を表示
@@ -40,6 +41,9 @@ export class GridRenderer {
                 const index = y * this.width + x;  // 行優先のインデックス
                 const value = (index < gridData.length) ? gridData[index] || 0 : 0;
                 line += this.valueToChar(value);
+                if (x < 9) {  // 最後の文字以外は空白を追加
+                    line += ' ';
+                }
             }
             lines.push(line);
         }

@@ -86,7 +86,7 @@ function drawGrid() {
 function clearGrid() {
     gridData.fill(0);
     drawGrid();
-    log('Grid cleared.');
+    logSystem('Grid cleared.');
 }
 
 // --- Scripting API ---
@@ -126,10 +126,10 @@ function poke(x: number, y: number, value: number): void {
 }
 
 /**
- * Logs messages to the on-screen transcript area.
+ * Logs system messages to the on-screen transcript area (with automatic newlines).
  * @param args The values to log.
  */
-function log(...args: any[]): void {
+function logSystem(...args: any[]): void {
     const message = args.map(arg => {
         if (typeof arg === 'string') return arg;
         if (typeof arg === 'number') return String(arg);
@@ -139,7 +139,41 @@ function log(...args: any[]): void {
     const logEntry = document.createElement('div');
     logEntry.textContent = message;
     transcriptArea.appendChild(logEntry);
-    transcriptArea.scrollTop = transcriptArea.scrollTop; // Auto-scroll
+    transcriptArea.scrollTop = transcriptArea.scrollHeight; // Auto-scroll
+}
+
+/**
+ * WorkerScript出力用関数（改行判定あり）
+ * @param workerId ワーカーID
+ * @param args 出力する値
+ */
+function logWorkerOutput(workerId: number, ...args: any[]): void {
+    const message = args.map(arg => {
+        if (typeof arg === 'string') return arg;
+        if (typeof arg === 'number') return String(arg);
+        return JSON.stringify(arg);
+    }).join(' ');
+    
+    // 改行文字の場合は改行処理
+    if (message === '\n' || message === '\\n') {
+        logWorkerNewline();
+        return;
+    }
+    
+    const logEntry = document.createElement('span');
+    logEntry.textContent = `[W${workerId}] ${message}`;
+    logEntry.style.color = '#0066cc';
+    transcriptArea.appendChild(logEntry);
+    transcriptArea.scrollTop = transcriptArea.scrollHeight; // Auto-scroll
+}
+
+/**
+ * WorkerScript改行出力用関数
+ */
+function logWorkerNewline(): void {
+    const logEntry = document.createElement('br');
+    transcriptArea.appendChild(logEntry);
+    transcriptArea.scrollTop = transcriptArea.scrollHeight; // Auto-scroll
 }
 
 /**
@@ -156,24 +190,25 @@ function putOutput(workerId: number, value: number): void {
     // ASCII文字として出力（印刷可能文字の場合）
     if (clampedValue >= 32 && clampedValue <= 126) {
         outputChar = String.fromCharCode(clampedValue);
-    } else if (clampedValue === 10) {
-        // 改行文字
-        outputChar = '\n';
-    } else if (clampedValue === 13) {
-        // キャリッジリターン
-        outputChar = '\r';
+        // 通常文字はそのまま出力
+        const logEntry = document.createElement('span');
+        logEntry.textContent = `[W${workerId}:$] ${outputChar}`;
+        logEntry.style.fontFamily = 'Courier New, monospace';
+        logEntry.style.color = '#006600';
+        transcriptArea.appendChild(logEntry);
+    } else if (clampedValue === 10 || clampedValue === 13) {
+        // 改行文字（LF=10, CR=13）の場合は実際に改行
+        logWorkerNewline();
     } else {
         // その他の制御文字は16進数で表示
         outputChar = `[0x${clampedValue.toString(16).padStart(2, '0')}]`;
+        const logEntry = document.createElement('span');
+        logEntry.textContent = `[W${workerId}:$] ${outputChar}`;
+        logEntry.style.fontFamily = 'Courier New, monospace';
+        logEntry.style.color = '#006600';
+        transcriptArea.appendChild(logEntry);
     }
     
-    // トランスクリプトエリアに出力（ワーカーIDと共に）
-    const logEntry = document.createElement('span');
-    logEntry.textContent = `[W${workerId}:$] ${outputChar}`;
-    logEntry.style.fontFamily = 'Courier New, monospace';
-    logEntry.style.color = '#006600';
-    
-    transcriptArea.appendChild(logEntry);
     transcriptArea.scrollTop = transcriptArea.scrollHeight; // Auto-scroll
 }
 
@@ -220,7 +255,7 @@ function executeGlobalStep() {
                 if (result.done) {
                     worker.status = 'stopped';
                     updateWorkerStatus(worker.id);
-                    log(`Worker ${worker.id} completed.`);
+                    logSystem(`Worker ${worker.id} completed.`);
                     break;
                 }
             }
@@ -230,9 +265,9 @@ function executeGlobalStep() {
             worker.status = 'stopped';
             updateWorkerStatus(worker.id);
             if (error instanceof Error) {
-                log(`Worker ${worker.id} error: ${error.message}`);
+                logSystem(`Worker ${worker.id} error: ${error.message}`);
             } else {
-                log(`Worker ${worker.id} encountered an unknown error.`);
+                logSystem(`Worker ${worker.id} encountered an unknown error.`);
             }
         }
     });
@@ -274,7 +309,7 @@ function startWorker(workerId: number) {
     
     const script = textarea.value.trim();
     if (!script) {
-        log(`Worker ${workerId}: No script to execute.`);
+        logSystem(`Worker ${workerId}: No script to execute.`);
         return;
     }
     
@@ -284,7 +319,7 @@ function startWorker(workerId: number) {
             gridData: gridData,
             peekFn: peek,
             pokeFn: (x, y, value) => poke(x, y, value),
-            logFn: (...args) => log(`[Worker ${workerId}]`, ...args),
+            logFn: (...args) => logWorkerOutput(workerId, ...args),
             getFn: getKeyInput,
             putFn: (value: number) => putOutput(workerId, value),
         });
@@ -297,12 +332,12 @@ function startWorker(workerId: number) {
         updateWorkerStatus(workerId);
         startGlobalExecution();
         
-        log(`Worker ${workerId} started.`);
+        logSystem(`Worker ${workerId} started.`);
     } catch (error) {
         worker.status = 'stopped';
         updateWorkerStatus(workerId);
         if (error instanceof Error) {
-            log(`Worker ${workerId} error: ${error.message}`);
+            logSystem(`Worker ${workerId} error: ${error.message}`);
         }
     }
 }
@@ -316,7 +351,7 @@ function pauseWorker(workerId: number) {
     
     worker.status = 'paused';
     updateWorkerStatus(workerId);
-    log(`Worker ${workerId} paused.`);
+    logSystem(`Worker ${workerId} paused.`);
 }
 
 /**
@@ -329,7 +364,7 @@ function resumeWorker(workerId: number) {
     worker.status = 'running';
     updateWorkerStatus(workerId);
     startGlobalExecution();
-    log(`Worker ${workerId} resumed.`);
+    logSystem(`Worker ${workerId} resumed.`);
 }
 
 /**
@@ -343,7 +378,7 @@ function stopWorker(workerId: number) {
     worker.generator = null;
     worker.interpreter = null;
     updateWorkerStatus(workerId);
-    log(`Worker ${workerId} stopped.`);
+    logSystem(`Worker ${workerId} stopped.`);
 }
 
 /**
@@ -358,7 +393,7 @@ function removeWorker(workerId: number) {
         card.remove();
     }
     
-    log(`Worker ${workerId} removed.`);
+    logSystem(`Worker ${workerId} removed.`);
 }
 
 /**
@@ -374,9 +409,9 @@ function startAllWorkers() {
     });
     
     if (startedCount > 0) {
-        log(`Started ${startedCount} worker(s).`);
+        logSystem(`Started ${startedCount} worker(s).`);
     } else {
-        log('No workers to start.');
+        logSystem('No workers to start.');
     }
 }
 
@@ -422,7 +457,7 @@ I=0,99
     `;
     
     workersContainer.appendChild(card);
-    log(`Worker ${workerId} added.`);
+    logSystem(`Worker ${workerId} added.`);
 }
 
 /**
@@ -432,14 +467,14 @@ function cloneFirstWorker() {
     // Get worker 1
     const firstWorker = workers.get(1);
     if (!firstWorker) {
-        log('Worker 1 が存在しないため、クローンできません。');
+        logSystem('Worker 1 が存在しないため、クローンできません。');
         return;
     }
     
     // Get worker 1's script
     const firstScript = document.getElementById('script-1') as HTMLTextAreaElement;
     if (!firstScript) {
-        log('Worker 1 のスクリプトが見つかりません。');
+        logSystem('Worker 1 のスクリプトが見つかりません。');
         return;
     }
     
@@ -477,7 +512,7 @@ function cloneFirstWorker() {
     `;
     
     workersContainer.appendChild(card);
-    log(`Worker ${workerId} created (Worker 1 からクローン).`);
+    logSystem(`Worker ${workerId} created (Worker 1 からクローン).`);
 }
 
 // --- Event Handlers ---
@@ -680,6 +715,6 @@ if (defaultPreset) {
 // Initialize keyboard status
 updateKeyboardStatus();
 
-log('Multi-Worker System initialized.');
-log('Click "Add New Worker" to create workers.');
-log('');
+logSystem('Multi-Worker System initialized.');
+logSystem('Click "Add New Worker" to create workers.');
+logSystem('');

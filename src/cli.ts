@@ -135,6 +135,12 @@ async function main() {
     }
 }
 
-if (require.main === module) {
+// ES Module環境でのメイン実行判定
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const isMainModule = process.argv[1] && (process.argv[1] === __filename || path.resolve(process.argv[1]) === __filename);
+
+if (isMainModule) {
     main().catch(console.error);
 }
