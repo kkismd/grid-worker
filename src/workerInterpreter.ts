@@ -244,51 +244,19 @@ class WorkerInterpreter {
             const lineTokens = this.tokens[i];
             if (!lineTokens) continue;
 
-            // コメント行、空行、ラベル定義行はステートメントなしの行として扱う
-            if (lineTokens.length === 0 || 
-                (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.COMMENT)) {
-                const line: Line = {
-                    lineNumber: i,
-                    statements: [],
-                };
-                const sourceText = this.scriptLines[i];
-                if (sourceText !== undefined) {
-                    line.sourceText = sourceText;
-                }
-                lines.push(line);
+            // コメント行、空行の処理
+            const emptyLine = this.tryProcessEmptyOrCommentLine(i, lineTokens);
+            if (emptyLine) {
+                lines.push(emptyLine);
                 continue;
             }
 
             // 通常の行をパース
             try {
-                // 新しいアプローチ: 行を空白で分割してから各ステートメントをパース
-                const sourceText = this.scriptLines[i];
-                if (sourceText) {
-                    const stmtStrings = this.splitLineByWhitespace(sourceText);
-                    const parsedStatements: Statement[] = [];
-                    
-                    for (const stmtString of stmtStrings) {
-                        const stmt = this.parseStatementString(stmtString, i);
-                        if (stmt) {
-                            parsedStatements.push(stmt);
-                        }
-                    }
-                    
-                    // ブロック構造を試行
-                    const ifBlock = this.tryProcessIfBlock(parsedStatements, sourceText, i);
-                    if (ifBlock) {
-                        lines.push(ifBlock.line);
-                        i = ifBlock.endLine;
-                        continue;
-                    }
-                    
-                    // ブロック構造でなければ通常の行として追加
-                    const line: Line = {
-                        lineNumber: i,
-                        statements: parsedStatements,
-                        sourceText: sourceText,
-                    };
-                    lines.push(line);
+                const result = this.processNormalLine(i);
+                if (result) {
+                    lines.push(result.line);
+                    i = result.endLine;
                 }
             } catch (error: any) {
                 throw new Error(`構文解析エラー (行: ${i + 1}): ${error.message}`);
@@ -300,6 +268,60 @@ class WorkerInterpreter {
             line: 0,
             body: lines,
         };
+    }
+
+    /**
+     * コメント行または空行の処理を試行します。
+     */
+    private tryProcessEmptyOrCommentLine(lineNumber: number, lineTokens: Token[]): Line | null {
+        // コメント行、空行、ラベル定義行はステートメントなしの行として扱う
+        if (lineTokens.length === 0 || 
+            (lineTokens.length === 1 && lineTokens[0]?.type === TokenType.COMMENT)) {
+            const line: Line = {
+                lineNumber: lineNumber,
+                statements: [],
+            };
+            const sourceText = this.scriptLines[lineNumber];
+            if (sourceText !== undefined) {
+                line.sourceText = sourceText;
+            }
+            return line;
+        }
+        return null;
+    }
+
+    /**
+     * 通常の行（ステートメントを含む行）を処理します。
+     * ブロック構造の検出も含みます。
+     */
+    private processNormalLine(lineNumber: number): { line: Line; endLine: number } | null {
+        const sourceText = this.scriptLines[lineNumber];
+        if (!sourceText) return null;
+
+        // 行を空白で分割してから各ステートメントをパース
+        const stmtStrings = this.splitLineByWhitespace(sourceText);
+        const parsedStatements: Statement[] = [];
+        
+        for (const stmtString of stmtStrings) {
+            const stmt = this.parseStatementString(stmtString, lineNumber);
+            if (stmt) {
+                parsedStatements.push(stmt);
+            }
+        }
+        
+        // ブロック構造を試行
+        const ifBlock = this.tryProcessIfBlock(parsedStatements, sourceText, lineNumber);
+        if (ifBlock) {
+            return ifBlock;
+        }
+        
+        // ブロック構造でなければ通常の行として返す
+        const line: Line = {
+            lineNumber: lineNumber,
+            statements: parsedStatements,
+            sourceText: sourceText,
+        };
+        return { line, endLine: lineNumber };
     }
 
     /**
