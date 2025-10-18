@@ -707,6 +707,68 @@ class WorkerInterpreter {
     }
 
     /**
+     * # で始まるステートメント (#=...) を解析します
+     * GOTO (#=^LABEL), HALT (#=-1), RETURN (#=!), NEXT (#=@) を処理
+     */
+    private parseHashStatement(tokens: Token[], startIndex: number): Statement {
+        const firstToken = tokens[startIndex]!;
+        const secondToken = tokens[startIndex + 1];
+        
+        if (!secondToken || secondToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: # の後に = が必要です`);
+        }
+
+        const thirdToken = tokens[startIndex + 2];
+        
+        if (!thirdToken) {
+            throw new Error(`GOTO/HALTステートメントが不完全です`);
+        }
+
+        // #=-1 の場合はHALTステートメント
+        if (thirdToken.type === TokenType.MINUS) {
+            const fourthToken = tokens[startIndex + 3];
+            if (fourthToken && fourthToken.type === TokenType.NUMBER && fourthToken.value === '1') {
+                return {
+                    type: 'HaltStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                };
+            }
+        }
+
+        // #=! パターン（新 RETURN文）
+        if (thirdToken.type === TokenType.BANG) {
+            return {
+                type: 'ReturnStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+            };
+        }
+
+        // #=@ パターン（NEXT文）- 統一構造
+        if (thirdToken.type === TokenType.AT) {
+            return {
+                type: 'NextStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+            };
+        }
+
+        // #=^LABEL パターン（通常のGOTO）
+        if (thirdToken.type === TokenType.LABEL_DEFINITION) {
+            const labelName = thirdToken.value.substring(1); // ^ を除去
+            return {
+                type: 'GotoStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                target: labelName,
+            };
+        }
+
+        throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+    }
+
+    /**
      * 式を解析します（現時点では単純なリテラルと識別子のみ）。
      * @param token 式のトークン
      * @returns Expression ASTノード
@@ -972,6 +1034,53 @@ class WorkerInterpreter {
             return { expr: innerExpr.expr, nextIndex: endIndex + 1 };
         }
 
+        // 配列アクセス式 [expression]
+        if (token.type === TokenType.LEFT_BRACKET) {
+            // 対応する閉じ括弧を見つける
+            let depth = 1;
+            let endIndex = start + 1;
+            while (endIndex < tokens.length && depth > 0) {
+                if (tokens[endIndex]?.type === TokenType.LEFT_BRACKET) {
+                    depth++;
+                } else if (tokens[endIndex]?.type === TokenType.RIGHT_BRACKET) {
+                    depth--;
+                }
+                if (depth > 0) {
+                    endIndex++;
+                }
+            }
+
+            if (depth !== 0) {
+                throw new Error(`構文エラー: 配列括弧が閉じられていません (行: ${token.line + 1})`);
+            }
+
+            // 括弧内の式を解析
+            const innerTokens = tokens.slice(start + 1, endIndex);
+            if (innerTokens.length === 0) {
+                throw new Error(`構文エラー: 配列インデックスが空です (行: ${token.line + 1})`);
+            }
+
+            const innerExpr = this.parseBinaryExpression(innerTokens, 0);
+
+            // リテラル[-1]の検出: 単一のマイナス数値リテラル
+            const isLiteral = 
+                innerTokens.length === 2 &&
+                innerTokens[0]!.type === TokenType.MINUS &&
+                innerTokens[1]!.type === TokenType.NUMBER &&
+                innerTokens[1]!.value === '1';
+
+            return {
+                expr: {
+                    type: 'ArrayAccessExpression',
+                    index: innerExpr.expr,
+                    isLiteral,
+                    line: token.line,
+                    column: token.column,
+                },
+                nextIndex: endIndex + 1,
+            };
+        }
+
         // 単純な値（数値、文字列、識別子）
         const expr = this.parseExpression(token);
         return { expr, nextIndex: start + 1 };
@@ -998,6 +1107,8 @@ class WorkerInterpreter {
             TokenType.IDENTIFIER,
             TokenType.LEFT_PAREN,
             TokenType.RIGHT_PAREN,
+            TokenType.LEFT_BRACKET,
+            TokenType.RIGHT_BRACKET,
             TokenType.BACKTICK,
             TokenType.TILDE,
             TokenType.CHAR_LITERAL,
@@ -1175,57 +1286,9 @@ class WorkerInterpreter {
             throw new Error(`不完全なステートメント: ${stmtString}`);
         }
 
-        // GOTOステートメント (#=^LABEL) と HALTステートメント (#=-1)
+        // #で始まるステートメント (GOTO/HALT/RETURN/NEXT)
         if (firstToken.type === TokenType.HASH && secondToken.type === TokenType.EQUALS) {
-            const thirdToken = tokens[2];
-            
-            if (!thirdToken) {
-                throw new Error(`GOTO/HALTステートメントが不完全です`);
-            }
-
-            // #=-1 の場合はHALTステートメント
-            if (thirdToken.type === TokenType.MINUS) {
-                const fourthToken = tokens[3];
-                if (fourthToken && fourthToken.type === TokenType.NUMBER && fourthToken.value === '1') {
-                    return {
-                        type: 'HaltStatement',
-                        line: firstToken.line,
-                        column: firstToken.column,
-                    };
-                }
-            }
-
-            // #=! パターン（新 RETURN文）
-            if (thirdToken.type === TokenType.BANG) {
-                return {
-                    type: 'ReturnStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                };
-            }
-
-            // #=@ パターン（NEXT文）- 統一構造
-            if (thirdToken.type === TokenType.AT) {
-                return {
-                    type: 'NextStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                    // variable: undefined, // #=@は変数指定なし（統一構造）
-                };
-            }
-
-            // #=^LABEL パターン（通常のGOTO）
-            if (thirdToken.type === TokenType.LABEL_DEFINITION) {
-                const labelName = thirdToken.value.substring(1); // ^ を除去
-                return {
-                    type: 'GotoStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                    target: labelName,
-                };
-            }
-
-            throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+            return this.parseHashStatement(tokens, 0);
         }
 
         // GOSUBステートメント (!=^LABEL)

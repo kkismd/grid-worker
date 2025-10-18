@@ -3160,3 +3160,96 @@ describe('WHILE Loop - @=(condition) ~ #=@', () => {
         expect(mockLogFn).toHaveBeenCalledWith(11);
     });
 });
+
+describe('Array Access Expression - Parser', () => {
+    let interpreter: WorkerInterpreter;
+
+    beforeEach(() => {
+        interpreter = new WorkerInterpreter({
+            logFn: mockLogFn,
+            peekFn: mockPeekFn,
+            pokeFn: mockPokeFn,
+            gridData: mockGridData,
+        });
+    });
+
+    test('should parse array access with numeric literal ([0])', () => {
+        interpreter.loadScript('A=[0]');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        expect(line).toBeDefined();
+        expect(line!.statements).toHaveLength(1);
+        expect(line!.statements[0]!.type).toBe('AssignmentStatement');
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.variable.name).toBe('A');
+        expect(assignment.value.type).toBe('ArrayAccessExpression');
+        expect(assignment.value.index.type).toBe('NumericLiteral');
+        expect(assignment.value.index.value).toBe(0);
+        expect(assignment.value.isLiteral).toBe(false);
+    });
+
+    test('should parse array access with variable ([I])', () => {
+        interpreter.loadScript('A=[I]');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        expect(line!.statements[0]!.type).toBe('AssignmentStatement');
+        const assignment = line!.statements[0] as any;
+        expect(assignment.value.type).toBe('ArrayAccessExpression');
+        expect(assignment.value.index.type).toBe('Identifier');
+        expect(assignment.value.index.name).toBe('I');
+        expect(assignment.value.isLiteral).toBe(false);
+    });
+
+    test('should parse array access with expression ([A+10])', () => {
+        interpreter.loadScript('B=[A+10]');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.value.type).toBe('ArrayAccessExpression');
+        expect(assignment.value.index.type).toBe('BinaryExpression');
+        expect(assignment.value.index.operator).toBe('+');
+        expect(assignment.value.isLiteral).toBe(false);
+    });
+
+    test('should detect literal [-1] for stack operations', () => {
+        interpreter.loadScript('A=[-1]');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.value.type).toBe('ArrayAccessExpression');
+        expect(assignment.value.isLiteral).toBe(true);
+        expect(assignment.value.index.type).toBe('UnaryExpression');
+        expect(assignment.value.index.operator).toBe('-');
+    });
+
+    test('should not detect [-2] as literal', () => {
+        interpreter.loadScript('A=[-2]');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.value.isLiteral).toBe(false);
+    });
+
+    test('should parse nested array access ([[0]])', () => {
+        interpreter.loadScript('A=[[0]]');
+        const program = interpreter.getProgram();
+        const line = program!.body[0];
+        
+        const assignment = line!.statements[0] as any;
+        expect(assignment.value.type).toBe('ArrayAccessExpression');
+        expect(assignment.value.index.type).toBe('ArrayAccessExpression');
+    });
+
+    test('should throw error for empty array access ([])', () => {
+        expect(() => {
+            interpreter.loadScript('A=[]');
+        }).toThrow(/配列インデックスが空です/);
+    });
+});
+
