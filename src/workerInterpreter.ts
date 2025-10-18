@@ -18,6 +18,14 @@ interface InterpreterState {
 
 /**
  * ループ（FOR/WHILE）の状態を保持するインターフェース。
+ * 
+ * NOTE: 現在の実装は行ベースのジャンプのみをサポートしています。
+ * forLineIndex は行番号を指し、同じ行内の特定のステートメント位置は追跡しません。
+ * これにより、1行に複数のステートメントが混在する場合、ループの制御フローが
+ * 制限される可能性があります。
+ * 
+ * TODO: 将来的にステートメント単位の実行制御が必要になった場合、
+ * { lineIndex: number; statementIndex: number } のような構造に移行する必要があります。
  */
 interface LoopInfo {
     variable: string; // ループ変数名 (例: "I") or WHILE識別子
@@ -47,8 +55,12 @@ class WorkerInterpreter {
     private putFn: ((value: number) => void) | undefined; // 1byte出力関数（0-255の値を受け取る）
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
-    private callStack: number[] = []; // GOSUBのリターンアドレススタック
-    private loopStack: LoopInfo[] = []; // FORループの状態スタック
+    private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
+    private loopStack: LoopInfo[] = []; // ループの状態スタック
+    
+    // NOTE: currentLineIndex と callStack は行ベースの実装です。
+    // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
+    // ループやサブルーチンからの復帰は常に「行の次のステートメント」に戻ります。
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
@@ -1382,6 +1394,7 @@ class WorkerInterpreter {
                         throw new Error(`ラベル ${statement.target} が見つかりません`);
                     }
                     // 現在の次の行をスタックにプッシュ
+                    // NOTE: 行ベースのリターンアドレス保存。同じ行の次のステートメント位置は保存されません。
                     this.callStack.push(this.currentLineIndex + 1);
                     this.currentLineIndex = targetLine;
                     return { jump: true, halt: false, skipRemaining: false };
@@ -1393,6 +1406,8 @@ class WorkerInterpreter {
                         throw new Error('RETURN文がありますがGOSUBの呼び出しがありません');
                     }
                     const returnLine = this.callStack.pop()!;
+                    // NOTE: 行ベースのリターン。GOSUB呼び出しがあった行の次の行に戻ります。
+                    // 同じ行内の特定のステートメント位置には戻れません。
                     this.currentLineIndex = returnLine;
                     return { jump: true, halt: false, skipRemaining: false };
                 }
@@ -1550,6 +1565,7 @@ class WorkerInterpreter {
                         // 条件が真（非ゼロ）ならループ継続
                         if (condition !== 0) {
                             // WHILEステートメントの次の行にジャンプ
+                            // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
                             this.currentLineIndex = currentLoop.forLineIndex + 1;
                             return { jump: true, halt: false, skipRemaining: false };
                         } else {
@@ -1573,6 +1589,7 @@ class WorkerInterpreter {
                         
                         if (shouldContinue) {
                             // ループ継続: FORステートメントの次の行にジャンプ
+                            // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
                             this.currentLineIndex = currentLoop.forLineIndex + 1;
                             return { jump: true, halt: false, skipRemaining: false };
                         } else {
