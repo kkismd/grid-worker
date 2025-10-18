@@ -45,7 +45,9 @@ export type Statement =
     | NextStatement
     | WhileStatement
     | PokeStatement
-    | IoPutStatement;
+    | IoPutStatement
+    | ArrayAssignmentStatement
+    | ArrayInitializationStatement;
 
 /**
  * 代入ステートメント (例: A=10)
@@ -179,7 +181,8 @@ export type Expression =
     | PeekExpression
     | RandomExpression
     | CharLiteralExpression
-    | IoGetExpression;
+    | IoGetExpression
+    | ArrayAccessExpression;
 
 /**
  * 数値リテラル
@@ -259,4 +262,40 @@ export interface CharLiteralExpression extends ASTNode {
  */
 export interface IoGetExpression extends ASTNode {
     type: 'IoGetExpression';
+}
+
+// ==================== 配列・スタック機能 ====================
+
+/**
+ * 配列アクセス式 (例: [A], [A+5], [1000])
+ * メモリ空間（65536要素）へのアクセスを表現
+ * 特殊: [-1] はスタックポップ（リテラルの場合のみ）
+ */
+export interface ArrayAccessExpression extends ASTNode {
+    type: 'ArrayAccessExpression';
+    index: Expression;      // インデックス式（変数、リテラル、計算式など）
+    isLiteral?: boolean;    // インデックスがリテラルかどうか（-1のスタック判定用）
+}
+
+/**
+ * 配列代入ステートメント (例: [A]=100, [A+5]=B)
+ * メモリ空間への単一値の書き込みを表現
+ * 特殊: [-1]=A はスタックプッシュ（リテラルの場合のみ）
+ */
+export interface ArrayAssignmentStatement extends ASTNode {
+    type: 'ArrayAssignmentStatement';
+    index: Expression;      // インデックス式
+    value: Expression;      // 書き込む値
+    isLiteral?: boolean;    // インデックスがリテラルかどうか（-1のスタック判定用）
+}
+
+/**
+ * 配列初期化ステートメント (例: [A]=1,2,3,4,5)
+ * メモリ空間への複数値の連続書き込みを表現
+ * [startIndex] から順に values を書き込む
+ */
+export interface ArrayInitializationStatement extends ASTNode {
+    type: 'ArrayInitializationStatement';
+    index: Expression;      // 開始インデックス式
+    values: Expression[];   // 書き込む値の配列
 }

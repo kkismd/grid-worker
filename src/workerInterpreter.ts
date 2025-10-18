@@ -4,6 +4,97 @@ import { Lexer, TokenType, type Token } from './lexer.js';
 import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
 
 /**
+ * メモリ空間クラス
+ * VTLオリジナルに準拠した配列とスタックの統合メモリ空間を提供します。
+ * 
+ * 仕様:
+ * - 共有メモリ空間: 65536要素（0-65535）
+ * - スタックは上位アドレスから下に向かって伸びる（65535から開始）
+ * - 配列とスタックは別々のメソッドでアクセス
+ */
+class MemorySpace {
+    private memory: Int16Array = new Int16Array(65536);  // 共有メモリ空間
+    private stackPointer: number = 65535;                // スタックポインタ（内部管理）
+    
+    /**
+     * 配列から値を読み取ります。
+     * @param index 配列インデックス（0-65535）
+     * @returns 読み取った値（16bit符号付き整数）
+     */
+    readArray(index: number): number {
+        const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
+        return this.memory[normalizedIndex] || 0;
+    }
+    
+    /**
+     * 配列に値を書き込みます。
+     * @param index 配列インデックス（0-65535）
+     * @param value 書き込む値（16bit符号付き整数）
+     */
+    writeArray(index: number, value: number): void {
+        const normalizedIndex = index & 0xFFFF; // 0-65535に正規化
+        this.memory[normalizedIndex] = value & 0xFFFF; // 16bitに正規化
+    }
+    
+    /**
+     * 配列初期化：連続する複数の値をメモリに書き込みます。
+     * @param startIndex 開始インデックス
+     * @param values 書き込む値の配列
+     */
+    initializeArray(startIndex: number, values: number[]): void {
+        let index = startIndex & 0xFFFF; // 0-65535に正規化
+        for (const value of values) {
+            this.memory[index] = value & 0xFFFF; // 16bitに正規化
+            index = (index + 1) & 0xFFFF; // 次のインデックス（ラップアラウンド対応）
+        }
+    }
+    
+    /**
+     * スタックに値をプッシュします。
+     * @param value プッシュする値
+     */
+    pushStack(value: number): void {
+        this.memory[this.stackPointer] = value & 0xFFFF;
+        this.stackPointer = (this.stackPointer - 1) & 0xFFFF;
+        // 注意: スタックオーバーフローのチェックなし（VTL仕様に準拠）
+    }
+    
+    /**
+     * スタックから値をポップします。
+     * @returns ポップした値
+     */
+    popStack(): number {
+        this.stackPointer = (this.stackPointer + 1) & 0xFFFF;
+        return this.memory[this.stackPointer] || 0;
+        // 注意: スタックアンダーフローのチェックなし（VTL仕様に準拠）
+    }
+    
+    /**
+     * 現在のスタックポインタを取得します（デバッグ・システム変数用）。
+     * @returns 現在のスタックポインタ値（0-65535）
+     */
+    getStackPointer(): number {
+        return this.stackPointer;
+    }
+    
+    /**
+     * スタックポインタを設定します（システム変数用）。
+     * @param value 新しいスタックポインタ値
+     */
+    setStackPointer(value: number): void {
+        this.stackPointer = value & 0xFFFF; // 0-65535に正規化
+    }
+    
+    /**
+     * メモリをリセットします（テスト用）。
+     */
+    reset(): void {
+        this.memory.fill(0);
+        this.stackPointer = 65535;
+    }
+}
+
+/**
  * インタプリタの実行状態を保持するインターフェース。
  * Generator Function内で状態を管理するために使用されます。
  */
@@ -57,6 +148,7 @@ class WorkerInterpreter {
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
     private loopStack: LoopInfo[] = []; // ループの状態スタック
+    private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
     // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
@@ -82,6 +174,7 @@ class WorkerInterpreter {
         this.getFn = config.getFn;
         this.putFn = config.putFn;
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
+        this.memorySpace = new MemorySpace(); // メモリ空間の初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
     }
@@ -436,6 +529,13 @@ class WorkerInterpreter {
             return this.parseIdentifierStatement(tokens, startIndex);
         }
 
+        // 配列代入・初期化ステートメント ([expression]=...)
+        if (token.type === TokenType.LEFT_BRACKET) {
+            const statement = this.parseArrayStatement(tokens, startIndex);
+            // nextIndexの計算: 全トークンを消費したと仮定
+            return { statement, nextIndex: tokens.length };
+        }
+
         throw new Error(`構文エラー: 未知のステートメント形式: ${token.value}`);
     }
 
@@ -595,6 +695,177 @@ class WorkerInterpreter {
             },
             nextIndex: startIndex + 2 + exprResult.consumed
         };
+    }
+
+    /**
+     * # で始まるステートメント (#=...) を解析します
+     * GOTO (#=^LABEL), HALT (#=-1), RETURN (#=!), NEXT (#=@) を処理
+     */
+    private parseHashStatement(tokens: Token[], startIndex: number): Statement {
+        const firstToken = tokens[startIndex]!;
+        const secondToken = tokens[startIndex + 1];
+        
+        if (!secondToken || secondToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: # の後に = が必要です`);
+        }
+
+        const thirdToken = tokens[startIndex + 2];
+        
+        if (!thirdToken) {
+            throw new Error(`GOTO/HALTステートメントが不完全です`);
+        }
+
+        // #=-1 の場合はHALTステートメント
+        if (thirdToken.type === TokenType.MINUS) {
+            const fourthToken = tokens[startIndex + 3];
+            if (fourthToken && fourthToken.type === TokenType.NUMBER && fourthToken.value === '1') {
+                return {
+                    type: 'HaltStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                };
+            }
+        }
+
+        // #=! パターン（新 RETURN文）
+        if (thirdToken.type === TokenType.BANG) {
+            return {
+                type: 'ReturnStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+            };
+        }
+
+        // #=@ パターン（NEXT文）- 統一構造
+        if (thirdToken.type === TokenType.AT) {
+            return {
+                type: 'NextStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+            };
+        }
+
+        // #=^LABEL パターン（通常のGOTO）
+        if (thirdToken.type === TokenType.LABEL_DEFINITION) {
+            const labelName = thirdToken.value.substring(1); // ^ を除去
+            return {
+                type: 'GotoStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                target: labelName,
+            };
+        }
+
+        throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+    }
+
+    /**
+     * [ で始まるステートメント ([expression]=...) を解析します
+     * 配列代入 ([A]=100) と配列初期化 ([A]=1,2,3) を処理
+     */
+    private parseArrayStatement(tokens: Token[], startIndex: number): Statement {
+        const firstToken = tokens[startIndex]!;
+        
+        if (firstToken.type !== TokenType.LEFT_BRACKET) {
+            throw new Error(`構文エラー: 配列ステートメントは [ で始まる必要があります`);
+        }
+
+        // 対応する ] を見つける
+        let depth = 1;
+        let endIndex = startIndex + 1;
+        while (endIndex < tokens.length && depth > 0) {
+            if (tokens[endIndex]?.type === TokenType.LEFT_BRACKET) {
+                depth++;
+            } else if (tokens[endIndex]?.type === TokenType.RIGHT_BRACKET) {
+                depth--;
+            }
+            if (depth > 0) {
+                endIndex++;
+            }
+        }
+
+        if (depth !== 0) {
+            throw new Error(`構文エラー: 配列括弧が閉じられていません (行: ${firstToken.line + 1})`);
+        }
+
+        // インデックス式を解析
+        const indexTokens = tokens.slice(startIndex + 1, endIndex);
+        if (indexTokens.length === 0) {
+            throw new Error(`構文エラー: 配列インデックスが空です (行: ${firstToken.line + 1})`);
+        }
+
+        const indexExpr = this.parseBinaryExpression(indexTokens, 0);
+
+        // リテラル[-1]の検出
+        const isLiteral = 
+            indexTokens.length === 2 &&
+            indexTokens[0]!.type === TokenType.MINUS &&
+            indexTokens[1]!.type === TokenType.NUMBER &&
+            indexTokens[1]!.value === '1';
+
+        // = トークンを確認
+        const equalsToken = tokens[endIndex + 1];
+        if (!equalsToken || equalsToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: 配列ステートメントには = が必要です (行: ${firstToken.line + 1})`);
+        }
+
+        // 右辺のトークンを取得
+        const valueTokens = tokens.slice(endIndex + 2);
+        if (valueTokens.length === 0) {
+            throw new Error(`構文エラー: 配列ステートメントの右辺が空です (行: ${firstToken.line + 1})`);
+        }
+
+        // カンマが含まれているか確認（配列初期化の判定）
+        const hasComma = valueTokens.some(token => token.type === TokenType.COMMA);
+
+        if (hasComma) {
+            // 配列初期化: [A]=1,2,3
+            const values: Expression[] = [];
+            let currentTokens: Token[] = [];
+
+            for (const token of valueTokens) {
+                if (token.type === TokenType.COMMA) {
+                    if (currentTokens.length > 0) {
+                        const valueExpr = this.parseBinaryExpression(currentTokens, 0);
+                        values.push(valueExpr.expr);
+                        currentTokens = [];
+                    }
+                } else {
+                    currentTokens.push(token);
+                }
+            }
+
+            // 最後の値を追加
+            if (currentTokens.length > 0) {
+                const valueExpr = this.parseBinaryExpression(currentTokens, 0);
+                values.push(valueExpr.expr);
+            }
+
+            // 配列初期化ではスタック操作は不可（リテラル[-1]は無効）
+            if (isLiteral) {
+                throw new Error(`構文エラー: 配列初期化でスタックアクセス[-1]は使用できません (行: ${firstToken.line + 1})`);
+            }
+
+            return {
+                type: 'ArrayInitializationStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                index: indexExpr.expr,
+                values,
+            };
+        } else {
+            // 配列代入: [A]=100
+            const valueExpr = this.parseBinaryExpression(valueTokens, 0);
+
+            return {
+                type: 'ArrayAssignmentStatement',
+                line: firstToken.line,
+                column: firstToken.column,
+                index: indexExpr.expr,
+                value: valueExpr.expr,
+                isLiteral,
+            };
+        }
     }
 
     /**
@@ -863,6 +1134,53 @@ class WorkerInterpreter {
             return { expr: innerExpr.expr, nextIndex: endIndex + 1 };
         }
 
+        // 配列アクセス式 [expression]
+        if (token.type === TokenType.LEFT_BRACKET) {
+            // 対応する閉じ括弧を見つける
+            let depth = 1;
+            let endIndex = start + 1;
+            while (endIndex < tokens.length && depth > 0) {
+                if (tokens[endIndex]?.type === TokenType.LEFT_BRACKET) {
+                    depth++;
+                } else if (tokens[endIndex]?.type === TokenType.RIGHT_BRACKET) {
+                    depth--;
+                }
+                if (depth > 0) {
+                    endIndex++;
+                }
+            }
+
+            if (depth !== 0) {
+                throw new Error(`構文エラー: 配列括弧が閉じられていません (行: ${token.line + 1})`);
+            }
+
+            // 括弧内の式を解析
+            const innerTokens = tokens.slice(start + 1, endIndex);
+            if (innerTokens.length === 0) {
+                throw new Error(`構文エラー: 配列インデックスが空です (行: ${token.line + 1})`);
+            }
+
+            const innerExpr = this.parseBinaryExpression(innerTokens, 0);
+
+            // リテラル[-1]の検出: 単一のマイナス数値リテラル
+            const isLiteral = 
+                innerTokens.length === 2 &&
+                innerTokens[0]!.type === TokenType.MINUS &&
+                innerTokens[1]!.type === TokenType.NUMBER &&
+                innerTokens[1]!.value === '1';
+
+            return {
+                expr: {
+                    type: 'ArrayAccessExpression',
+                    index: innerExpr.expr,
+                    isLiteral,
+                    line: token.line,
+                    column: token.column,
+                },
+                nextIndex: endIndex + 1,
+            };
+        }
+
         // 単純な値（数値、文字列、識別子）
         const expr = this.parseExpression(token);
         return { expr, nextIndex: start + 1 };
@@ -889,6 +1207,8 @@ class WorkerInterpreter {
             TokenType.IDENTIFIER,
             TokenType.LEFT_PAREN,
             TokenType.RIGHT_PAREN,
+            TokenType.LEFT_BRACKET,
+            TokenType.RIGHT_BRACKET,
             TokenType.BACKTICK,
             TokenType.TILDE,
             TokenType.CHAR_LITERAL,
@@ -1066,57 +1386,9 @@ class WorkerInterpreter {
             throw new Error(`不完全なステートメント: ${stmtString}`);
         }
 
-        // GOTOステートメント (#=^LABEL) と HALTステートメント (#=-1)
+        // #で始まるステートメント (GOTO/HALT/RETURN/NEXT)
         if (firstToken.type === TokenType.HASH && secondToken.type === TokenType.EQUALS) {
-            const thirdToken = tokens[2];
-            
-            if (!thirdToken) {
-                throw new Error(`GOTO/HALTステートメントが不完全です`);
-            }
-
-            // #=-1 の場合はHALTステートメント
-            if (thirdToken.type === TokenType.MINUS) {
-                const fourthToken = tokens[3];
-                if (fourthToken && fourthToken.type === TokenType.NUMBER && fourthToken.value === '1') {
-                    return {
-                        type: 'HaltStatement',
-                        line: firstToken.line,
-                        column: firstToken.column,
-                    };
-                }
-            }
-
-            // #=! パターン（新 RETURN文）
-            if (thirdToken.type === TokenType.BANG) {
-                return {
-                    type: 'ReturnStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                };
-            }
-
-            // #=@ パターン（NEXT文）- 統一構造
-            if (thirdToken.type === TokenType.AT) {
-                return {
-                    type: 'NextStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                    // variable: undefined, // #=@は変数指定なし（統一構造）
-                };
-            }
-
-            // #=^LABEL パターン（通常のGOTO）
-            if (thirdToken.type === TokenType.LABEL_DEFINITION) {
-                const labelName = thirdToken.value.substring(1); // ^ を除去
-                return {
-                    type: 'GotoStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                    target: labelName,
-                };
-            }
-
-            throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
+            return this.parseHashStatement(tokens, 0);
         }
 
         // GOSUBステートメント (!=^LABEL)
@@ -1202,6 +1474,11 @@ class WorkerInterpreter {
         if (firstToken.type === TokenType.IDENTIFIER && secondToken.type === TokenType.EQUALS) {
             const result = this.parseIdentifierStatement(tokens, 0);
             return result.statement;
+        }
+
+        // 配列代入・初期化ステートメント ([expression]=...)
+        if (firstToken.type === TokenType.LEFT_BRACKET) {
+            return this.parseArrayStatement(tokens, 0);
         }
 
         throw new Error(`構文エラー: 未知のステートメント形式: ${stmtString}`);
@@ -1418,188 +1695,13 @@ class WorkerInterpreter {
                 }
             
             case 'ForStatement':
-                {
-                    // FOR文: I=start,end[,step]
-                    const varName = statement.variable.name;
-                    const startValue = this.evaluateExpression(statement.start);
-                    const endValue = this.evaluateExpression(statement.end);
-                    const stepValue = statement.step 
-                        ? this.evaluateExpression(statement.step) 
-                        : 1;
-                    
-                    // 型チェック
-                    if (typeof startValue === 'string' || typeof endValue === 'string' || typeof stepValue === 'string') {
-                        throw new Error('FORループのパラメータは数値でなければなりません');
-                    }
-                    
-                    // ステップ値が0の場合はエラー
-                    if (stepValue === 0) {
-                        throw new Error('FORループのステップ値は0にできません');
-                    }
-                    
-                    // ネストチェック: 同じ変数が既にループスタックにあるか
-                    if (this.loopStack.some(loop => loop.variable === varName)) {
-                        throw new Error(`ループ変数${varName}は既に使用されています`);
-                    }
-                    
-                    // ネストの最大深度チェック
-                    if (this.loopStack.length >= 256) {
-                        throw new Error('FORループのネストが最大深度256を超えました');
-                    }
-                    
-                    // ループ変数に開始値を設定
-                    this.variables.set(varName, startValue);
-                    
-                    // 初回のループ条件チェック
-                    const shouldExecute = stepValue > 0 
-                        ? startValue <= endValue 
-                        : startValue >= endValue;
-                    
-                    // ループ情報をスタックにpush
-                    this.loopStack.push({
-                        variable: varName,
-                        start: startValue,
-                        end: endValue,
-                        step: stepValue,
-                        forLineIndex: this.currentLineIndex,
-                    });
-                    
-                    if (!shouldExecute) {
-                        // ループをスキップ: #=@ を検索してその次にジャンプ
-                        const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
-                        if (nextLineIndex !== -1) {
-                            // ループ情報をpop（スキップするので）
-                            this.loopStack.pop();
-                            
-                            if (nextLineIndex === this.currentLineIndex) {
-                                // #=@ が同じ行にある場合、この行の残りをスキップ
-                                return { jump: false, halt: false, skipRemaining: true };
-                            } else {
-                                // #=@ が別の行にある場合、その行の次にジャンプ
-                                this.currentLineIndex = nextLineIndex + 1;
-                                return { jump: true, halt: false, skipRemaining: false };
-                            }
-                        }
-                        // #=@ が見つからない場合は続行（実行時エラーになる可能性）
-                    }
-                }
-                break;
+                return this.executeForStatement(statement);
             
             case 'WhileStatement':
-                {
-                    // WHILE文: @=(condition) 〜 #=@
-                    // 条件を評価
-                    const condition = this.evaluateExpression(statement.condition);
-                    
-                    // 型チェック
-                    if (typeof condition === 'string') {
-                        throw new Error('WHILEループの条件は数値でなければなりません');
-                    }
-                    
-                    // ネストの最大深度チェック
-                    if (this.loopStack.length >= 256) {
-                        throw new Error('WHILEループのネストが最大深度256を超えました');
-                    }
-                    
-                    // 条件が真（非ゼロ）の場合、ループに入る
-                    if (condition !== 0) {
-                        // ループ情報をスタックにpush
-                        // WHILEループには変数がないため、内部識別用に特殊な名前を使用
-                        this.loopStack.push({
-                            variable: `__WHILE_${this.currentLineIndex}__`,
-                            start: 0,
-                            end: 0,
-                            step: 1,
-                            forLineIndex: this.currentLineIndex,
-                            isWhile: true, // WHILE判別フラグ
-                            whileCondition: statement.condition, // 条件式を保存
-                        });
-                    } else {
-                        // 条件が偽の場合、ループをスキップして #=@ の次にジャンプ
-                        const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
-                        if (nextLineIndex !== -1) {
-                            if (nextLineIndex === this.currentLineIndex) {
-                                // #=@ が同じ行にある場合、この行の残りをスキップ
-                                return { jump: false, halt: false, skipRemaining: true };
-                            } else {
-                                // #=@ が別の行にある場合、その行の次にジャンプ
-                                this.currentLineIndex = nextLineIndex + 1;
-                                return { jump: true, halt: false, skipRemaining: false };
-                            }
-                        }
-                        // 対応する #=@ が見つからない場合はエラー
-                        throw new Error('WHILEループに対応する #=@ が見つかりません');
-                    }
-                }
-                break;
+                return this.executeWhileStatement(statement);
             
             case 'NextStatement':
-                {
-                    // NEXT文: #=@ (統一構造 - FOR/WHILEループの終端)
-                    
-                    // ループスタックが空の場合はエラー
-                    if (this.loopStack.length === 0) {
-                        throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
-                    }
-                    
-                    // 最新のループ情報を取得
-                    const currentLoop = this.loopStack[this.loopStack.length - 1];
-                    if (!currentLoop) {
-                        throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
-                    }
-                    
-                    // WHILEループの場合
-                    if (currentLoop.isWhile) {
-                        if (!currentLoop.whileCondition) {
-                            throw new Error('WHILEループの条件式が見つかりません');
-                        }
-                        
-                        // 条件を再評価
-                        const condition = this.evaluateExpression(currentLoop.whileCondition);
-                        
-                        // 型チェック
-                        if (typeof condition === 'string') {
-                            throw new Error('WHILEループの条件は数値でなければなりません');
-                        }
-                        
-                        // 条件が真（非ゼロ）ならループ継続
-                        if (condition !== 0) {
-                            // WHILEステートメントの次の行にジャンプ
-                            // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
-                            this.currentLineIndex = currentLoop.forLineIndex + 1;
-                            return { jump: true, halt: false, skipRemaining: false };
-                        } else {
-                            // ループ終了: ループ情報をスタックからpop
-                            this.loopStack.pop();
-                            // 次のステートメントに進む（jump: false）
-                        }
-                    } else {
-                        // FORループの場合（従来のロジック）
-                        const varName = currentLoop.variable;
-                        
-                        // ループ変数をインクリメント
-                        const currentValue = this.variables.get(varName) || 0;
-                        const newValue = currentValue + currentLoop.step;
-                        this.variables.set(varName, newValue);
-                        
-                        // 次の値で条件チェック
-                        const shouldContinue = currentLoop.step > 0 
-                            ? newValue <= currentLoop.end 
-                            : newValue >= currentLoop.end;
-                        
-                        if (shouldContinue) {
-                            // ループ継続: FORステートメントの次の行にジャンプ
-                            // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
-                            this.currentLineIndex = currentLoop.forLineIndex + 1;
-                            return { jump: true, halt: false, skipRemaining: false };
-                        } else {
-                            // ループ終了: ループ情報をスタックからpop
-                            this.loopStack.pop();
-                            // 次のステートメントに進む（jump: false）
-                        }
-                    }
-                }
-                break;
+                return this.executeNextStatement(statement);
             
             case 'PokeStatement': {
                 // POKE: グリッドに書き込み
@@ -1641,7 +1743,254 @@ class WorkerInterpreter {
                 }
                 break;
             }
+
+            case 'ArrayAssignmentStatement': {
+                // 配列への代入: [index]=value または [-1]=value（スタックプッシュ）
+                const value = this.evaluateExpression(statement.value);
+                
+                // 文字列は不可
+                if (typeof value === 'string') {
+                    throw new Error('配列には数値のみを代入できます');
+                }
+                
+                if (statement.isLiteral) {
+                    // [-1]=value: スタックにプッシュ
+                    this.memorySpace.pushStack(Math.floor(value));
+                } else {
+                    // 通常の配列代入
+                    const index = this.evaluateExpression(statement.index);
+                    if (typeof index === 'string') {
+                        throw new Error('配列のインデックスは数値でなければなりません');
+                    }
+                    this.memorySpace.writeArray(Math.floor(index), Math.floor(value));
+                }
+                break;
+            }
+
+            case 'ArrayInitializationStatement': {
+                // 配列の初期化: [index]=value1,value2,value3,...
+                const index = this.evaluateExpression(statement.index);
+                
+                // インデックスは数値でなければならない
+                if (typeof index === 'string') {
+                    throw new Error('配列のインデックスは数値でなければなりません');
+                }
+                
+                // 値を評価
+                const values: number[] = [];
+                for (const expr of statement.values) {
+                    const value = this.evaluateExpression(expr);
+                    if (typeof value === 'string') {
+                        throw new Error('配列初期化の値は数値でなければなりません');
+                    }
+                    values.push(Math.floor(value));
+                }
+                
+                // 配列を初期化
+                this.memorySpace.initializeArray(Math.floor(index), values);
+                break;
+            }
         }
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * FORステートメントを実行します。
+     * @param statement FORステートメント
+     * @returns 実行結果（ジャンプ、停止、残りスキップのフラグ）
+     */
+    private executeForStatement(statement: Statement & { type: 'ForStatement' }): { jump: boolean; halt: boolean; skipRemaining: boolean } {
+        // FOR文: I=start,end[,step]
+        const varName = statement.variable.name;
+        const startValue = this.evaluateExpression(statement.start);
+        const endValue = this.evaluateExpression(statement.end);
+        const stepValue = statement.step 
+            ? this.evaluateExpression(statement.step) 
+            : 1;
+        
+        // 型チェック
+        if (typeof startValue === 'string' || typeof endValue === 'string' || typeof stepValue === 'string') {
+            throw new Error('FORループのパラメータは数値でなければなりません');
+        }
+        
+        // ステップ値が0の場合はエラー
+        if (stepValue === 0) {
+            throw new Error('FORループのステップ値は0にできません');
+        }
+        
+        // ネストチェック: 同じ変数が既にループスタックにあるか
+        if (this.loopStack.some(loop => loop.variable === varName)) {
+            throw new Error(`ループ変数${varName}は既に使用されています`);
+        }
+        
+        // ネストの最大深度チェック
+        if (this.loopStack.length >= 256) {
+            throw new Error('FORループのネストが最大深度256を超えました');
+        }
+        
+        // ループ変数に開始値を設定
+        this.variables.set(varName, startValue);
+        
+        // 初回のループ条件チェック
+        const shouldExecute = stepValue > 0 
+            ? startValue <= endValue 
+            : startValue >= endValue;
+        
+        // ループ情報をスタックにpush
+        this.loopStack.push({
+            variable: varName,
+            start: startValue,
+            end: endValue,
+            step: stepValue,
+            forLineIndex: this.currentLineIndex,
+        });
+        
+        if (!shouldExecute) {
+            // ループをスキップ: #=@ を検索してその次にジャンプ
+            const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
+            if (nextLineIndex !== -1) {
+                // ループ情報をpop（スキップするので）
+                this.loopStack.pop();
+                
+                if (nextLineIndex === this.currentLineIndex) {
+                    // #=@ が同じ行にある場合、この行の残りをスキップ
+                    return { jump: false, halt: false, skipRemaining: true };
+                } else {
+                    // #=@ が別の行にある場合、その行の次にジャンプ
+                    this.currentLineIndex = nextLineIndex + 1;
+                    return { jump: true, halt: false, skipRemaining: false };
+                }
+            }
+            // #=@ が見つからない場合は続行（実行時エラーになる可能性）
+        }
+        
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * WHILEステートメントを実行します。
+     * @param statement WHILEステートメント
+     * @returns 実行結果（ジャンプ、停止、残りスキップのフラグ）
+     */
+    private executeWhileStatement(statement: Statement & { type: 'WhileStatement' }): { jump: boolean; halt: boolean; skipRemaining: boolean } {
+        // WHILE文: @=(condition) 〜 #=@
+        // 条件を評価
+        const condition = this.evaluateExpression(statement.condition);
+        
+        // 型チェック
+        if (typeof condition === 'string') {
+            throw new Error('WHILEループの条件は数値でなければなりません');
+        }
+        
+        // ネストの最大深度チェック
+        if (this.loopStack.length >= 256) {
+            throw new Error('WHILEループのネストが最大深度256を超えました');
+        }
+        
+        // 条件が真（非ゼロ）の場合、ループに入る
+        if (condition !== 0) {
+            // ループ情報をスタックにpush
+            // WHILEループには変数がないため、内部識別用に特殊な名前を使用
+            this.loopStack.push({
+                variable: `__WHILE_${this.currentLineIndex}__`,
+                start: 0,
+                end: 0,
+                step: 1,
+                forLineIndex: this.currentLineIndex,
+                isWhile: true, // WHILE判別フラグ
+                whileCondition: statement.condition, // 条件式を保存
+            });
+        } else {
+            // 条件が偽の場合、ループをスキップして #=@ の次にジャンプ
+            const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
+            if (nextLineIndex !== -1) {
+                if (nextLineIndex === this.currentLineIndex) {
+                    // #=@ が同じ行にある場合、この行の残りをスキップ
+                    return { jump: false, halt: false, skipRemaining: true };
+                } else {
+                    // #=@ が別の行にある場合、その行の次にジャンプ
+                    this.currentLineIndex = nextLineIndex + 1;
+                    return { jump: true, halt: false, skipRemaining: false };
+                }
+            }
+            // 対応する #=@ が見つからない場合はエラー
+            throw new Error('WHILEループに対応する #=@ が見つかりません');
+        }
+        
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * NEXTステートメント（#=@）を実行します。
+     * FORループとWHILEループの両方に対応した統一構造。
+     * @param statement NEXTステートメント
+     * @returns 実行結果（ジャンプ、停止、残りスキップのフラグ）
+     */
+    private executeNextStatement(statement: Statement & { type: 'NextStatement' }): { jump: boolean; halt: boolean; skipRemaining: boolean } {
+        // NEXT文: #=@ (統一構造 - FOR/WHILEループの終端)
+        
+        // ループスタックが空の場合はエラー
+        if (this.loopStack.length === 0) {
+            throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
+        }
+        
+        // 最新のループ情報を取得
+        const currentLoop = this.loopStack[this.loopStack.length - 1];
+        if (!currentLoop) {
+            throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
+        }
+        
+        // WHILEループの場合
+        if (currentLoop.isWhile) {
+            if (!currentLoop.whileCondition) {
+                throw new Error('WHILEループの条件式が見つかりません');
+            }
+            
+            // 条件を再評価
+            const condition = this.evaluateExpression(currentLoop.whileCondition);
+            
+            // 型チェック
+            if (typeof condition === 'string') {
+                throw new Error('WHILEループの条件は数値でなければなりません');
+            }
+            
+            // 条件が真（非ゼロ）ならループ継続
+            if (condition !== 0) {
+                // WHILEステートメントの次の行にジャンプ
+                // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
+                this.currentLineIndex = currentLoop.forLineIndex + 1;
+                return { jump: true, halt: false, skipRemaining: false };
+            } else {
+                // ループ終了: ループ情報をスタックからpop
+                this.loopStack.pop();
+                // 次のステートメントに進む（jump: false）
+            }
+        } else {
+            // FORループの場合（従来のロジック）
+            const varName = currentLoop.variable;
+            
+            // ループ変数をインクリメント
+            const currentValue = this.variables.get(varName) || 0;
+            const newValue = currentValue + currentLoop.step;
+            this.variables.set(varName, newValue);
+            
+            // 次の値で条件チェック
+            const shouldContinue = currentLoop.step > 0 
+                ? newValue <= currentLoop.end 
+                : newValue >= currentLoop.end;
+            
+            if (shouldContinue) {
+                // ループ継続: FORステートメントの次の行にジャンプ
+                // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
+                this.currentLineIndex = currentLoop.forLineIndex + 1;
+                return { jump: true, halt: false, skipRemaining: false };
+            } else {
+                // ループ終了: ループ情報をスタックからpop
+                this.loopStack.pop();
+                // 次のステートメントに進む（jump: false）
+            }
+        }
+        
         return { jump: false, halt: false, skipRemaining: false };
     }
 
@@ -1817,6 +2166,22 @@ class WorkerInterpreter {
                         return Math.max(0, Math.min(255, Math.floor(value)));
                     } else {
                         throw new Error('1byte入力機能が設定されていません');
+                    }
+                }
+
+            case 'ArrayAccessExpression':
+                {
+                    // 配列アクセス: [index] または [-1]（スタック）
+                    if (expr.isLiteral) {
+                        // [-1]: スタックからpop
+                        return this.memorySpace.popStack();
+                    } else {
+                        // 通常の配列アクセス
+                        const index = this.evaluateExpression(expr.index);
+                        if (typeof index === 'string') {
+                            throw new Error('配列のインデックスは数値でなければなりません');
+                        }
+                        return this.memorySpace.readArray(Math.floor(index));
                     }
                 }
             

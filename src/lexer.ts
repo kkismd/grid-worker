@@ -29,6 +29,7 @@ export enum TokenType {
     QUESTION = 'QUESTION', // ?
     SEMICOLON = 'SEMICOLON', // ;
     HASH = 'HASH', // #
+    LEFT_BRACKET = 'LEFT_BRACKET', // [
     RIGHT_BRACKET = 'RIGHT_BRACKET', // ]
     AT = 'AT', // @
     COMMA = 'COMMA', // ,
@@ -314,6 +315,11 @@ export class Lexer {
             }
             if (char === '@') {
                 tokens.push({ type: TokenType.AT, value: char, line: lineNumber, column: cursor });
+                cursor++;
+                continue;
+            }
+            if (char === '[') {
+                tokens.push({ type: TokenType.LEFT_BRACKET, value: char, line: lineNumber, column: cursor });
                 cursor++;
                 continue;
             }
