@@ -1118,6 +1118,57 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         const stmt = ast.body[0]?.statements[0];
         expect(stmt?.type).toBe('AssignmentStatement'); // FORではなく通常の代入
     });
+
+    // 新しいFOR構文テスト (@=I,1,100)
+    test('should parse new FOR syntax (@=I,1,100)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.AT, value: '@', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 2 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 4 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 6 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('ForStatement');
+        const forStmt = stmt as any;
+        expect(forStmt.variable.name).toBe('I');
+        expect(forStmt.start.type).toBe('NumericLiteral');
+        expect(forStmt.start.value).toBe(1);
+        expect(forStmt.end.type).toBe('NumericLiteral');
+        expect(forStmt.end.value).toBe(100);
+        expect(forStmt.step).toBeUndefined(); // デフォルトstep
+    });
+
+    test('should parse new FOR syntax with step (@=J,10,1,-1)', () => {
+        const tokens: Token[] = [
+            { type: TokenType.AT, value: '@', line: 0, column: 0 },
+            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
+            { type: TokenType.IDENTIFIER, value: 'J', line: 0, column: 2 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 6 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 7 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 8 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 9 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 10 },
+        ];
+        const ast = interpreter.parse(tokens);
+        expect(ast.body).toHaveLength(1);
+        expect(ast.body[0]?.statements).toHaveLength(1);
+        const stmt = ast.body[0]?.statements[0];
+        expect(stmt?.type).toBe('ForStatement');
+        const forStmt = stmt as any;
+        expect(forStmt.variable.name).toBe('J');
+        expect(forStmt.start.value).toBe(10);
+        expect(forStmt.end.value).toBe(1);
+        expect(forStmt.step.type).toBe('UnaryExpression');
+        expect(forStmt.step.operator).toBe('-');
+    });
 });
 
 describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
@@ -2477,6 +2528,51 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
         gen.next(); // ?=S
         
         expect(interpreter.getVariable('S')).toBe(6); // 1+2+3
+        expect(mockLogFn).toHaveBeenCalledWith(6);
+    });
+
+    // 新しい統一構文の実行テスト
+    test('should execute new FOR syntax (@=I,1,3)', () => {
+        interpreter.loadScript('S=0 @=I,1,3\nS=S+I @=I\n?=S');
+        const gen = interpreter.run();
+        
+        gen.next(); // S=0
+        gen.next(); // @=I,1,3 (I=1)
+        // Iteration 1: I=1
+        gen.next(); // S=S+I → S=1
+        gen.next(); // @=I → I=2, continue
+        // Iteration 2: I=2
+        gen.next(); // S=S+I → S=3
+        gen.next(); // @=I → I=3, continue
+        // Iteration 3: I=3
+        gen.next(); // S=S+I → S=6
+        gen.next(); // @=I → I=4, exit loop
+        // After loop
+        gen.next(); // ?=S
+        
+        expect(interpreter.getVariable('S')).toBe(6); // 1+2+3
+        expect(mockLogFn).toHaveBeenCalledWith(6);
+    });
+
+    test('should execute new FOR syntax with step (@=J,3,1,-1)', () => {
+        interpreter.loadScript('S=0 @=J,3,1,-1\nS=S+J @=J\n?=S');
+        const gen = interpreter.run();
+        
+        gen.next(); // S=0
+        gen.next(); // @=J,3,1,-1 (J=3)
+        // Iteration 1: J=3
+        gen.next(); // S=S+J → S=3
+        gen.next(); // @=J → J=2, continue
+        // Iteration 2: J=2
+        gen.next(); // S=S+J → S=5
+        gen.next(); // @=J → J=1, continue
+        // Iteration 3: J=1
+        gen.next(); // S=S+J → S=6
+        gen.next(); // @=J → J=0, exit loop
+        // After loop
+        gen.next(); // ?=S
+        
+        expect(interpreter.getVariable('S')).toBe(6); // 3+2+1
         expect(mockLogFn).toHaveBeenCalledWith(6);
     });
 
