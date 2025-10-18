@@ -57,8 +57,9 @@ I=-1         : 変数 I に -1 を代入
 [I]=A        : メモリ[65535] に A を格納（スタックプッシュではない！）
 B=[I]        : メモリ[65535] から読み取り（スタックポップではない！）
 
-: 5. 既存FOR文との共存（影響なし）
-I=1,100,2    : FOR文として正常動作
+: 注: FOR文との衝突なし
+: 統一構文により FOR文は @=I,1,100 形式となり、
+: 配列初期化 [A]=1,2,3 との構文上の衝突は完全に解消されています
 ```
 
 ### 実装アーキテクチャ（VTLオリジナル準拠）
@@ -217,10 +218,14 @@ class ExtendedInterpreter extends WorkerInterpreter {
 }
 ```
 
-### FOR文との共存戦略
+### 構文解析戦略（統一構文による簡素化）
 ```typescript
-// 構文解析での判定ロジック
-private parseAssignmentOrArrayOrFor(tokens: Token[]): Statement {
+// 統一構文により、FOR文との衝突問題は完全に解消
+// - 旧FOR文: I=1,100,2 → カンマで衝突の可能性があった
+// - 新FOR文: @=I,1,100 → @ 記号で明確に区別可能
+// - 配列初期化: [A]=1,2,3 → [] で明確に区別可能
+
+private parseAssignmentOrArray(tokens: Token[]): Statement {
     const leftTokens = this.extractLeftSide(tokens)
     
     if (this.isArrayAccess(leftTokens)) {
@@ -231,11 +236,10 @@ private parseAssignmentOrArrayOrFor(tokens: Token[]): Statement {
         } else {
             return this.parseArrayAssignment(tokens)       // 単一値代入
         }
-    } else if (tokens.some(t => t.type === TokenType.COMMA)) {
-        // A=1,2,3 → FOR文
-        return this.parseForStatement(tokens)
     } else {
         // A=123 → 通常の代入
+        // 注: A=1,2,3 のような形式はもはやFOR文ではないため、
+        // 複数値代入として扱うか、構文エラーとするかは実装次第
         return this.parseAssignment(tokens)
     }
 }
@@ -259,7 +263,7 @@ private hasMultipleValues(tokens: Token[]): boolean {
 export enum TokenType {
     // ... 既存のトークン
     LEFT_BRACKET = 'LEFT_BRACKET',    // [
-    // RIGHT_BRACKET は既存（RETURN用）を流用
+    RIGHT_BRACKET = 'RIGHT_BRACKET',  // ] (統一構文移行により利用可能)
 }
 
 // Lexer拡張
@@ -268,6 +272,15 @@ if (char === '[') {
     cursor++;
     continue;
 }
+
+if (char === ']') {
+    tokens.push({ type: TokenType.RIGHT_BRACKET, value: char, line: lineNumber, column: cursor });
+    cursor++;
+    continue;
+}
+
+// 注: RIGHT_BRACKET は既に TokenType に定義済みの可能性があるため、
+// 実装時は既存の定義を確認すること
 ```
 
 ## ⚡ 拡張案2: 拡張コマンド機能
@@ -446,7 +459,7 @@ P=&41=$A,$B     : 文字列検索（位置を返す）
     B=#2            : 第2引数を取得
     C=A+B           : 計算
     #0=C            : 戻り値を設定
-    ]               : リターン
+    #=!             : RETURN（統一構文）
 
 : 3. 戻り値の取得
 R=!=^ADD_FUNC,10,20 : 戻り値をRに格納
@@ -482,11 +495,11 @@ A=[P+1]         : 構造体.field1 を読み取り → A=200
 ^KEY_HANDLER
     K=#EVENT_DATA    : イベントデータ取得
     ?="Key pressed: " ?=K
-    ]
+    #=!  : RETURN（統一構文）
 
 ^TIMER_HANDLER  
     ?="Timer tick"
-    ]
+    #=!  : RETURN（統一構文）
 ```
 
 ## 🏗️ 実装アーキテクチャ統合
@@ -583,19 +596,19 @@ class ExtendedWorkerInterpreter extends WorkerInterpreter {
 [0]=64 [1]=34 [2]=25 [3]=12 [4]=22 [5]=11 [6]=90
 N=7
 
-: バブルソート実装
-I=0,N-2
-    J=0,N-I-2  
+: バブルソート実装（統一構文）
+@=I,0,N-2
+    @=J,0,N-I-2
         : 比較・交換
         ;=[J]>[J+1] !=^SWAP,J,J+1
-    @=J
-@=I
+    #=@
+#=@
 
 : 結果表示
 ?="Sorted array:"
-I=0,N-1
+@=I,0,N-1
     ?=[I] ?=" "
-@=I
+#=@
 
 ^SWAP
     : 引数取得（将来拡張で実装予定）
@@ -605,7 +618,7 @@ I=0,N-1
     T=[A]
     [A]=[B] 
     [B]=T
-    ]
+    #=!  : RETURN（統一構文）
 
 #=-1
 ```
