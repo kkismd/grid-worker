@@ -6,6 +6,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CLIRunner } from './cliRunner.js';
 import type { CLIRunnerConfig } from './cliRunner.js';
+import { RealTimeCLIRunner } from './realtime/RealTimeCLIRunner.js';
+import type { RealTimeCLIRunnerConfig } from './realtime/RealTimeCLIRunner.js';
 
 interface CLIOptions {
     interactive: boolean;
@@ -16,6 +18,10 @@ interface CLIOptions {
     maxSteps?: number;
     unlimitedSteps: boolean;
     quiet: boolean;
+    realtime: boolean;
+    frameRate?: number;
+    stepsPerFrame?: number;
+    showFPS: boolean;
 }
 
 function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
@@ -25,7 +31,9 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
         verbose: false,
         help: false,
         unlimitedSteps: false,
-        quiet: false
+        quiet: false,
+        realtime: false,
+        showFPS: false
     };
 
     let scriptFile: string | undefined;
@@ -75,6 +83,31 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
             case '-q':
                 options.quiet = true;
                 break;
+            case '--realtime':
+            case '-r':
+                options.realtime = true;
+                break;
+            case '--fps':
+                const nextFPSArg = args[++i];
+                if (nextFPSArg) {
+                    const fps = parseInt(nextFPSArg, 10);
+                    if (!isNaN(fps) && fps > 0) {
+                        options.frameRate = fps;
+                    }
+                }
+                break;
+            case '--steps-per-frame':
+                const nextStepsPerFrameArg = args[++i];
+                if (nextStepsPerFrameArg) {
+                    const steps = parseInt(nextStepsPerFrameArg, 10);
+                    if (!isNaN(steps) && steps > 0) {
+                        options.stepsPerFrame = steps;
+                    }
+                }
+                break;
+            case '--show-fps':
+                options.showFPS = true;
+                break;
             default:
                 if (arg && !arg.startsWith('-') && !scriptFile) {
                     scriptFile = arg;
@@ -95,14 +128,18 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   npm run cli --interactive      インタラクティブモードで起動
 
 オプション:
-  -i, --interactive    インタラクティブ（REPL）モード
-  -d, --debug          デバッグ情報を表示
-  -v, --verbose        詳細なログを出力
-  -o, --output FILE    出力をファイルに保存
-  -u, --unlimited      ステップ数無制限で実行
-  -m, --max-steps N    最大ステップ数を指定（デフォルト: 100000）
-  -q, --quiet          進捗表示を無効化（クリーンな出力）
-  -h, --help          このヘルプを表示
+  -i, --interactive       インタラクティブ（REPL）モード
+  -d, --debug             デバッグ情報を表示
+  -v, --verbose           詳細なログを出力
+  -o, --output FILE       出力をファイルに保存
+  -u, --unlimited         ステップ数無制限で実行
+  -m, --max-steps N       最大ステップ数を指定（デフォルト: 100000）
+  -q, --quiet             進捗表示を無効化（クリーンな出力）
+  -r, --realtime          リアルタイムモード（キーボード入力対応）
+  --fps N                 フレームレート指定（デフォルト: 30）
+  --steps-per-frame N     1フレームあたりの実行ステップ数（デフォルト: 1000）
+  --show-fps              FPS表示を有効化
+  -h, --help              このヘルプを表示
 
 例:
   npm run cli examples/hello.ws
@@ -110,6 +147,8 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   npm run cli -- examples/mandelbrot.ws --unlimited --quiet
   npm run cli -- examples/large-program.ws --max-steps 1000000
   npm run cli --interactive
+  npm run cli -- examples/realtime_tests/01-key-echo.ws --realtime
+  npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-fps
 `);
 }
 
@@ -128,20 +167,19 @@ async function main() {
         if (scriptFile) console.log(`Script file: ${scriptFile}`);
     }
 
-    const runnerConfig: CLIRunnerConfig = {
-        debug: options.debug,
-        verbose: options.verbose,
-        unlimitedSteps: options.unlimitedSteps,
-        quiet: options.quiet,
-        ...(options.maxSteps && { maxSteps: options.maxSteps }),
-        ...(options.output && { outputFile: options.output })
-    };
-    const runner = new CLIRunner(runnerConfig);
-
     try {
         if (options.interactive) {
             // インタラクティブモード
             if (options.verbose) console.log('📝 インタラクティブモードを開始します...');
+            const runnerConfig: CLIRunnerConfig = {
+                debug: options.debug,
+                verbose: options.verbose,
+                unlimitedSteps: options.unlimitedSteps,
+                quiet: options.quiet,
+                ...(options.maxSteps && { maxSteps: options.maxSteps }),
+                ...(options.output && { outputFile: options.output })
+            };
+            const runner = new CLIRunner(runnerConfig);
             await runner.startInteractiveMode();
         } else if (scriptFile) {
             // ファイル実行モード
@@ -153,7 +191,31 @@ async function main() {
             const script = fs.readFileSync(scriptFile, 'utf-8');
             if (options.verbose) console.log(`📄 スクリプトファイルを読み込みました: ${scriptFile}`);
             
-            await runner.executeScript(script, path.basename(scriptFile));
+            if (options.realtime) {
+                // リアルタイムモード
+                if (options.verbose) console.log('⚡ リアルタイムモードで実行します...');
+                const realtimeConfig: RealTimeCLIRunnerConfig = {
+                    debug: options.debug,
+                    verbose: options.verbose,
+                    ...(options.frameRate && { frameRate: options.frameRate }),
+                    ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
+                    showFPS: options.showFPS
+                };
+                const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
+                await realtimeRunner.executeRealTime(script, path.basename(scriptFile));
+            } else {
+                // 通常モード
+                const runnerConfig: CLIRunnerConfig = {
+                    debug: options.debug,
+                    verbose: options.verbose,
+                    unlimitedSteps: options.unlimitedSteps,
+                    quiet: options.quiet,
+                    ...(options.maxSteps && { maxSteps: options.maxSteps }),
+                    ...(options.output && { outputFile: options.output })
+                };
+                const runner = new CLIRunner(runnerConfig);
+                await runner.executeScript(script, path.basename(scriptFile));
+            }
         } else {
             console.error('❌ スクリプトファイルまたは --interactive オプションが必要です');
             showHelp();
