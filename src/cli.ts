@@ -25,6 +25,7 @@ interface CLIOptions {
     showGrid: boolean;
     gridSize?: number;
     splitScreen: boolean;
+    characterMode: boolean;
 }
 
 function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
@@ -38,7 +39,8 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
         realtime: false,
         showFPS: false,
         showGrid: false,
-        splitScreen: false
+        splitScreen: false,
+        characterMode: false
     };
 
     let scriptFile: string | undefined;
@@ -121,6 +123,10 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
             case '-s':
                 options.splitScreen = true;
                 break;
+            case '--char-mode':
+            case '-c':
+                options.characterMode = true;
+                break;
             case '--grid-size':
                 const nextGridSizeArg = args[++i];
                 if (nextGridSizeArg) {
@@ -163,6 +169,7 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   --show-fps              FPS表示を有効化
   -g, --show-grid         グリッド表示を有効化（リアルタイムモード専用）
   -s, --split-screen      上下分割画面表示（--show-gridと併用）
+  -c, --char-mode         キャラクターVRAMモード（カラーテキスト表示）
   --grid-size N           グリッド表示サイズ（デフォルト: 20x20）
   -h, --help              このヘルプを表示
 
@@ -175,6 +182,7 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   npm run cli -- examples/realtime_tests/01-key-echo.ws --realtime
   npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid
   npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid --split-screen
+  npm run cli -- examples/realtime_tests/06-color-text.ws --realtime --show-grid --char-mode
 `);
 }
 
@@ -228,6 +236,7 @@ async function main() {
                     showFPS: options.showFPS,
                     showGrid: options.showGrid,
                     splitScreen: options.splitScreen,
+                    characterMode: options.characterMode,
                     ...(options.gridSize && { gridDisplaySize: options.gridSize })
                 };
                 const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);

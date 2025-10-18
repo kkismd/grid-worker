@@ -1717,8 +1717,8 @@ class WorkerInterpreter {
                     throw new Error('POKEには数値が必要です');
                 }
                 
-                // 値を0-255の範囲にクランプ
-                const clampedValue = Math.max(0, Math.min(255, Math.floor(value)));
+                // 値を0-65535の範囲にクランプ（16ビット値対応）
+                const clampedValue = Math.max(0, Math.min(65535, Math.floor(value)));
                 
                 // pokeFnを呼び出し（X, Y座標と値を渡す）
                 this.pokeFn(Math.floor(x), Math.floor(y), clampedValue);

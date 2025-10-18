@@ -11,6 +11,7 @@ export { KeyboardInput, getGlobalKeyboardInput, resetGlobalKeyboardInput } from 
 export { RealTimeCLIRunner, type RealTimeCLIRunnerConfig } from './RealTimeCLIRunner';
 export { GridDiffRenderer, type GridChange } from './GridDiffRenderer';
 export { SplitScreenRenderer } from './SplitScreenRenderer';
+export { CharacterVRAMRenderer } from './CharacterVRAMRenderer';
 export type { KeyboardInputOptions } from './KeyboardInput';
 
 // Phase 2以降で追加予定:

@@ -5,6 +5,7 @@ import { GridRenderer } from '../gridRenderer.js';
 import { KeyboardInput } from './KeyboardInput.js';
 import { GridDiffRenderer } from './GridDiffRenderer.js';
 import { SplitScreenRenderer } from './SplitScreenRenderer.js';
+import { CharacterVRAMRenderer } from './CharacterVRAMRenderer.js';
 
 export interface RealTimeCLIRunnerConfig {
     debug?: boolean;
@@ -15,6 +16,7 @@ export interface RealTimeCLIRunnerConfig {
     showGrid?: boolean;        // グリッド表示（デフォルト: false）
     gridDisplaySize?: number;  // グリッド表示サイズ（デフォルト: 20x20）
     splitScreen?: boolean;     // 上下分割画面（デフォルト: false）
+    characterMode?: boolean;   // キャラクターVRAMモード（デフォルト: false）
 }
 
 /**
@@ -28,6 +30,7 @@ export class RealTimeCLIRunner {
     private gridData: number[];
     private gridRenderer: GridRenderer;
     private gridDiffRenderer: GridDiffRenderer;
+    private charVRAMRenderer: CharacterVRAMRenderer;
     private splitScreenRenderer?: SplitScreenRenderer;
     private keyboard: KeyboardInput;
     private transcript: string[] = [];
@@ -47,6 +50,7 @@ export class RealTimeCLIRunner {
             showGrid: config.showGrid ?? false,
             gridDisplaySize: config.gridDisplaySize ?? 20,
             splitScreen: config.splitScreen ?? false,
+            characterMode: config.characterMode ?? false,
         };
 
         // 100x100 グリッドを初期化
@@ -58,6 +62,14 @@ export class RealTimeCLIRunner {
             100, 
             100, 
             this.config.gridDisplaySize, 
+            this.config.gridDisplaySize
+        );
+        
+        // キャラクターVRAMレンダラーを初期化
+        this.charVRAMRenderer = new CharacterVRAMRenderer(
+            100,
+            100,
+            this.config.gridDisplaySize,  // 文字は1文字幅
             this.config.gridDisplaySize
         );
         
@@ -121,6 +133,10 @@ export class RealTimeCLIRunner {
                     // lastGridDataを初期化
                     this.lastGridData = this.getCurrentGridData();
                     process.stdout.write(this.splitScreenRenderer.initScreen());
+                } else if (this.config.characterMode) {
+                    // キャラクターVRAMモード
+                    process.stdout.write(CharacterVRAMRenderer.hideCursor());
+                    process.stdout.write(this.charVRAMRenderer.initScreen());
                 } else {
                     // 通常のグリッド表示
                     process.stdout.write(GridDiffRenderer.hideCursor());
@@ -153,6 +169,10 @@ export class RealTimeCLIRunner {
                 if (this.config.splitScreen && this.splitScreenRenderer) {
                     // 上下分割画面のクリーンアップ
                     process.stdout.write(this.splitScreenRenderer.cleanup());
+                } else if (this.config.characterMode) {
+                    // キャラクターVRAMモードのクリーンアップ
+                    process.stdout.write(CharacterVRAMRenderer.showCursor());
+                    console.log('\n');
                 } else {
                     // 通常グリッド表示のクリーンアップ
                     process.stdout.write(GridDiffRenderer.showCursor());
@@ -197,6 +217,12 @@ export class RealTimeCLIRunner {
                         process.stdout.write(diffOutput);
                     }
                     this.lastGridData = currentGrid;
+                } else if (this.config.characterMode) {
+                    // キャラクターVRAMモード
+                    const diffOutput = this.charVRAMRenderer.renderDiff(this.gridData);
+                    if (diffOutput) {
+                        process.stdout.write(diffOutput);
+                    }
                 } else {
                     // 通常グリッド表示
                     const diffOutput = this.gridDiffRenderer.renderDiff(this.gridData);
