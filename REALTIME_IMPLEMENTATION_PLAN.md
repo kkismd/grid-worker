@@ -18,48 +18,74 @@ WorkerScriptにリアルタイム機能を段階的に追加し、静的スク�
 - [ ] 現在のGridRunner構造の分析
 - [ ] リアルタイム機能の設計レビュー
 
-### Phase 1: ノンブロッキングキーボード入力（MVP）🎯
-**目標**: `K=$` システム変数でキー入力を取得  
+### Phase 1: ノンブロッキングキーボード入力（MVP）✅
+**目標**: `A=$` (任意の変数) でキー入力を取得  
 **期間**: 2-3日  
-**優先度**: 最高
+**優先度**: 最高  
+**状態**: ✅ 完了 (2025-10-18)
 
 #### 実装内容
 ```typescript
-// システム変数 K の追加
-class WorkerInterpreter {
-    private keyBuffer: number[] = []
+// KeyboardInput クラスでRaw Mode制御
+class KeyboardInput {
+    private keyBuffer: number[] = []  // FIFO queue (max 1000)
     
-    // K=$ で最新のキー入力を取得（なければ0）
-    systemVariables.set('K', () => {
+    getKey(): number {
         return this.keyBuffer.shift() || 0
-    })
+    }
+}
+
+// RealTimeCLIRunner でフレームレート制御
+class RealTimeCLIRunner {
+    private config = {
+        frameRate: 30,        // 30 FPS
+        stepsPerFrame: 1000   // 1フレーム1000ステップ
+    }
 }
 ```
 
 #### 技術的アプローチ
-1. **Raw Mode制御**: `process.stdin.setRawMode(true)`
-2. **キーバッファ**: FIFO queue で入力を保持
-3. **安全な終了**: Ctrl+C, SIGINT, exitのハンドリング
-4. **エラー処理**: TTY環境チェック
+1. ✅ **Raw Mode制御**: `process.stdin.setRawMode(true)`
+2. ✅ **キーバッファ**: FIFO queue で入力を保持 (max 1000)
+3. ✅ **安全な終了**: Ctrl+C, SIGINT, exitのハンドリング
+4. ✅ **エラー処理**: TTY環境チェック
+5. ✅ **フレームレート制御**: 30 FPS、async/await で非ブロッキング
+6. ✅ **既存$変数活用**: K=$ ではなく A=$, B=$ 等で入力受信
 
 #### 成功基準
-- [ ] キー入力が`K=$`で取得できる
-- [ ] Ctrl+Cで正常終了できる
-- [ ] 複数キーの連続入力に対応
-- [ ] TTYでない環境でもエラーにならない
+- ✅ キー入力が`A=$`で取得できる
+- ✅ Ctrl+Cで正常終了できる
+- ✅ 複数キーの連続入力に対応
+- ✅ TTYでない環境でもエラーにならない
+- ✅ ビジーループなし（30 FPS制御）
+- ✅ CPU使用率 3-10% (100%にならない)
+
+#### 実装ファイル
+- ✅ `src/realtime/KeyboardInput.ts` (200行)
+- ✅ `src/realtime/RealTimeCLIRunner.ts` (233行)
+- ✅ `src/__tests__/realtime/KeyboardInput.test.ts`
+- ✅ `src/__tests__/realtime/RealTimeCLIRunner.test.ts`
+- ✅ `src/cli.ts` に --realtime フラグ統合
+- ✅ サンプルプログラム 3個更新
 
 #### サンプルプログラム
 ```workerscript
 : Simple Key Echo
 ^LOOP
-    K=$
-    ;=K>0 ?="Key: " ?=K /
-    ;=K=27 #=^END  : ESC to exit
+    A=$
+    ;=A>0 ?="Key: " ?=A /
+    ;=A=27 #=^END  : ESC to exit
     #=^LOOP
 
 ^END
     ?="Program ended"
     #=-1
+```
+
+#### 実行方法
+```bash
+npm run cli -- examples/realtime_tests/01-key-echo.ws --realtime
+npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-fps
 ```
 
 ---
