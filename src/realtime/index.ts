@@ -8,6 +8,8 @@
  */
 
 export { KeyboardInput, getGlobalKeyboardInput, resetGlobalKeyboardInput } from './KeyboardInput';
+export { RealTimeCLIRunner } from './RealTimeCLIRunner';
+export type { RealTimeCLIRunnerConfig } from './RealTimeCLIRunner';
 export type { KeyboardInputOptions } from './KeyboardInput';
 
 // Phase 2以降で追加予定:

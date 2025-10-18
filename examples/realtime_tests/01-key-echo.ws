@@ -5,9 +5,9 @@
 /
 
 ^LOOP
-    K=$
-    ;=K>0 ?="Key code: " ?=K /
-    ;=K=27 #=^END
+    A=$
+    ;=A>0 ?="Key code: " ?=A /
+    ;=A=27 #=^END
     #=^LOOP
 
 ^END

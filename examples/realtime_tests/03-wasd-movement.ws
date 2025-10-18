@@ -9,19 +9,19 @@ X=50
 Y=50
 
 ^LOOP
-    K=$
+    A=$
     
     : W = up (119)
-    ;=K=119 Y=Y-1
+    ;=A=119 Y=Y-1
     
     : S = down (115)
-    ;=K=115 Y=Y+1
+    ;=A=115 Y=Y+1
     
     : A = left (97)
-    ;=K=97 X=X-1
+    ;=A=97 X=X-1
     
     : D = right (100)
-    ;=K=100 X=X+1
+    ;=A=100 X=X+1
     
     : Boundary check
     ;=X<0 X=0
@@ -33,10 +33,10 @@ Y=50
     `=255
     
     : Show position on key press
-    ;=K>0 ?="Pos: X=" ?=X ?=" Y=" ?=Y /
+    ;=A>0 ?="Pos: X=" ?=X ?=" Y=" ?=Y /
     
     : Q = quit (113)
-    ;=K=113 #=^END
+    ;=A=113 #=^END
     
     #=^LOOP
 
