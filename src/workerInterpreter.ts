@@ -193,10 +193,18 @@ class WorkerInterpreter {
      * 本番コードでは使用されず、loadScript()内で自動的にparseStatementString()が呼ばれます。
      * 
      * @deprecated Phase 3完了後、テストをloadScript()ベースに書き換えて削除予定。
+     * 
+     * 【テスト改善計画 - 2025/10/18】
+     * - 現在約40箇所のparse()呼び出しがテストで使用されている
+     * - すべてパース専用テストで、実行テストは既にloadScript()方式
+     * - 実証済み: loadScript() + getProgram() 方式への変換は技術的に可能
+     * - 効果: テストと実行で同じコードパス使用、二重実装解消、より現実的なテスト
+     * - 変更例: interpreter.parse(tokens) → interpreter.loadScript('A=10'); ast = interpreter.getProgram()
+     * 
      * 中長期的には以下のように書き換えを推奨：
      * ```
      * // 現在: const ast = interpreter.parse(lexer.tokenizeLine(...));
-     * // 将来: const program = interpreter.loadScript("A=10 B=20");
+     * // 将来: interpreter.loadScript("A=10 B=20"); const ast = interpreter.getProgram();
      * ```
      * 
      * @param tokens トークンの配列

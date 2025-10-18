@@ -252,30 +252,18 @@ describe('Parser (TDD Cycle 2.1)', () => {
     });
 
     test('should parse a simple assignment statement (A=10)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
-        expect(ast).toEqual({
-            type: 'Program',
-            line: 0,
-            body: [
-                {
-                    lineNumber: 0,
-                    statements: [
-                        {
-                            type: 'AssignmentStatement',
-                            line: 0,
-                            column: 0,
-                            variable: { type: 'Identifier', name: 'A', line: 0, column: 0 },
-                            value: { type: 'NumericLiteral', value: 10, line: 0, column: 2 },
-                        },
-                    ],
-                },
-            ],
-        });
+        interpreter.loadScript('A=10');
+        const ast = interpreter.getProgram();
+        expect(ast).toBeDefined();
+        expect(ast!.body).toHaveLength(1);
+        expect(ast!.body[0]!.statements).toHaveLength(1);
+        
+        const stmt = ast!.body[0]!.statements[0]!;
+        expect(stmt.type).toBe('AssignmentStatement');
+        const assignStmt = stmt as any;
+        expect(assignStmt.variable.name).toBe('A');
+        expect(assignStmt.value.type).toBe('NumericLiteral');
+        expect(assignStmt.value.value).toBe(10);
     });
 });
 
@@ -1017,13 +1005,15 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         });
     });
 
-    test('should parse FOR loop with default step (I=1,100)', () => {
+    test('should parse FOR loop with default step (@=I,1,100)', () => {
         const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 0 },
+            { type: TokenType.AT, value: '@', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 2 },
             { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 4 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
+            { type: TokenType.NUMBER, value: '100', line: 0, column: 6 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1039,16 +1029,18 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.step).toBeUndefined(); // デフォルトステップ
     });
 
-    test('should parse FOR loop with negative step (J=10,1,-1)', () => {
+    test('should parse FOR loop with negative step (@=J,10,1,-1)', () => {
         const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'J', line: 0, column: 0 },
+            { type: TokenType.AT, value: '@', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'J', line: 0, column: 2 },
             { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 4 },
+            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
             { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 6 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 7 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 6 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 7 },
+            { type: TokenType.MINUS, value: '-', line: 0, column: 8 },
+            { type: TokenType.NUMBER, value: '1', line: 0, column: 9 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1065,15 +1057,17 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.step.operand.value).toBe(1);
     });
 
-    test('should parse FOR loop with variable expressions (K=A,B,C)', () => {
+    test('should parse FOR loop with variable expressions (@=K,A,B,C)', () => {
         const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'K', line: 0, column: 0 },
+            { type: TokenType.AT, value: '@', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
+            { type: TokenType.IDENTIFIER, value: 'K', line: 0, column: 2 },
             { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
+            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 4 },
             { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 6 },
+            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 6 },
+            { type: TokenType.COMMA, value: ',', line: 0, column: 7 },
+            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 8 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
@@ -1383,27 +1377,16 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
         expect(ast.body[0]?.statements[2]?.type).toBe('AssignmentStatement');
     });
 
-    test('should parse FOR loop with output and NEXT (I=1,10 ?=I @=I)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 2 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 7 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 8 },
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 9 },
-            { type: TokenType.AT, value: '@', line: 0, column: 11 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 12 },
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 13 },
-        ];
-        const ast = interpreter.parse(tokens);
-        expect(ast.body).toHaveLength(1);
-        expect(ast.body[0]?.statements).toHaveLength(3);
+    test('should parse FOR loop with output and NEXT (@=I,1,10 ?=I @=I)', () => {
+        interpreter.loadScript('@=I,1,10 ?=I @=I');
+        const ast = interpreter.getProgram();
+        expect(ast).toBeDefined();
+        expect(ast!.body).toHaveLength(1);
+        expect(ast!.body[0]!.statements).toHaveLength(3);
         
-        expect(ast.body[0]?.statements[0]?.type).toBe('ForStatement');
-        expect(ast.body[0]?.statements[1]?.type).toBe('OutputStatement');
-        expect(ast.body[0]?.statements[2]?.type).toBe('NextStatement');
+        expect(ast!.body[0]!.statements[0]!.type).toBe('ForStatement');
+        expect(ast!.body[0]!.statements[1]!.type).toBe('OutputStatement');
+        expect(ast!.body[0]!.statements[2]!.type).toBe('NextStatement');
     });
 
     test('should parse PEEK/POKE with assignment (A=` `=A+1 B=`)', () => {
