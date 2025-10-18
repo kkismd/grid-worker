@@ -2343,14 +2343,23 @@ class WorkerInterpreter {
             case 'ArrayInitializationStatement':
                 return this.executeArrayInitialization(statement);
             
+            case 'ForStatement':
+                // インラインスタイルのFORステートメント（例: @=I,1,3 ?=I #=@）
+                // ブロックスタイルではForBlockStatementに変換される
+                // インラインスタイルではこのステートメントは無視され、loopStackで処理される
+                return { jump: false, halt: false, skipRemaining: false };
+            
             case 'NextStatement':
-                // スタンドアロンの#=@は無視（対応するループがない場合）
-                // loopStackの処理は別途行われる
+                // NEXTステートメント（#=@）
+                // ブロックスタイル: ForBlockStatement/WhileBlockStatementの終端として処理済み
+                // インラインスタイル: loopStackで処理される
+                // スタンドアロン: 対応するループがない場合は無視
                 return { jump: false, halt: false, skipRemaining: false };
             
             case 'WhileStatement':
-                // 単独のWhileStatementは通常WhileBlockStatementに変換される
-                // ここに来ることは想定外だが、エラーにしない
+                // インラインスタイルのWHILEステートメント（例: @=(X<10) ?=X #=@）
+                // ブロックスタイルではWhileBlockStatementに変換される
+                // インラインスタイルではこのステートメントは無視され、loopStackで処理される
                 return { jump: false, halt: false, skipRemaining: false };
             
             default:
