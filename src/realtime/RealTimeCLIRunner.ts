@@ -4,6 +4,7 @@ import WorkerInterpreter from '../workerInterpreter.js';
 import { GridRenderer } from '../gridRenderer.js';
 import { KeyboardInput } from './KeyboardInput.js';
 import { GridDiffRenderer } from './GridDiffRenderer.js';
+import { SplitScreenRenderer } from './SplitScreenRenderer.js';
 
 export interface RealTimeCLIRunnerConfig {
     debug?: boolean;
@@ -13,6 +14,7 @@ export interface RealTimeCLIRunnerConfig {
     showFPS?: boolean;         // FPS表示（デフォルト: false）
     showGrid?: boolean;        // グリッド表示（デフォルト: false）
     gridDisplaySize?: number;  // グリッド表示サイズ（デフォルト: 20x20）
+    splitScreen?: boolean;     // 上下分割画面（デフォルト: false）
 }
 
 /**
@@ -26,12 +28,14 @@ export class RealTimeCLIRunner {
     private gridData: number[];
     private gridRenderer: GridRenderer;
     private gridDiffRenderer: GridDiffRenderer;
+    private splitScreenRenderer?: SplitScreenRenderer;
     private keyboard: KeyboardInput;
     private transcript: string[] = [];
     private shouldStop: boolean = false;
     private totalSteps: number = 0;
     private frameCount: number = 0;
     private lastFPSDisplay: number = 0;
+    private lastGridData: number[][] = [];
 
     constructor(config: RealTimeCLIRunnerConfig = {}) {
         this.config = {
@@ -42,6 +46,7 @@ export class RealTimeCLIRunner {
             showFPS: config.showFPS ?? false,
             showGrid: config.showGrid ?? false,
             gridDisplaySize: config.gridDisplaySize ?? 20,
+            splitScreen: config.splitScreen ?? false,
         };
 
         // 100x100 グリッドを初期化
@@ -68,8 +73,8 @@ export class RealTimeCLIRunner {
      */
     async executeRealTime(script: string, scriptName?: string): Promise<void> {
         if (this.config.verbose) {
-            console.log(`🎮 リアルタイムモード起動: ${scriptName || 'Unknown'}`);
-            console.log(`📊 設定: ${this.config.frameRate} FPS, ${this.config.stepsPerFrame} steps/frame`);
+            this.println(`🎮 リアルタイムモード起動: ${scriptName || 'Unknown'}`);
+            this.println(`📊 設定: ${this.config.frameRate} FPS, ${this.config.stepsPerFrame} steps/frame`);
         }
 
         // トランスクリプトをクリア
@@ -84,7 +89,7 @@ export class RealTimeCLIRunner {
             this.keyboard.enable();
 
             if (this.config.verbose) {
-                console.log('⌨️  キーボード入力有効（Ctrl+Cで終了）\n');
+                this.println('⌨️  キーボード入力有効（Ctrl+Cで終了）\n');
             }
 
             // WorkerInterpreterを設定
@@ -92,23 +97,35 @@ export class RealTimeCLIRunner {
                 gridData: this.gridData,
                 peekFn: (index: number) => this.peek(index),
                 pokeFn: (x: number, y: number, value: number) => this.poke(x, y, value),
-                logFn: (...args: any[]) => this.log(...args),
+                logFn: (...args: any[]) => this.print(...args),  // スクリプト出力
                 getFn: () => this.keyboard.getKey(), // ← リアルタイム入力
-                putFn: (value: number) => this.put1Byte(value),
+                putFn: (value: number) => this.put1Byte(value),  // スクリプト出力
             });
 
             // スクリプトをロード
             interpreter.loadScript(script);
 
             if (this.config.verbose) {
-                console.log('✅ スクリプト解析完了');
-                console.log('🚀 実行開始...\n');
+                this.println('✅ スクリプト解析完了');
+                this.println('🚀 実行開始...\n');
             }
 
             // グリッド表示の初期化
             if (this.config.showGrid) {
-                process.stdout.write(GridDiffRenderer.hideCursor());
-                process.stdout.write(this.gridDiffRenderer.initScreen());
+                if (this.config.splitScreen) {
+                    // 上下分割画面レンダラーを初期化
+                    this.splitScreenRenderer = new SplitScreenRenderer(
+                        this.config.gridDisplaySize,
+                        scriptName
+                    );
+                    // lastGridDataを初期化
+                    this.lastGridData = this.getCurrentGridData();
+                    process.stdout.write(this.splitScreenRenderer.initScreen());
+                } else {
+                    // 通常のグリッド表示
+                    process.stdout.write(GridDiffRenderer.hideCursor());
+                    process.stdout.write(this.gridDiffRenderer.initScreen());
+                }
             }
 
             // 実行ジェネレーター取得
@@ -118,23 +135,29 @@ export class RealTimeCLIRunner {
             await this.runFrameLoop(generator);
 
             if (this.config.verbose) {
-                console.log(`\n✅ 実行完了`);
-                console.log(`📊 総実行: ${this.totalSteps.toLocaleString()} ステップ, ${this.frameCount} フレーム`);
+                this.println(`\n✅ 実行完了`);
+                this.println(`📊 総実行: ${this.totalSteps.toLocaleString()} ステップ, ${this.frameCount} フレーム`);
             }
 
             // 結果を表示
             this.displayResults();
 
         } catch (error) {
-            console.error('\n❌ 実行エラー:', error instanceof Error ? error.message : error);
+            this.println('\n❌ 実行エラー:' + (error instanceof Error ? error.message : error));
             if (this.config.debug && error instanceof Error) {
-                console.error('スタックトレース:', error.stack);
+                this.println('スタックトレース:' + error.stack);
             }
         } finally {
             // グリッド表示を終了
             if (this.config.showGrid) {
-                process.stdout.write(GridDiffRenderer.showCursor());
-                console.log('\n');  // グリッドの下に改行
+                if (this.config.splitScreen && this.splitScreenRenderer) {
+                    // 上下分割画面のクリーンアップ
+                    process.stdout.write(this.splitScreenRenderer.cleanup());
+                } else {
+                    // 通常グリッド表示のクリーンアップ
+                    process.stdout.write(GridDiffRenderer.showCursor());
+                    console.log('\n');  // グリッドの下に改行
+                }
             }
             
             // キーボード入力を無効化
@@ -166,9 +189,20 @@ export class RealTimeCLIRunner {
 
             // グリッド差分描画
             if (this.config.showGrid) {
-                const diffOutput = this.gridDiffRenderer.renderDiff(this.gridData);
-                if (diffOutput) {
-                    process.stdout.write(diffOutput);
+                if (this.config.splitScreen && this.splitScreenRenderer) {
+                    // 上下分割画面モード: グリッド領域のみ更新
+                    const currentGrid = this.getCurrentGridData();
+                    const diffOutput = this.splitScreenRenderer.updateGrid(this.lastGridData, currentGrid);
+                    if (diffOutput) {
+                        process.stdout.write(diffOutput);
+                    }
+                    this.lastGridData = currentGrid;
+                } else {
+                    // 通常グリッド表示
+                    const diffOutput = this.gridDiffRenderer.renderDiff(this.gridData);
+                    if (diffOutput) {
+                        process.stdout.write(diffOutput);
+                    }
                 }
             }
 
@@ -203,6 +237,25 @@ export class RealTimeCLIRunner {
     }
 
     /**
+     * 現在のグリッドデータを2次元配列に変換
+     */
+    private getCurrentGridData(): number[][] {
+        const size = this.config.gridDisplaySize;
+        const grid: number[][] = [];
+        
+        for (let y = 0; y < size; y++) {
+            const row: number[] = [];
+            for (let x = 0; x < size; x++) {
+                const index = y * 100 + x;
+                row.push(this.gridData[index] || 0);
+            }
+            grid.push(row);
+        }
+        
+        return grid;
+    }
+
+    /**
      * PEEK実装
      */
     private peek(index: number): number {
@@ -227,29 +280,51 @@ export class RealTimeCLIRunner {
     }
 
     /**
-     * ログ出力
+     * システムメッセージ出力（println）
+     * デバッグログやシステム情報など、スクリプト出力とは分離
      */
-    private log(...args: any[]): void {
+    private println(...args: any[]): void {
         const message = args.join(' ');
-        this.transcript.push(message);
         
-        // グリッド表示モードではコンソール出力を抑制
-        if (!this.config.showGrid) {
-            console.log(message);
-        }
+        // 常にコンソールに出力（グリッド表示に影響されない）
+        console.log(message);
     }
 
     /**
-     * 1byte出力
+     * スクリプト出力（print）
+     * ?= による出力。トランスクリプトに記録
+     */
+    private print(...args: any[]): void {
+        const message = args.join(' ');
+        this.transcript.push(message);
+        
+        // 上下分割画面モードではトランスクリプト領域に出力
+        if (this.config.showGrid && this.config.splitScreen && this.splitScreenRenderer) {
+            // 改行は含めない（NewlineStatementで別途処理される）
+            this.splitScreenRenderer.addTranscriptLine(message);
+        } else if (!this.config.showGrid) {
+            // グリッド表示オフの場合は通常のコンソール出力
+            // 改行なしで出力（従来の動作）
+            process.stdout.write(String(message));
+        }
+        // showGrid=true, splitScreen=falseの場合は抑制（従来の動作）
+    }
+
+    /**
+     * 1byte出力（/= による文字出力）
      */
     private put1Byte(value: number): void {
         // 0-255の範囲にクランプ
         const byte = Math.max(0, Math.min(255, Math.floor(value)));
         
-        // グリッド表示モードでは文字出力を抑制
-        if (!this.config.showGrid) {
+        // 上下分割画面モードではトランスクリプト領域に出力
+        if (this.config.showGrid && this.config.splitScreen && this.splitScreenRenderer) {
+            this.splitScreenRenderer.addTranscriptChar(String.fromCharCode(byte));
+        } else if (!this.config.showGrid) {
+            // グリッド表示オフの場合は通常の出力
             process.stdout.write(String.fromCharCode(byte));
         }
+        // showGrid=true, splitScreen=falseの場合は抑制（従来の動作）
     }
 
     /**
@@ -257,18 +332,18 @@ export class RealTimeCLIRunner {
      */
     private displayResults(): void {
         if (this.config.verbose) {
-            console.log('\n' + '='.repeat(50));
-            console.log('📊 実行結果');
-            console.log('='.repeat(50));
+            this.println('\n' + '='.repeat(50));
+            this.println('📊 実行結果');
+            this.println('='.repeat(50));
             
             // グリッド描画
-            console.log('\n🔲 グリッド状態:');
-            console.log(this.gridRenderer.renderToString(this.gridData, true));
+            this.println('\n🔲 グリッド状態:');
+            this.println(this.gridRenderer.renderToString(this.gridData, true));
             
             // トランスクリプト
             if (this.transcript.length > 0) {
-                console.log('\n📝 トランスクリプト:');
-                this.transcript.forEach(line => console.log(line));
+                this.println('\n📝 トランスクリプト:');
+                this.transcript.forEach(line => this.println(line));
             }
         }
     }

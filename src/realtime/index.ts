@@ -8,9 +8,9 @@
  */
 
 export { KeyboardInput, getGlobalKeyboardInput, resetGlobalKeyboardInput } from './KeyboardInput';
-export { RealTimeCLIRunner } from './RealTimeCLIRunner';
-export type { RealTimeCLIRunnerConfig } from './RealTimeCLIRunner';
-export { GridDiffRenderer } from './GridDiffRenderer';
+export { RealTimeCLIRunner, type RealTimeCLIRunnerConfig } from './RealTimeCLIRunner';
+export { GridDiffRenderer, type GridChange } from './GridDiffRenderer';
+export { SplitScreenRenderer } from './SplitScreenRenderer';
 export type { KeyboardInputOptions } from './KeyboardInput';
 
 // Phase 2以降で追加予定:

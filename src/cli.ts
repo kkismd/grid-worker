@@ -24,6 +24,7 @@ interface CLIOptions {
     showFPS: boolean;
     showGrid: boolean;
     gridSize?: number;
+    splitScreen: boolean;
 }
 
 function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
@@ -36,7 +37,8 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
         quiet: false,
         realtime: false,
         showFPS: false,
-        showGrid: false
+        showGrid: false,
+        splitScreen: false
     };
 
     let scriptFile: string | undefined;
@@ -115,6 +117,10 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
             case '-g':
                 options.showGrid = true;
                 break;
+            case '--split-screen':
+            case '-s':
+                options.splitScreen = true;
+                break;
             case '--grid-size':
                 const nextGridSizeArg = args[++i];
                 if (nextGridSizeArg) {
@@ -156,6 +162,7 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   --steps-per-frame N     1フレームあたりの実行ステップ数（デフォルト: 1000）
   --show-fps              FPS表示を有効化
   -g, --show-grid         グリッド表示を有効化（リアルタイムモード専用）
+  -s, --split-screen      上下分割画面表示（--show-gridと併用）
   --grid-size N           グリッド表示サイズ（デフォルト: 20x20）
   -h, --help              このヘルプを表示
 
@@ -167,7 +174,7 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   npm run cli --interactive
   npm run cli -- examples/realtime_tests/01-key-echo.ws --realtime
   npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid
-  npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid --grid-size 30
+  npm run cli -- examples/realtime_tests/03-wasd-movement.ws --realtime --show-grid --split-screen
 `);
 }
 
@@ -220,6 +227,7 @@ async function main() {
                     ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
                     showFPS: options.showFPS,
                     showGrid: options.showGrid,
+                    splitScreen: options.splitScreen,
                     ...(options.gridSize && { gridDisplaySize: options.gridSize })
                 };
                 const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);

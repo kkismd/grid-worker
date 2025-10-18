@@ -3,7 +3,7 @@
 /**
  * グリッド上の1つの変更点
  */
-interface GridChange {
+export interface GridChange {
     x: number;
     y: number;
     value: number;
