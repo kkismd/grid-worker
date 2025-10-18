@@ -3381,3 +3381,248 @@ describe('Array Statement - Parser', () => {
     });
 });
 
+describe('Array Operations - Execution', () => {
+    let interpreter: any;
+
+    beforeEach(() => {
+        const gridData = new Array(10000).fill(0);
+        interpreter = new WorkerInterpreter({
+            gridData,
+            peekFn: (index: number) => gridData[index] || 0,
+            pokeFn: (x: number, y: number, value: number) => {
+                gridData[x * 100 + y] = value;
+            },
+            logFn: jest.fn(),
+        });
+    });
+
+    test('should write and read array element ([0]=100, A=[0])', () => {
+        interpreter.loadScript('[0]=100 A=[0]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(100);
+    });
+
+    test('should write and read array with variable index ([I]=42, B=[I])', () => {
+        interpreter.loadScript('I=10 [I]=42 B=[I]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('B')).toBe(42);
+    });
+
+    test('should write and read array with expression index ([A+5]=99, C=[A+5])', () => {
+        interpreter.loadScript('A=10 [A+5]=99 C=[A+5]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('C')).toBe(99);
+    });
+
+    test('should initialize array with multiple values ([1000]=1,2,3)', () => {
+        interpreter.loadScript('[1000]=10,20,30 A=[1000] B=[1001] C=[1002]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(10);
+        expect(interpreter.getVariable('B')).toBe(20);
+        expect(interpreter.getVariable('C')).toBe(30);
+    });
+
+    test('should initialize array with expression values ([A]=B,C+5,D*2)', () => {
+        interpreter.loadScript('B=100 C=10 D=3 A=500 [A]=B,C+5,D*2 X=[500] Y=[501] Z=[502]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('X')).toBe(100);
+        expect(interpreter.getVariable('Y')).toBe(15);
+        expect(interpreter.getVariable('Z')).toBe(6);
+    });
+
+    test('should handle array in expression (A=[0]+[1])', () => {
+        interpreter.loadScript('[0]=5 [1]=3 A=[0]+[1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(8);
+    });
+
+    test('should handle nested array access ([[0]])', () => {
+        interpreter.loadScript('[0]=10 [10]=42 A=[[0]]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(42);
+    });
+
+    test('should normalize array index to 0-65535 range', () => {
+        interpreter.loadScript('[65536]=99 A=[0]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(99); // 65536 & 0xFFFF = 0
+    });
+
+    test('should handle large array indices (near 65535)', () => {
+        interpreter.loadScript('[65535]=77 A=[65535]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(77);
+    });
+
+    test('should return 0 for uninitialized array elements', () => {
+        interpreter.loadScript('A=[12345]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(0);
+    });
+
+    test('should handle array write in loop', () => {
+        interpreter.loadScript(`
+            @=I,0,4
+                [I]=I*10
+            #=@
+            A=[0] B=[1] C=[2] D=[3] E=[4]
+        `);
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(0);
+        expect(interpreter.getVariable('B')).toBe(10);
+        expect(interpreter.getVariable('C')).toBe(20);
+        expect(interpreter.getVariable('D')).toBe(30);
+        expect(interpreter.getVariable('E')).toBe(40);
+    });
+
+    test('should use array as loop counter storage', () => {
+        interpreter.loadScript(`
+            [100]=0
+            @=I,1,5
+                [100]=[100]+I
+            #=@
+            S=[100]
+        `);
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('S')).toBe(15); // 1+2+3+4+5
+    });
+});
+
+describe('Stack Operations - Execution', () => {
+    let interpreter: any;
+
+    beforeEach(() => {
+        const gridData = new Array(10000).fill(0);
+        interpreter = new WorkerInterpreter({
+            gridData,
+            peekFn: (index: number) => gridData[index] || 0,
+            pokeFn: (x: number, y: number, value: number) => {
+                gridData[x * 100 + y] = value;
+            },
+            logFn: jest.fn(),
+        });
+    });
+
+    test('should push and pop single value ([-1]=10, A=[-1])', () => {
+        interpreter.loadScript('[-1]=10 A=[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(10);
+    });
+
+    test('should push and pop multiple values in LIFO order', () => {
+        interpreter.loadScript('[-1]=1 [-1]=2 [-1]=3 A=[-1] B=[-1] C=[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(3); // Last in
+        expect(interpreter.getVariable('B')).toBe(2);
+        expect(interpreter.getVariable('C')).toBe(1); // First in
+    });
+
+    test('should push variable values to stack', () => {
+        interpreter.loadScript('X=100 Y=200 [-1]=X [-1]=Y A=[-1] B=[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(200);
+        expect(interpreter.getVariable('B')).toBe(100);
+    });
+
+    test('should push expression results to stack', () => {
+        interpreter.loadScript('[-1]=5+3 [-1]=10*2 A=[-1] B=[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(20);
+        expect(interpreter.getVariable('B')).toBe(8);
+    });
+
+    test('should use stack in nested expression (A=[-1]+[-1])', () => {
+        interpreter.loadScript('[-1]=10 [-1]=20 A=[-1]+[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(30);
+    });
+
+    test('should handle stack operations in loop', () => {
+        interpreter.loadScript(`
+            @=I,1,3
+                [-1]=I*10
+            #=@
+            A=[-1] B=[-1] C=[-1]
+        `);
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(30); // Last pushed
+        expect(interpreter.getVariable('B')).toBe(20);
+        expect(interpreter.getVariable('C')).toBe(10); // First pushed
+    });
+
+    test('should use stack for temporary storage in calculation', () => {
+        interpreter.loadScript(`
+            A=5 B=3
+            [-1]=A [-1]=B
+            C=[-1]*[-1]
+        `);
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('C')).toBe(15);
+    });
+
+    test('should handle stack with conditional logic', () => {
+        interpreter.loadScript(`
+            @=I,1,5
+                ;=I>3 [-1]=I
+            #=@
+            A=[-1] B=[-1]
+        `);
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(5); // Last: I=5
+        expect(interpreter.getVariable('B')).toBe(4); // Second: I=4
+    });
+
+    test('should allow deep stack usage (push many, pop many)', () => {
+        interpreter.loadScript(`
+            @=I,1,10
+                [-1]=I
+            #=@
+            S=0
+            @=J,1,10
+                S=S+[-1]
+            #=@
+        `);
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('S')).toBe(55); // 1+2+3+...+10
+    });
+
+    test('should handle stack pointer wrapping (no overflow check per VTL spec)', () => {
+        // VTL仕様では、スタックオーバーフローのチェックは行わない
+        // スタックポインタは単に0xFFFFでマスクされる
+        interpreter.loadScript('[-1]=99 A=[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(99);
+        // より多くのpush/popを実行してもエラーにならないことを確認
+    });
+
+    test('should pop from empty stack without error (returns 0 per VTL spec)', () => {
+        // VTL仕様では、アンダーフローもチェックしない
+        interpreter.loadScript('A=[-1]');
+        const gen = interpreter.run();
+        while (!gen.next().done) {}
+        expect(interpreter.getVariable('A')).toBe(0); // 未初期化メモリは0
+    });
+});
+
