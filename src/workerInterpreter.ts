@@ -274,6 +274,35 @@ class WorkerInterpreter {
                         }
                     }
                     
+                    // ブロックIF検出: 1行に1つだけIfStatementがある場合
+                    if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'IfStatement') {
+                        const inlineIf = parsedStatements[0] as any;
+                        
+                        // IfBlockStatementに変換
+                        const blockIf: any = {
+                            type: 'IfBlockStatement',
+                            line: i,
+                            condition: inlineIf.condition,
+                            thenBody: [],
+                            elseBody: undefined,
+                        };
+                        
+                        // #=; まで本体を収集
+                        const endLine = this.collectIfBlock(blockIf, i + 1);
+                        
+                        // ブロック全体を1つのステートメントとして追加
+                        const line: Line = {
+                            lineNumber: i,
+                            statements: [blockIf],
+                            sourceText: sourceText,
+                        };
+                        lines.push(line);
+                        
+                        // endLine まで進める（途中の行はスキップ）
+                        i = endLine;
+                        continue;
+                    }
+                    
                     const line: Line = {
                         lineNumber: i,
                         statements: parsedStatements,
@@ -291,6 +320,73 @@ class WorkerInterpreter {
             line: 0,
             body: lines,
         };
+    }
+
+    /**
+     * 指定された行が #=; (EndIf) かどうかを判定します。
+     */
+    private isEndIfStatement(sourceText: string): boolean {
+        return sourceText.trim() === '#=;';
+    }
+
+    /**
+     * 指定された行が ; (Else) かどうかを判定します。
+     */
+    private isElseStatement(sourceText: string): boolean {
+        return sourceText.trim() === ';';
+    }
+
+    /**
+     * ブロックIF構造の本体を収集します。
+     * ;=<condition> から #=; までの間のステートメントを収集し、
+     * ELSE (;) があればthenBodyとelseBodyに分けます。
+     * 
+     * @param blockStmt IfBlockStatementノード（condition設定済み）
+     * @param startLine ;=<condition> の次の行番号
+     * @returns 処理した最終行番号（#=; の行）
+     */
+    private collectIfBlock(blockStmt: any, startLine: number): number {
+        const thenBody: Statement[] = [];
+        const elseBody: Statement[] = [];
+        let currentBody = thenBody;
+        let foundEndIf = false;
+
+        for (let i = startLine; i < this.scriptLines.length; i++) {
+            const sourceText = this.scriptLines[i];
+            if (!sourceText) continue;
+
+            // #=; を見つけたら終了
+            if (this.isEndIfStatement(sourceText)) {
+                foundEndIf = true;
+                // thenBodyとelseBody（あれば）を設定してから終了
+                blockStmt.thenBody = thenBody;
+                if (elseBody.length > 0) {
+                    blockStmt.elseBody = elseBody;
+                }
+                return i;
+            }
+
+            // ; を見つけたらelseBodyに切り替え
+            if (this.isElseStatement(sourceText)) {
+                currentBody = elseBody;
+                continue;
+            }
+
+            // ステートメントをパース
+            const stmtStrings = this.splitLineByWhitespace(sourceText);
+            for (const stmtString of stmtStrings) {
+                const stmt = this.parseStatementString(stmtString, i);
+                if (stmt) {
+                    currentBody.push(stmt);
+                }
+            }
+        }
+
+        if (!foundEndIf) {
+            throw new Error(`ブロックIF構造が #=; で終了していません (開始行: ${startLine})`);
+        }
+
+        return -1; // 到達しない
     }
 
     /**
@@ -1650,6 +1746,33 @@ class WorkerInterpreter {
                     // 条件が0（偽）の場合、この行の残りをスキップ
                     if (condition === 0) {
                         return { jump: false, halt: false, skipRemaining: true };
+                    }
+                }
+                break;
+            
+            case 'IfBlockStatement':
+                {
+                    const condition = this.evaluateExpression((statement as any).condition);
+                    if (typeof condition === 'string') {
+                        throw new Error('IF条件は数値でなければなりません');
+                    }
+                    
+                    // 条件が真（非0）の場合、thenBodyを実行
+                    if (condition !== 0) {
+                        for (const stmt of (statement as any).thenBody || []) {
+                            const result = this.executeStatement(stmt);
+                            if (result.jump || result.halt) {
+                                return result;
+                            }
+                        }
+                    } else {
+                        // 条件が偽（0）の場合、elseBodyを実行
+                        for (const stmt of (statement as any).elseBody || []) {
+                            const result = this.executeStatement(stmt);
+                            if (result.jump || result.halt) {
+                                return result;
+                            }
+                        }
                     }
                 }
                 break;
