@@ -1058,6 +1058,16 @@ class WorkerInterpreter {
                 };
             }
 
+            // #=@ パターン（NEXT文）- 統一構造
+            if (thirdToken.type === TokenType.AT) {
+                return {
+                    type: 'NextStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                    // variable: undefined, // #=@は変数指定なし（統一構造）
+                };
+            }
+
             // #=^LABEL パターン（通常のGOTO）
             if (thirdToken.type === TokenType.LABEL_DEFINITION) {
                 const labelName = thirdToken.value.substring(1); // ^ を除去

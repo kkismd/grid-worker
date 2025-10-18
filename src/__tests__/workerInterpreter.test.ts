@@ -1084,20 +1084,20 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.step.name).toBe('C');
     });
 
-    test('should parse NEXT statement (@=I)', () => {
+    test('should parse NEXT statement (#=@)', () => {
         const tokens: Token[] = [
-            { type: TokenType.AT, value: '@', line: 0, column: 0 },
+            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
             { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 2 },
+            { type: TokenType.AT, value: '@', line: 0, column: 2 },
         ];
         const ast = interpreter.parse(tokens);
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
         expect(stmt?.type).toBe('NextStatement');
+        // 統一構造では変数指定なし
         const nextStmt = stmt as any;
-        expect(nextStmt.variable.type).toBe('Identifier');
-        expect(nextStmt.variable.name).toBe('I');
+        expect(nextStmt.variable).toBeUndefined();
     });
 
     test('should distinguish FOR from regular assignment (A=1)', () => {
@@ -1377,8 +1377,8 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
         expect(ast.body[0]?.statements[2]?.type).toBe('AssignmentStatement');
     });
 
-    test('should parse FOR loop with output and NEXT (@=I,1,10 ?=I @=I)', () => {
-        interpreter.loadScript('@=I,1,10 ?=I @=I');
+    test('should parse FOR loop with output and NEXT (@=I,1,10 ?=I #=@)', () => {
+        interpreter.loadScript('@=I,1,10 ?=I #=@');
         const ast = interpreter.getProgram();
         expect(ast).toBeDefined();
         expect(ast!.body).toHaveLength(1);
@@ -2493,11 +2493,11 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should execute basic FOR loop with default step', () => {
-        interpreter.loadScript('S=0 I=1,3\nS=S+I @=I\n?=S');
+        interpreter.loadScript('S=0 @=I,1,3\nS=S+I #=@\n?=S');
         const gen = interpreter.run();
         
         gen.next(); // S=0
-        gen.next(); // FOR I=1,3 (I=1)
+        gen.next(); // @=I,1,3 (I=1)
         // Iteration 1: I=1
         gen.next(); // S=S+I → S=1
         gen.next(); // NEXT I → I=2, continue
@@ -2516,20 +2516,20 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
 
     // 新しい統一構文の実行テスト
     test('should execute new FOR syntax (@=I,1,3)', () => {
-        interpreter.loadScript('S=0 @=I,1,3\nS=S+I @=I\n?=S');
+        interpreter.loadScript('S=0 @=I,1,3\nS=S+I #=@\n?=S');
         const gen = interpreter.run();
         
         gen.next(); // S=0
         gen.next(); // @=I,1,3 (I=1)
         // Iteration 1: I=1
         gen.next(); // S=S+I → S=1
-        gen.next(); // @=I → I=2, continue
+        gen.next(); // #=@ → I=2, continue
         // Iteration 2: I=2
         gen.next(); // S=S+I → S=3
-        gen.next(); // @=I → I=3, continue
+        gen.next(); // #=@ → I=3, continue
         // Iteration 3: I=3
         gen.next(); // S=S+I → S=6
-        gen.next(); // @=I → I=4, exit loop
+        gen.next(); // #=@ → I=4, exit loop
         // After loop
         gen.next(); // ?=S
         
@@ -2538,20 +2538,20 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should execute new FOR syntax with step (@=J,3,1,-1)', () => {
-        interpreter.loadScript('S=0 @=J,3,1,-1\nS=S+J @=J\n?=S');
+        interpreter.loadScript('S=0 @=J,3,1,-1\nS=S+J #=@\n?=S');
         const gen = interpreter.run();
         
         gen.next(); // S=0
         gen.next(); // @=J,3,1,-1 (J=3)
         // Iteration 1: J=3
         gen.next(); // S=S+J → S=3
-        gen.next(); // @=J → J=2, continue
+        gen.next(); // #=@ → J=2, continue
         // Iteration 2: J=2
         gen.next(); // S=S+J → S=5
-        gen.next(); // @=J → J=1, continue
+        gen.next(); // #=@ → J=1, continue
         // Iteration 3: J=1
         gen.next(); // S=S+J → S=6
-        gen.next(); // @=J → J=0, exit loop
+        gen.next(); // #=@ → J=0, exit loop
         // After loop
         gen.next(); // ?=S
         
@@ -2560,11 +2560,11 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should execute FOR loop with negative step', () => {
-        interpreter.loadScript('S=0 I=3,1,-1\nS=S+I @=I\n?=S');
+        interpreter.loadScript('S=0 @=I,3,1,-1\nS=S+I #=@\n?=S');
         const gen = interpreter.run();
         
         gen.next(); // S=0
-        gen.next(); // FOR I=3,1,-1 (I=3)
+        gen.next(); // @=I,3,1,-1 (I=3)
         // Iteration 1: I=3
         gen.next(); // S=S+I → S=3
         gen.next(); // NEXT I → I=2, continue
@@ -2582,11 +2582,11 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should execute FOR loop with step 2', () => {
-        interpreter.loadScript('S=0 I=1,5,2\nS=S+I @=I\n?=S');
+        interpreter.loadScript('S=0 @=I,1,5,2\nS=S+I #=@\n?=S');
         const gen = interpreter.run();
         
         gen.next(); // S=0
-        gen.next(); // FOR I=1,5,2 (I=1)
+        gen.next(); // @=I,1,5,2 (I=1)
         gen.next(); // S=S+I → S=1
         gen.next(); // NEXT I → I=3, continue
         gen.next(); // S=S+I → S=4
@@ -2600,13 +2600,13 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should handle nested FOR loops', () => {
-        interpreter.loadScript('S=0 I=1,2\nJ=1,2\nS=S+I*10+J @=J\n@=I\n?=S');
+        interpreter.loadScript('S=0 @=I,1,2\n@=J,1,2\nS=S+I*10+J #=@\n#=@\n?=S');
         const gen = interpreter.run();
         
         gen.next(); // S=0
-        gen.next(); // FOR I=1,2 (I=1)
+        gen.next(); // @=I,1,2 (I=1)
         // I=1
-        gen.next(); // FOR J=1,2 (J=1)
+        gen.next(); // @=J,1,2 (J=1)
         gen.next(); // S=S+11 → S=11
         gen.next(); // NEXT J → J=2
         gen.next(); // S=S+12 → S=23
@@ -2626,11 +2626,11 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should skip FOR loop if start > end with positive step', () => {
-        interpreter.loadScript('A=5 I=10,1\nA=A+1 @=I\n?=A');
+        interpreter.loadScript('A=5 @=I,10,1\nA=A+1 #=@\n?=A');
         const gen = interpreter.run();
         
         gen.next(); // A=5
-        gen.next(); // FOR I=10,1 (I=10, 10>1, skip loop)
+        gen.next(); // @=I,10,1 (I=10, 10>1, skip loop)
         gen.next(); // ?=A
         
         expect(interpreter.getVariable('A')).toBe(5); // Loop not executed
@@ -2638,11 +2638,11 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should skip FOR loop if start < end with negative step', () => {
-        interpreter.loadScript('A=5 I=1,10,-1\nA=A+1 @=I\n?=A');
+        interpreter.loadScript('A=5 @=I,1,10,-1\nA=A+1 #=@\n?=A');
         const gen = interpreter.run();
         
         gen.next(); // A=5
-        gen.next(); // FOR I=1,10,-1 (I=1, 1<10 with step -1, skip loop)
+        gen.next(); // @=I,1,10,-1 (I=1, 1<10 with step -1, skip loop)
         gen.next(); // ?=A
         
         expect(interpreter.getVariable('A')).toBe(5); // Loop not executed
@@ -2650,37 +2650,38 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
     });
 
     test('should throw error on NEXT without FOR', () => {
-        interpreter.loadScript('@=I');
+        interpreter.loadScript('#=@');
         const gen = interpreter.run();
         
         expect(() => gen.next()).toThrow('NEXT文に対応するFORループがありません');
     });
 
-    test('should throw error on NEXT with wrong variable', () => {
-        interpreter.loadScript('I=1,3\n@=J');
-        const gen = interpreter.run();
-        gen.next(); // FOR I=1,3
-        
-        expect(() => gen.next()).toThrow('NEXT文のループ変数Jが現在のFORループの変数Iと一致しません');
-    });
+    // 統一構造では変数チェック不要（ネストベースの処理）
+    // test('should throw error on NEXT with wrong variable', () => {
+    //     interpreter.loadScript('@=I,1,3\n#=@');
+    //     const gen = interpreter.run();
+    //     gen.next(); // @=I,1,3
+    //     
+    //     expect(() => gen.next()).toThrow('NEXT文のループ変数Jが現在のFORループの変数Iと一致しません');
+    // });
 
     test('should throw error on step value of 0', () => {
-        interpreter.loadScript('I=1,10,0');
+        interpreter.loadScript('@=I,1,10,0');
         const gen = interpreter.run();
         
         expect(() => gen.next()).toThrow('FORループのステップ値は0にできません');
     });
 
     test('should throw error on nested loop with same variable', () => {
-        interpreter.loadScript('I=1,3\nI=1,2\n@=I\n@=I');
+        interpreter.loadScript('@=I,1,3\n@=I,1,2\n#=@\n#=@');
         const gen = interpreter.run();
-        gen.next(); // FOR I=1,3
+        gen.next(); // @=I,1,3
         
         expect(() => gen.next()).toThrow('ループ変数Iは既に使用されています');
     });
 
     test('should allow FOR loop variable reuse after loop ends', () => {
-        interpreter.loadScript('I=1,2\n@=I\nI=5,6\n@=I\n?=I');
+        interpreter.loadScript('@=I,1,2\n#=@\n@=I,5,6\n#=@\n?=I');
         const gen = interpreter.run();
         
         gen.next(); // FOR I=1,2 (I=1)
@@ -2693,6 +2694,14 @@ describe('Phase 3.6: FOR/NEXT Loop Execution', () => {
         
         expect(interpreter.getVariable('I')).toBe(7);
         expect(mockLogFn).toHaveBeenCalledWith(7);
+    });
+
+    test('should reject old FOR syntax as unimplemented comma operator', () => {
+        // 旧構文は代入として解析されるが、カンマ演算子が未実装のためエラーになる
+        interpreter.loadScript('I=1,100');
+        const gen = interpreter.run();
+        
+        expect(() => gen.next()).toThrow('未実装の演算子: ,');
     });
 });
 
