@@ -66,14 +66,11 @@ export class GridDiffRenderer {
         output += '-'.repeat(this.displayWidth * 2 - 1);
         output += '\n';
         
-        // グリッド行を初期化（文字間に空白を挿入）
+        // グリッド行を初期化（すべて2文字幅）
         for (let y = 0; y < this.displayHeight; y++) {
             output += `${y % 10} |`;  // Y座標 + 空白
             for (let x = 0; x < this.displayWidth; x++) {
-                output += this.valueToChar(0);
-                if (x < this.displayWidth - 1) {
-                    output += ' ';  // 文字間に空白
-                }
+                output += this.valueToChar(0);  // '. ' が返される
             }
             output += '\n';
         }
@@ -143,14 +140,15 @@ export class GridDiffRenderer {
 
     /**
      * 数値をASCII文字に変換 (0-255の値を輝度階調で表現)
+     * 空セル以外は2文字幅で描画
      */
     private valueToChar(value: number): string {
-        if (value === 0) return '.';   // 空白/黒 (0)
-        if (value <= 32) return '░';   // 薄い (1-32)
-        if (value <= 96) return '▒';   // 中間薄い (33-96) 
-        if (value <= 160) return '▓';  // 中間濃い (97-160)
-        if (value <= 224) return '█';  // 濃い (161-224)
-        return '█'; // 最大/白 (225-255)
+        if (value === 0) return '. ';   // 空白/黒 (0) - 空白付き
+        if (value <= 32) return '░░';   // 薄い (1-32) - 2文字
+        if (value <= 96) return '▒▒';   // 中間薄い (33-96) - 2文字
+        if (value <= 160) return '▓▓';  // 中間濃い (97-160) - 2文字
+        if (value <= 224) return '██';  // 濃い (161-224) - 2文字
+        return '██'; // 最大/白 (225-255) - 2文字
     }
 
     /**
