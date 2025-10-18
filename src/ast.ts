@@ -43,6 +43,7 @@ export type Statement =
     | HaltStatement
     | ForStatement
     | NextStatement
+    | WhileStatement
     | PokeStatement
     | IoPutStatement;
 
@@ -118,7 +119,8 @@ export interface HaltStatement extends ASTNode {
 }
 
 /**
- * FORループステートメント (例: I=1,100 または I=100,1,-1)
+ * FORループステートメント（統一構文）
+ * 例: @=I,1,100 または @=I,100,1,-1
  * ループ変数の初期化と範囲設定
  */
 export interface ForStatement extends ASTNode {
@@ -130,12 +132,21 @@ export interface ForStatement extends ASTNode {
 }
 
 /**
- * NEXTステートメント (例: @=I)
- * ループ変数をインクリメントし、ループ継続を判定
+ * NEXTステートメント (例: #=@)
+ * FORループの終了処理（統一構造）
  */
 export interface NextStatement extends ASTNode {
     type: 'NextStatement';
-    variable: Identifier;    // ループ変数
+    variable?: Identifier;    // ループ変数（統一構造 #=@ では省略）
+}
+
+/**
+ * WHILEループステートメント (例: @=(X<100))
+ * 条件式が真の間ループを継続
+ */
+export interface WhileStatement extends ASTNode {
+    type: 'WhileStatement';
+    condition: Expression;    // 継続条件
 }
 
 /**

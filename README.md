@@ -24,7 +24,7 @@ VTL（Very Tiny Language）互換のWorkerScriptプログラミング言語と�
 ### 🔤 WorkerScript言語機能
 - **VTL互換記号** - `$`(I/O), `` ` ``(グリッド), `~`(ランダム)
 - **文字リテラル** - `'A'` 形式での文字操作
-- **制御構造** - IF, FOR/NEXT, GOTO/GOSUB/RETURN
+- **統一制御構造** - IF, FOR/WHILE (`@=`開始、`#=@`終了), GOTO/GOSUB (`#=!`でRETURN)
 - **演算子** - 算術、比較、論理演算子完備
 - **インラインコメント** - `:` でのコメント記述
 
@@ -73,21 +73,29 @@ X=50 Y=50              : グリッド座標設定
 - **`~`** - ランダム値生成
 - **`'`** - 文字リテラル (`'A'` = 65)
 
-### 制御構造
+### 制御構造（統一構文）
 ```workerscript
 : IF文
 ;=A>100 ?="Big number!"
 
-: FOR/NEXTループ  
-I=1,100
+: FORループ（統一構文 @= で開始、#=@ で終了）
+@=I,1,100
   X=I Y=I `=255
-@=I
+#=@
 
-: GOTO/GOSUBジャンプ
+: WHILEループ（統一構文 @= で開始、#=@ で終了）
+@=(X<100)
+  X=X+1
+#=@
+
+: GOTO/GOSUB（統一構文 #=! でRETURN）
 !=^SUBROUTINE
 #=^END
-^SUBROUTINE ?="In subroutine" ]
-^END #=-1
+^SUBROUTINE
+  ?="In subroutine"
+  #=!
+^END
+  #=-1
 ```
 
 ### リアルタイムキーボード入力
@@ -136,11 +144,11 @@ A='A' B='Z' C='0'
 
 ### 3. グリッド描画例 (`examples/pattern.ws`)
 ```workerscript
-: Draw diagonal pattern
-I=0,99
+: Draw diagonal pattern (統一構文)
+@=I,0,99
   X=I Y=I `=255        : White diagonal
   X=I Y=99-I `=128     : Gray diagonal  
-@=I
+#=@
 ```
 
 ## 🛠️ 技術スタック

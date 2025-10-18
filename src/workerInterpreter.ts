@@ -1,7 +1,7 @@
 // src/workerInterpreter.ts
 
 import { Lexer, TokenType, type Token } from './lexer.js';
-import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast.js';
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
 
 /**
  * インタプリタの実行状態を保持するインターフェース。
@@ -17,14 +17,24 @@ interface InterpreterState {
 }
 
 /**
- * FORループの状態を保持するインターフェース。
+ * ループ（FOR/WHILE）の状態を保持するインターフェース。
+ * 
+ * NOTE: 現在の実装は行ベースのジャンプのみをサポートしています。
+ * forLineIndex は行番号を指し、同じ行内の特定のステートメント位置は追跡しません。
+ * これにより、1行に複数のステートメントが混在する場合、ループの制御フローが
+ * 制限される可能性があります。
+ * 
+ * TODO: 将来的にステートメント単位の実行制御が必要になった場合、
+ * { lineIndex: number; statementIndex: number } のような構造に移行する必要があります。
  */
 interface LoopInfo {
-    variable: string; // ループ変数名 (例: "I")
-    start: number;    // 開始値
-    end: number;      // 終了値
-    step: number;     // ステップ値
-    forLineIndex: number; // FORステートメントの行番号（ループの先頭に戻るため）
+    variable: string; // ループ変数名 (例: "I") or WHILE識別子
+    start: number;    // 開始値 (FORのみ)
+    end: number;      // 終了値 (FORのみ)
+    step: number;     // ステップ値 (FORのみ)
+    forLineIndex: number; // ループ開始ステートメントの行番号（ループの先頭に戻るため）
+    isWhile?: boolean; // WHILEループか判定フラグ
+    whileCondition?: Expression; // WHILE条件式（isWhile=trueの場合のみ）
 }
 
 /**
@@ -45,8 +55,12 @@ class WorkerInterpreter {
     private putFn: ((value: number) => void) | undefined; // 1byte出力関数（0-255の値を受け取る）
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
-    private callStack: number[] = []; // GOSUBのリターンアドレススタック
-    private loopStack: LoopInfo[] = []; // FORループの状態スタック
+    private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
+    private loopStack: LoopInfo[] = []; // ループの状態スタック
+    
+    // NOTE: currentLineIndex と callStack は行ベースの実装です。
+    // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
+    // ループやサブルーチンからの復帰は常に「行の次のステートメント」に戻ります。
 
     /**
      * WorkerInterpreterの新しいインスタンスを初期化します。
@@ -193,10 +207,18 @@ class WorkerInterpreter {
      * 本番コードでは使用されず、loadScript()内で自動的にparseStatementString()が呼ばれます。
      * 
      * @deprecated Phase 3完了後、テストをloadScript()ベースに書き換えて削除予定。
+     * 
+     * 【テスト改善計画 - 2025/10/18】
+     * - 現在約40箇所のparse()呼び出しがテストで使用されている
+     * - すべてパース専用テストで、実行テストは既にloadScript()方式
+     * - 実証済み: loadScript() + getProgram() 方式への変換は技術的に可能
+     * - 効果: テストと実行で同じコードパス使用、二重実装解消、より現実的なテスト
+     * - 変更例: interpreter.parse(tokens) → interpreter.loadScript('A=10'); ast = interpreter.getProgram()
+     * 
      * 中長期的には以下のように書き換えを推奨：
      * ```
      * // 現在: const ast = interpreter.parse(lexer.tokenizeLine(...));
-     * // 将来: const program = interpreter.loadScript("A=10 B=20");
+     * // 将来: interpreter.loadScript("A=10 B=20"); const ast = interpreter.getProgram();
      * ```
      * 
      * @param tokens トークンの配列
@@ -244,27 +266,11 @@ class WorkerInterpreter {
 
         // 改行ステートメント (/)
         if (token.type === TokenType.SLASH) {
-            return {
-                statement: {
-                    type: 'NewlineStatement',
-                    line: token.line,
-                    column: token.column,
-                },
-                nextIndex: startIndex + 1
-            };
+            return this.parseNewlineStatement(tokens, startIndex);
         }
 
-        // RETURNステートメント (])
-        if (token.type === TokenType.RIGHT_BRACKET) {
-            return {
-                statement: {
-                    type: 'ReturnStatement',
-                    line: token.line,
-                    column: token.column,
-                },
-                nextIndex: startIndex + 1
-            };
-        }
+        // 旧 RETURNステートメント (]) - 削除予定
+        // 新仕様では #=! を使用
 
         const secondToken = tokens[startIndex + 1];
         if (!secondToken || secondToken.type !== TokenType.EQUALS) {
@@ -292,6 +298,31 @@ class WorkerInterpreter {
                         nextIndex: startIndex + 4
                     };
                 }
+            }
+
+            // #=! パターン（新 RETURN文）
+            if (thirdToken.type === TokenType.BANG) {
+                return {
+                    statement: {
+                        type: 'ReturnStatement',
+                        line: token.line,
+                        column: token.column,
+                    },
+                    nextIndex: startIndex + 3
+                };
+            }
+
+            // #=@ パターン（NEXT文）- 統一構造
+            if (thirdToken.type === TokenType.AT) {
+                return {
+                    statement: {
+                        type: 'NextStatement',
+                        line: token.line,
+                        column: token.column,
+                        // variable: undefined, // #=@は変数指定なし（統一構造）
+                    },
+                    nextIndex: startIndex + 3
+                };
             }
 
             // #=^LABEL パターン（通常のGOTO）
@@ -363,28 +394,9 @@ class WorkerInterpreter {
             };
         }
 
-        // NEXTステートメント (@=I)
+        // @ で始まるステートメント (@=I など)
         if (token.type === TokenType.AT) {
-            const thirdToken = tokens[startIndex + 2];
-            
-            if (!thirdToken || thirdToken.type !== TokenType.IDENTIFIER) {
-                throw new Error(`構文エラー: NEXTにはループ変数が必要です`);
-            }
-
-            return {
-                statement: {
-                    type: 'NextStatement',
-                    line: token.line,
-                    column: token.column,
-                    variable: {
-                        type: 'Identifier',
-                        name: thirdToken.value,
-                        line: thirdToken.line,
-                        column: thirdToken.column,
-                    },
-                },
-                nextIndex: startIndex + 3
-            };
+            return this.parseAtStatement(tokens, startIndex);
         }
 
         // POKEステートメント (`=expression)
@@ -419,74 +431,170 @@ class WorkerInterpreter {
             };
         }
 
-        // 代入ステートメント または FORループ
+        // 変数名で始まるステートメント (代入または FORループ)
         if (token.type === TokenType.IDENTIFIER) {
-            const exprTokens = tokens.slice(startIndex + 2);
-            const exprResult = this.parseExpressionFromTokens(exprTokens);
-
-            // カンマ式かどうかでFORループか代入かを判定
-            if (this.isCommaExpression(exprResult.expr)) {
-                const parts = this.extractCommaExpressionParts(exprResult.expr);
-                
-                if (parts.length === 2) {
-                    return {
-                        statement: {
-                            type: 'ForStatement',
-                            line: token.line,
-                            column: token.column,
-                            variable: {
-                                type: 'Identifier',
-                                name: token.value,
-                                line: token.line,
-                                column: token.column,
-                            },
-                            start: parts[0]!,
-                            end: parts[1]!,
-                            // stepは省略（デフォルト1）
-                        },
-                        nextIndex: startIndex + 2 + exprResult.consumed
-                    };
-                } else if (parts.length === 3) {
-                    return {
-                        statement: {
-                            type: 'ForStatement',
-                            line: token.line,
-                            column: token.column,
-                            variable: {
-                                type: 'Identifier',
-                                name: token.value,
-                                line: token.line,
-                                column: token.column,
-                            },
-                            start: parts[0]!,
-                            end: parts[1]!,
-                            step: parts[2]!,
-                        },
-                        nextIndex: startIndex + 2 + exprResult.consumed
-                    };
-                } else {
-                    throw new Error(`構文エラー: FORループの形式が不正です`);
-                }
-            } else {
-                return {
-                    statement: {
-                        type: 'AssignmentStatement',
-                        line: token.line,
-                        column: token.column,
-                        variable: {
-                            type: 'Identifier',
-                            name: token.value,
-                            line: token.line,
-                            column: token.column,
-                        },
-                        value: exprResult.expr,
-                    },
-                    nextIndex: startIndex + 2 + exprResult.consumed
-                };
-            }
+            return this.parseIdentifierStatement(tokens, startIndex);
         }
 
         throw new Error(`構文エラー: 未知のステートメント形式: ${token.value}`);
+    }
+
+    /**
+     * 改行ステートメント (/) を解析します
+     */
+    private parseNewlineStatement(tokens: Token[], startIndex: number): { statement: Statement; nextIndex: number } {
+        const token = tokens[startIndex]!;
+        return {
+            statement: {
+                type: 'NewlineStatement',
+                line: token.line,
+                column: token.column,
+            },
+            nextIndex: startIndex + 1
+        };
+    }
+
+    /**
+     * @ で始まるステートメント (@=I など) を解析します
+     * 現在: NEXTステートメントのみ
+     * 将来: FOR/WHILE/NEXT の統一処理
+     */
+    private parseAtStatement(tokens: Token[], startIndex: number): { statement: Statement; nextIndex: number } {
+        const token = tokens[startIndex]!;
+        const secondToken = tokens[startIndex + 1];
+        
+        if (!secondToken || secondToken.type !== TokenType.EQUALS) {
+            throw new Error(`構文エラー: @ の後に = が必要です`);
+        }
+
+        const thirdToken = tokens[startIndex + 2];
+        
+        // @=(condition) - WHILEループ
+        if (thirdToken && thirdToken.type === TokenType.LEFT_PAREN) {
+            // 括弧内の式を解析
+            const exprTokens = tokens.slice(startIndex + 3);
+            const exprResult = this.parseExpressionFromTokens(exprTokens);
+            
+            // 終了括弧を確認
+            const rparenToken = tokens[startIndex + 3 + exprResult.consumed];
+            if (!rparenToken || rparenToken.type !== TokenType.RIGHT_PAREN) {
+                throw new Error(`構文エラー: WHILEループの条件式を閉じる ) が必要です`);
+            }
+            
+            return {
+                statement: {
+                    type: 'WhileStatement',
+                    line: token.line,
+                    column: token.column,
+                    condition: exprResult.expr,
+                },
+                nextIndex: startIndex + 4 + exprResult.consumed
+            };
+        }
+        
+        // @=I (NEXTステートメントまたはFORループ)
+        if (thirdToken && thirdToken.type === TokenType.IDENTIFIER) {
+            const fourthToken = tokens[startIndex + 3];
+            
+            // @=I,1,100 の場合は新しいFORループ構文
+            if (fourthToken && fourthToken.type === TokenType.COMMA) {
+                const exprTokens = tokens.slice(startIndex + 4);
+                const exprResult = this.parseExpressionFromTokens(exprTokens);
+                
+                if (this.isCommaExpression(exprResult.expr)) {
+                    const parts = this.extractCommaExpressionParts(exprResult.expr);
+                    
+                    if (parts.length === 2) {
+                        return {
+                            statement: {
+                                type: 'ForStatement',
+                                line: token.line,
+                                column: token.column,
+                                variable: {
+                                    type: 'Identifier',
+                                    name: thirdToken.value,
+                                    line: thirdToken.line,
+                                    column: thirdToken.column,
+                                },
+                                start: parts[0]!,
+                                end: parts[1]!,
+                                // stepは省略（デフォルト1）
+                            },
+                            nextIndex: startIndex + 4 + exprResult.consumed
+                        };
+                    } else if (parts.length === 3) {
+                        return {
+                            statement: {
+                                type: 'ForStatement',
+                                line: token.line,
+                                column: token.column,
+                                variable: {
+                                    type: 'Identifier',
+                                    name: thirdToken.value,
+                                    line: thirdToken.line,
+                                    column: thirdToken.column,
+                                },
+                                start: parts[0]!,
+                                end: parts[1]!,
+                                step: parts[2]!,
+                            },
+                            nextIndex: startIndex + 4 + exprResult.consumed
+                        };
+                    } else {
+                        throw new Error(`構文エラー: FORループの形式が不正です (@=${thirdToken.value},start,end[,step])`);
+                    }
+                } else {
+                    // @=I,expr (単一式) -> start,end形式
+                    return {
+                        statement: {
+                            type: 'ForStatement',
+                            line: token.line,
+                            column: token.column,
+                            variable: {
+                                type: 'Identifier',
+                                name: thirdToken.value,
+                                line: thirdToken.line,
+                                column: thirdToken.column,
+                            },
+                            start: exprResult.expr,
+                            end: exprResult.expr,
+                            // stepは省略（デフォルト1）
+                        },
+                        nextIndex: startIndex + 4 + exprResult.consumed
+                    };
+                }
+            }
+        }
+        
+        throw new Error(`構文エラー: @ で始まるステートメントは @=変数,開始,終了[,ステップ] の形式である必要があります`);
+    }
+
+    /**
+     * 変数名で始まるステートメント (代入または FORループ) を解析します
+     * 現在: FOR判定 + 代入判定
+     * 将来: 代入のみ（FOR判定は parseAtStatement に移行）
+     */
+    private parseIdentifierStatement(tokens: Token[], startIndex: number): { statement: Statement; nextIndex: number } {
+        const token = tokens[startIndex]!;
+        const exprTokens = tokens.slice(startIndex + 2);
+        const exprResult = this.parseExpressionFromTokens(exprTokens);
+
+        // 代入文専用メソッド（FORループは@=構文で処理）
+        return {
+            statement: {
+                type: 'AssignmentStatement',
+                line: token.line,
+                column: token.column,
+                variable: {
+                    type: 'Identifier',
+                    name: token.value,
+                    line: token.line,
+                    column: token.column,
+                },
+                value: exprResult.expr,
+            },
+            nextIndex: startIndex + 2 + exprResult.consumed
+        };
     }
 
     /**
@@ -944,14 +1052,8 @@ class WorkerInterpreter {
             };
         }
 
-        // RETURNステートメント (])
-        if (firstToken.type === TokenType.RIGHT_BRACKET && tokens.length === 1) {
-            return {
-                type: 'ReturnStatement',
-                line: firstToken.line,
-                column: firstToken.column,
-            };
-        }
+        // 旧 RETURNステートメント (]) - 削除予定
+        // 新仕様では #=! を使用
 
         // COMMENTは実行時に無視（ASTに含めない）
         if (firstToken.type === TokenType.COMMENT) {
@@ -982,6 +1084,25 @@ class WorkerInterpreter {
                         column: firstToken.column,
                     };
                 }
+            }
+
+            // #=! パターン（新 RETURN文）
+            if (thirdToken.type === TokenType.BANG) {
+                return {
+                    type: 'ReturnStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                };
+            }
+
+            // #=@ パターン（NEXT文）- 統一構造
+            if (thirdToken.type === TokenType.AT) {
+                return {
+                    type: 'NextStatement',
+                    line: firstToken.line,
+                    column: firstToken.column,
+                    // variable: undefined, // #=@は変数指定なし（統一構造）
+                };
             }
 
             // #=^LABEL パターン（通常のGOTO）
@@ -1045,25 +1166,10 @@ class WorkerInterpreter {
             };
         }
 
-        // NEXTステートメント (@=I)
+        // @で始まるステートメント (新しい統一処理)
         if (firstToken.type === TokenType.AT && secondToken.type === TokenType.EQUALS) {
-            const thirdToken = tokens[2];
-            
-            if (!thirdToken || thirdToken.type !== TokenType.IDENTIFIER) {
-                throw new Error(`構文エラー: NEXTにはループ変数が必要です`);
-            }
-
-            return {
-                type: 'NextStatement',
-                line: firstToken.line,
-                column: firstToken.column,
-                variable: {
-                    type: 'Identifier',
-                    name: thirdToken.value,
-                    line: thirdToken.line,
-                    column: thirdToken.column,
-                },
-            };
+            const result = this.parseAtStatement(tokens, 0);
+            return result.statement;
         }
 
         // POKEステートメント (`=expression)
@@ -1092,62 +1198,10 @@ class WorkerInterpreter {
             };
         }
 
-        // 代入ステートメント または FORループ
+        // 変数名で始まるステートメント (新しい統一処理)
         if (firstToken.type === TokenType.IDENTIFIER && secondToken.type === TokenType.EQUALS) {
-            const exprTokens = tokens.slice(2);
-            const exprResult = this.parseExpressionFromTokens(exprTokens);
-
-            // カンマ式かどうかでFORループか代入かを判定
-            if (this.isCommaExpression(exprResult.expr)) {
-                const parts = this.extractCommaExpressionParts(exprResult.expr);
-                
-                if (parts.length === 2) {
-                    return {
-                        type: 'ForStatement',
-                        line: firstToken.line,
-                        column: firstToken.column,
-                        variable: {
-                            type: 'Identifier',
-                            name: firstToken.value,
-                            line: firstToken.line,
-                            column: firstToken.column,
-                        },
-                        start: parts[0]!,
-                        end: parts[1]!,
-                        // stepは省略（デフォルト1）
-                    };
-                } else if (parts.length === 3) {
-                    return {
-                        type: 'ForStatement',
-                        line: firstToken.line,
-                        column: firstToken.column,
-                        variable: {
-                            type: 'Identifier',
-                            name: firstToken.value,
-                            line: firstToken.line,
-                            column: firstToken.column,
-                        },
-                        start: parts[0]!,
-                        end: parts[1]!,
-                        step: parts[2]!,
-                    };
-                } else {
-                    throw new Error(`構文エラー: FORループの形式が不正です`);
-                }
-            } else {
-                return {
-                    type: 'AssignmentStatement',
-                    line: firstToken.line,
-                    column: firstToken.column,
-                    variable: {
-                        type: 'Identifier',
-                        name: firstToken.value,
-                        line: firstToken.line,
-                        column: firstToken.column,
-                    },
-                    value: exprResult.expr,
-                };
-            }
+            const result = this.parseIdentifierStatement(tokens, 0);
+            return result.statement;
         }
 
         throw new Error(`構文エラー: 未知のステートメント形式: ${stmtString}`);
@@ -1340,6 +1394,7 @@ class WorkerInterpreter {
                         throw new Error(`ラベル ${statement.target} が見つかりません`);
                     }
                     // 現在の次の行をスタックにプッシュ
+                    // NOTE: 行ベースのリターンアドレス保存。同じ行の次のステートメント位置は保存されません。
                     this.callStack.push(this.currentLineIndex + 1);
                     this.currentLineIndex = targetLine;
                     return { jump: true, halt: false, skipRemaining: false };
@@ -1351,6 +1406,8 @@ class WorkerInterpreter {
                         throw new Error('RETURN文がありますがGOSUBの呼び出しがありません');
                     }
                     const returnLine = this.callStack.pop()!;
+                    // NOTE: 行ベースのリターン。GOSUB呼び出しがあった行の次の行に戻ります。
+                    // 同じ行内の特定のステートメント位置には戻れません。
                     this.currentLineIndex = returnLine;
                     return { jump: true, halt: false, skipRemaining: false };
                 }
@@ -1408,58 +1465,138 @@ class WorkerInterpreter {
                     });
                     
                     if (!shouldExecute) {
-                        // ループをスキップ: NEXTを検索してその次の行にジャンプ
-                        const nextLineIndex = this.findMatchingNext(varName, this.currentLineIndex);
+                        // ループをスキップ: #=@ を検索してその次にジャンプ
+                        const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
                         if (nextLineIndex !== -1) {
-                            this.currentLineIndex = nextLineIndex + 1;
-                            // NEXTはスキップするので、ループ情報をpop
+                            // ループ情報をpop（スキップするので）
                             this.loopStack.pop();
-                            return { jump: true, halt: false, skipRemaining: false };
+                            
+                            if (nextLineIndex === this.currentLineIndex) {
+                                // #=@ が同じ行にある場合、この行の残りをスキップ
+                                return { jump: false, halt: false, skipRemaining: true };
+                            } else {
+                                // #=@ が別の行にある場合、その行の次にジャンプ
+                                this.currentLineIndex = nextLineIndex + 1;
+                                return { jump: true, halt: false, skipRemaining: false };
+                            }
                         }
-                        // NEXTが見つからない場合は続行（NEXTでpopされる）
+                        // #=@ が見つからない場合は続行（実行時エラーになる可能性）
+                    }
+                }
+                break;
+            
+            case 'WhileStatement':
+                {
+                    // WHILE文: @=(condition) 〜 #=@
+                    // 条件を評価
+                    const condition = this.evaluateExpression(statement.condition);
+                    
+                    // 型チェック
+                    if (typeof condition === 'string') {
+                        throw new Error('WHILEループの条件は数値でなければなりません');
+                    }
+                    
+                    // ネストの最大深度チェック
+                    if (this.loopStack.length >= 256) {
+                        throw new Error('WHILEループのネストが最大深度256を超えました');
+                    }
+                    
+                    // 条件が真（非ゼロ）の場合、ループに入る
+                    if (condition !== 0) {
+                        // ループ情報をスタックにpush
+                        // WHILEループには変数がないため、内部識別用に特殊な名前を使用
+                        this.loopStack.push({
+                            variable: `__WHILE_${this.currentLineIndex}__`,
+                            start: 0,
+                            end: 0,
+                            step: 1,
+                            forLineIndex: this.currentLineIndex,
+                            isWhile: true, // WHILE判別フラグ
+                            whileCondition: statement.condition, // 条件式を保存
+                        });
+                    } else {
+                        // 条件が偽の場合、ループをスキップして #=@ の次にジャンプ
+                        const nextLineIndex = this.findMatchingNext(this.currentLineIndex);
+                        if (nextLineIndex !== -1) {
+                            if (nextLineIndex === this.currentLineIndex) {
+                                // #=@ が同じ行にある場合、この行の残りをスキップ
+                                return { jump: false, halt: false, skipRemaining: true };
+                            } else {
+                                // #=@ が別の行にある場合、その行の次にジャンプ
+                                this.currentLineIndex = nextLineIndex + 1;
+                                return { jump: true, halt: false, skipRemaining: false };
+                            }
+                        }
+                        // 対応する #=@ が見つからない場合はエラー
+                        throw new Error('WHILEループに対応する #=@ が見つかりません');
                     }
                 }
                 break;
             
             case 'NextStatement':
                 {
-                    // NEXT文: @=I
-                    const varName = statement.variable.name;
+                    // NEXT文: #=@ (統一構造 - FOR/WHILEループの終端)
                     
                     // ループスタックが空の場合はエラー
                     if (this.loopStack.length === 0) {
-                        throw new Error('NEXT文に対応するFORループがありません');
+                        throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
                     }
                     
                     // 最新のループ情報を取得
                     const currentLoop = this.loopStack[this.loopStack.length - 1];
                     if (!currentLoop) {
-                        throw new Error('NEXT文に対応するFORループがありません');
+                        throw new Error('#=@ に対応するループ（FOR/WHILE）がありません');
                     }
                     
-                    // ループ変数が一致するかチェック
-                    if (currentLoop.variable !== varName) {
-                        throw new Error(`NEXT文のループ変数${varName}が現在のFORループの変数${currentLoop.variable}と一致しません`);
-                    }
-                    
-                    // ループ変数をインクリメント
-                    const currentValue = this.variables.get(varName) || 0;
-                    const newValue = currentValue + currentLoop.step;
-                    this.variables.set(varName, newValue);
-                    
-                    // 次の値で条件チェック
-                    const shouldContinue = currentLoop.step > 0 
-                        ? newValue <= currentLoop.end 
-                        : newValue >= currentLoop.end;
-                    
-                    if (shouldContinue) {
-                        // ループ継続: FORステートメントの次の行にジャンプ
-                        this.currentLineIndex = currentLoop.forLineIndex + 1;
-                        return { jump: true, halt: false, skipRemaining: false };
+                    // WHILEループの場合
+                    if (currentLoop.isWhile) {
+                        if (!currentLoop.whileCondition) {
+                            throw new Error('WHILEループの条件式が見つかりません');
+                        }
+                        
+                        // 条件を再評価
+                        const condition = this.evaluateExpression(currentLoop.whileCondition);
+                        
+                        // 型チェック
+                        if (typeof condition === 'string') {
+                            throw new Error('WHILEループの条件は数値でなければなりません');
+                        }
+                        
+                        // 条件が真（非ゼロ）ならループ継続
+                        if (condition !== 0) {
+                            // WHILEステートメントの次の行にジャンプ
+                            // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
+                            this.currentLineIndex = currentLoop.forLineIndex + 1;
+                            return { jump: true, halt: false, skipRemaining: false };
+                        } else {
+                            // ループ終了: ループ情報をスタックからpop
+                            this.loopStack.pop();
+                            // 次のステートメントに進む（jump: false）
+                        }
                     } else {
-                        // ループ終了: ループ情報をスタックからpop
-                        this.loopStack.pop();
-                        // 次のステートメントに進む（jump: false）
+                        // FORループの場合（従来のロジック）
+                        const varName = currentLoop.variable;
+                        
+                        // ループ変数をインクリメント
+                        const currentValue = this.variables.get(varName) || 0;
+                        const newValue = currentValue + currentLoop.step;
+                        this.variables.set(varName, newValue);
+                        
+                        // 次の値で条件チェック
+                        const shouldContinue = currentLoop.step > 0 
+                            ? newValue <= currentLoop.end 
+                            : newValue >= currentLoop.end;
+                        
+                        if (shouldContinue) {
+                            // ループ継続: FORステートメントの次の行にジャンプ
+                            // NOTE: 行ベースのジャンプのため、同じ行の次のステートメントには戻れません
+                            this.currentLineIndex = currentLoop.forLineIndex + 1;
+                            return { jump: true, halt: false, skipRemaining: false };
+                        } else {
+                            // ループ終了: ループ情報をスタックからpop
+                            this.loopStack.pop();
+                            // 次のステートメントに進む（jump: false）
+                        }
                     }
                 }
                 break;
@@ -1509,30 +1646,39 @@ class WorkerInterpreter {
     }
 
     /**
-     * 指定された変数名に対応するNEXT文の行番号を検索します。
-     * @param varName ループ変数名
+     * 次の #=@ 文の行番号を検索します（統一構造、FOR/WHILE両対応）。
+     * 同じ行内のステートメントも含めて検索します。
      * @param startLine 検索開始行番号
-     * @returns NEXT文の行番号。見つからない場合は-1
+     * @returns #=@ 文の行番号。見つからない場合は-1
      */
-    private findMatchingNext(varName: string, startLine: number): number {
+    private findMatchingNext(startLine: number): number {
         if (!this.program) return -1;
         
-        let nestLevel = 1; // 現在のFORのネストレベル
+        let nestLevel = 0; // ネストレベル（同じ行の最初のループステートメントで1になる）
+        let foundFirst = false; // 最初のループステートメント（呼び出し元）を見つけたか
         
-        for (let i = startLine + 1; i < this.program.body.length; i++) {
+        // 同じ行から検索開始
+        for (let i = startLine; i < this.program.body.length; i++) {
             const line = this.program.body[i];
             if (!line) continue;
             
             for (const statement of line.statements) {
-                // 同じ変数のFORが見つかったらネストレベルを上げる
-                if (statement.type === 'ForStatement' && statement.variable.name === varName) {
-                    nestLevel++;
+                // FORまたはWHILEが見つかった
+                if (statement.type === 'ForStatement' || statement.type === 'WhileStatement') {
+                    if (!foundFirst && i === startLine) {
+                        // 呼び出し元のループステートメント（最初の1つだけ）
+                        foundFirst = true;
+                        nestLevel = 1;
+                    } else {
+                        // ネストされたループ
+                        nestLevel++;
+                    }
                 }
-                // 同じ変数のNEXTが見つかった
-                if (statement.type === 'NextStatement' && statement.variable.name === varName) {
+                // #=@ が見つかった
+                if (statement.type === 'NextStatement') {
                     nestLevel--;
                     if (nestLevel === 0) {
-                        // 対応するNEXTが見つかった
+                        // 対応する #=@ が見つかった
                         return i;
                     }
                 }

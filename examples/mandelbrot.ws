@@ -1,0 +1,67 @@
+: Mandelbrot Set ASCII Art - WorkerScript Implementation
+: Based on classic ASCIIART benchmark from RBC Forum
+: 固定小数点演算による実装（1000倍スケール）
+
+?="マンデルブロ集合 ASCII ART ベンチマーク" /
+?="計算中..." /
+
+: 定数定義
+: SCALE=1000 (固定小数点のスケール)
+: MAX_ITER=100 (最大反復回数)
+: WIDTH=78, HEIGHT=20 (表示サイズ)
+M=100
+W=78
+H=20
+
+: 座標変換定数 (複素平面 -2.0 to 1.0, -1.0 to 1.0)
+: X: -2000 to 1000 (3000/78 ≈ 38 per step)  
+: Y: -1000 to 1000 (2000/20 = 100 per step)
+S=38
+T=100
+
+: 描画ループ（統一構文）
+@=I,0,H-1
+  @=J,0,W-1
+    : 複素数座標計算 (固定小数点)
+    : X座標: -2000 + J*38
+    : Y座標: -1000 + I*100  
+    C=0-2000+J*S
+    D=0-1000+I*T
+    
+    : マンデルブロ反復計算
+    : Z = A + Bi, C = C + Di
+    A=0
+    B=0
+    K=0
+    
+    : 収束判定ループ（WHILEで書き換え可能）
+    ^ITER_LOOP
+      : Z^2 + C の計算
+      : (A+Bi)^2 = A^2-B^2 + 2ABi
+      E=A*A/1000-B*B/1000+C  : Real part
+      F=2*A*B/1000+D         : Imaginary part
+      A=E
+      B=F
+      
+      : 発散判定 |Z|^2 > 4 → A^2+B^2 > 4000000
+      G=A*A/1000+B*B/1000
+      ;=G>4000 #=^DIVERGED
+      
+      K=K+1
+      ;=K<M #=^ITER_LOOP
+    
+    ^DIVERGED
+    : 反復回数に応じた文字選択
+    ;=K<10 ?=" "
+    ;=K>=10&K<20 ?="."
+    ;=K>=20&K<40 ?="o"
+    ;=K>=40&K<60 ?="O"
+    ;=K>=60&K<80 ?="@"
+    ;=K>=80 ?="#"
+    
+  #=@
+  / : 改行
+#=@
+
+?="完了!" /
+#=-1

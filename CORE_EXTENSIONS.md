@@ -4,95 +4,190 @@
 
 WorkerScriptの表現力と実用性を大幅に向上させるためのコア言語拡張機能。メモリ効率、プログラマビリティ、拡張性の3つの軸で言語を進化させる。
 
-## 🎯 拡張目標
+> **⚠️ このドキュメントのステータス**  
+> このドキュメントは**将来的な拡張案**をまとめたものです。  
+> 基本的な制御構造（WHILE/FOR統一構文）は既に実装済みです。  
+> 記号リソース（`@`, `#`）の一部は制御構造で使用済みです。
+
+## ✅ 既に実装済みの機能
+
+- **統一制御構造**: `@`（ループ開始）と`#`（制御フロー）による統一構文
+  - FOR: `@=I,1,100` → `#=@`
+  - WHILE: `@=(condition)` → `#=@`
+  - GOSUB/RETURN: `#=!` (RETURN)
+- **詳細**: `worker.md`, `IMPLEMENTATION_NOTES.md` を参照
+
+## 🎯 拡張目標（未実装）
 
 - **メモリ管理**: 大容量データ処理・複雑なアルゴリズム対応
-- **プログラマビリティ**: より高度な制御構造・データ構造
+- **プログラマビリティ**: より高度なデータ構造（配列・文字列）
 - **拡張性**: ユーザー定義コマンド・プラグイン機能
 - **後方互換性**: 既存コードへの影響なし
 
 ## 🧮 拡張案1: 配列・スタック機能
 
-### 仕様設計
+### 仕様設計（`[address]` 記法採用）
 ```workerscript
-: 配列・スタック システム (65535要素)
+: 配列・スタック統合システム - 共有メモリ空間 (65536要素)
 
-: 1. ポインタ変数でのアクセス
-A=100        : ポインタ A に 100 を設定
-[A]=255      : 配列[100] に 255 を格納
-B=[A]        : 配列[100] から値を読み取り → B=255
+: 1. 変数をアドレスとして使用
+A=1000       : 変数 A にアドレス 1000 を設定
+[A]=255      : メモリ[1000] に 255 を格納
+B=[A]        : メモリ[1000] から値を読み取り → B=255
 
-: 2. 直接インデックスアクセス
-[500]=123    : 配列[500] に 123 を格納
-C=[500]      : 配列[500] から読み取り → C=123
+: 2. 直接アドレス指定
+[500]=123    : メモリ[500] に 123 を格納  
+C=[500]      : メモリ[500] から読み取り → C=123
 
-: 3. 配列初期化（複数値代入）
-[A]=1,2,3,4,5    : 配列[A]～[A+4]に連続値を設定
-[0]=10,20,30     : 配列[0]～[2]に値を設定
+: 3. 計算アドレス（真の威力）
+[A+5]=255    : メモリ[A+5] に 255 を格納（ポインタ演算）
+D=[A+I]      : メモリ[A+I] から読み取り（動的アクセス）
+[B*2+10]=C   : メモリ[B*2+10] に C を格納（複雑なアドレス計算）
 
-: 4. スタック操作（特殊インデックス -1）
-[-1]=A       : A の値を配列スタックにプッシュ
-B=[-1]       : 配列スタックからポップして B に格納
+: 4. 配列初期化（複数値代入）
+[A]=1,2,3,4,5    : メモリ[A]～[A+4]に連続値を設定
+[1000]=10,20,30  : メモリ[1000]～[1002]に値を設定
 
-: 5. 既存FOR文との共存（影響なし）
-I=1,100,2    : FOR文として正常動作
+: 5. スタック操作（リテラル -1 のみ）
+[-1]=A       : A の値をスタックにプッシュ（リテラル-1）
+B=[-1]       : スタックからポップして B に格納（リテラル-1）
+
+: 重要: 変数経由では通常メモリアクセス
+I=-1         : 変数 I に -1 を代入
+[I]=A        : メモリ[65535] に A を格納（スタックプッシュではない！）
+B=[I]        : メモリ[65535] から読み取り（スタックポップではない！）
+
+: 注: FOR文との衝突なし
+: 統一構文により FOR文は @=I,1,100 形式となり、
+: 配列初期化 [A]=1,2,3 との構文上の衝突は完全に解消されています
 ```
 
-### 実装アーキテクチャ
+### 実装アーキテクチャ（VTLオリジナル準拠）
 ```typescript
 class ArrayStackManager {
-    private array: number[] = new Array(65535).fill(0)
-    private stackPointer: number = 65534  // スタックは配列の末尾から使用
-    private heapPointer: number = 0       // ヒープは配列の先頭から使用
+    private memory: Int16Array = new Int16Array(65536)  // 共有メモリ空間
+    private stackPointer: number = 65535                // スタックポインタ（内部管理）
     
-    // 配列アクセス
-    readArray(index: number): number {
-        if (index === -1) {
-            return this.stackPop()    // スタックポップ
+    // メモリアクセス（リテラル-1のみスタック操作）
+    readMemory(index: number, isLiteral: boolean = false): number {
+        if (index === -1 && isLiteral) {
+            return this.stackPop()    // リテラル[-1]のみスタックポップ
         }
-        if (index < 0 || index >= 65535) {
-            throw new Error(`Array index out of bounds: ${index}`)
-        }
-        return this.array[index]
+        return this.memory[index] || 0  // 通常のメモリアクセス
     }
     
-    writeArray(index: number, value: number): void {
-        if (index === -1) {
-            this.stackPush(value)     // スタックプッシュ
+    writeMemory(index: number, value: number, isLiteral: boolean = false): void {
+        if (index === -1 && isLiteral) {
+            this.stackPush(value)     // リテラル[-1]のみスタックプッシュ
             return
         }
-        if (index < 0 || index >= 65535) {
-            throw new Error(`Array index out of bounds: ${index}`)
-        }
-        this.array[index] = value & 0xFFFF  // 16bit値に制限
+        this.memory[index] = value & 0xFFFF  // 通常のメモリアクセス
     }
     
-    // スタック操作（-1インデックス専用）
+    // スタック操作（インタプリタ内部管理）
     private stackPush(value: number): void {
-        if (this.stackPointer <= this.heapPointer) {
-            throw new Error('Stack overflow: no memory available')
-        }
-        this.array[this.stackPointer--] = value & 0xFFFF
+        this.memory[this.stackPointer--] = value & 0xFFFF
+        // 注意: スタックオーバーフローも自己責任（チェックなし）
     }
     
     private stackPop(): number {
-        if (this.stackPointer >= 65534) {
-            throw new Error('Stack underflow: stack is empty')
-        }
-        return this.array[++this.stackPointer]
+        return this.memory[++this.stackPointer] || 0
+        // 注意: スタックアンダーフローも自己責任（チェックなし）
     }
     
-    // 配列初期化（複数値代入）
-    initializeArray(startIndex: number, values: number[]): void {
-        for (let i = 0; i < values.length; i++) {
-            this.writeArray(startIndex + i, values[i])
-        }
+    // システム変数候補: スタックポインタへのアクセス
+    getStackPointer(): number {
+        return this.stackPointer
     }
     
-    // 将来拡張用の特殊インデックス
-    // -2: スタック先頭参照（ポップしない）
-    // -3: スタック深度取得 など
+    setStackPointer(value: number): void {
+        this.stackPointer = value & 0xFFFF  // プログラマが直接制御可能
+    }
 }
+        }
+        return this.memory[++this.stackPointer] || 0
+        // 注意: スタックアンダーフローも自己責任（チェックなし）
+    }
+    
+    // システム変数候補: スタックポインタへのアクセス
+    getStackPointer(): number {
+        return this.stackPointer
+    }
+    
+    setStackPointer(value: number): void {
+        this.stackPointer = value & 0xFFFF  // プログラマが直接制御可能
+    }
+}
+
+// 使用例とスタック操作の明確化
+// A=1000, [A]=100, [A+1]=200  → 通常のメモリアクセス
+// [-1]=300, B=[-1]            → リテラル-1のみスタック操作
+// I=-1, [I]=400               → 通常のメモリ[65535]への書き込み（スタックではない！）
+// [A+I]=B, C=[A+I]            → 動的配列アクセス（ポインタ演算）
+
+// 重要: スタック操作は字面で明確に判断できるリテラル[-1]のみ
+```
+
+### システム変数設計の選択肢
+
+**📋 記号リソース分析** → 詳細は `SYMBOL_RESOURCES.md` 参照
+
+#### 重要な発見: 記号衝突問題と対策
+
+> **⚠️ 記号使用状況の更新**  
+> 以下の記号は既に実装済みの機能で使用中です：
+> - `@`: ループ開始（FOR/WHILE統一構文）
+> - `#`: 制御フロー（NEXT/WEND/GOTO/GOSUB/RETURN）
+>   - `#=!` がRETURN文（旧 `]` から統一構文に移行済み）
+>
+> **将来の拡張で利用可能な記号**：
+> - `[` `]`: 配列アクセス候補（現在未使用、統一構文移行により解放済み）
+> - `{` `}`: 配列アクセス候補（未使用）
+> - `\`: 拡張コマンド候補（未使用）
+> - `&`: 拡張コマンド候補（論理ANDと衝突する可能性あり）
+> - その他: 詳細は `SYMBOL_RESOURCES.md` 参照
+
+1. **配列アクセス**: `[address]` または `{address}` 記法が利用可能
+   - `]` は統一構文移行により解放済み（`#=!` がRETURN）
+   - 両方の記号が利用可能なため、設計の自由度が高い
+2. **拡張コマンド**: `\COMMAND` または `&COMMAND` を検討
+   - `&` は論理ANDと衝突する可能性があるため、`\` を推奨
+3. **システム変数**: 予約変数方式を継続（例: 変数`S`をスタックポインタ用に予約）
+
+#### 推奨設計: 利用可能記号の活用
+
+**配列アクセス**: `[address]` 記法を推奨（統一構文移行により利用可能）
+```workerscript
+A=1000       : 変数 A にアドレス 1000 を設定
+[A]=255      : メモリ[1000] に 255 を格納
+B=[A]        : メモリ[1000] から読み取り → B=255
+[A+5]=100    : ポインタ演算（メモリ[A+5] への書き込み）
+[-1]=A       : スタックプッシュ（リテラル-1のみ）
+B=[-1]       : スタックポップ（リテラル-1のみ）
+```
+
+**代替案**: `{address}` 記法も利用可能
+```workerscript
+{A}=255      : 同様の機能を {} で実装することも可能
+```
+
+**拡張コマンド**: `\COMMAND` 記法を推奨  
+```workerscript
+\MAX=A,B     : 最大値計算コマンド
+\SQRT=A      : 平方根計算コマンド
+C=\MIN=A,B   : 最小値計算して結果をCに格納
+```
+
+**システム変数**: 予約変数方式を継続
+```workerscript
+S = スタックポインタ（変数Sをシステム用に予約）
+```
+
+**利点**: 
+- `]` は統一構文移行により解放済み（`#=!` がRETURN）
+- `[` `]` 記法は直感的で、多くの言語で配列アクセスに使用される標準的な記法
+- `\` は未使用記号で拡張コマンドに安全に利用可能
+- VTLの設計思想を維持しつつ、現代的な記法を採用
 ```
 
 ### 構文解析との統合
@@ -123,10 +218,14 @@ class ExtendedInterpreter extends WorkerInterpreter {
 }
 ```
 
-### FOR文との共存戦略
+### 構文解析戦略（統一構文による簡素化）
 ```typescript
-// 構文解析での判定ロジック
-private parseAssignmentOrArrayOrFor(tokens: Token[]): Statement {
+// 統一構文により、FOR文との衝突問題は完全に解消
+// - 旧FOR文: I=1,100,2 → カンマで衝突の可能性があった
+// - 新FOR文: @=I,1,100 → @ 記号で明確に区別可能
+// - 配列初期化: [A]=1,2,3 → [] で明確に区別可能
+
+private parseAssignmentOrArray(tokens: Token[]): Statement {
     const leftTokens = this.extractLeftSide(tokens)
     
     if (this.isArrayAccess(leftTokens)) {
@@ -137,11 +236,10 @@ private parseAssignmentOrArrayOrFor(tokens: Token[]): Statement {
         } else {
             return this.parseArrayAssignment(tokens)       // 単一値代入
         }
-    } else if (tokens.some(t => t.type === TokenType.COMMA)) {
-        // A=1,2,3 → FOR文
-        return this.parseForStatement(tokens)
     } else {
         // A=123 → 通常の代入
+        // 注: A=1,2,3 のような形式はもはやFOR文ではないため、
+        // 複数値代入として扱うか、構文エラーとするかは実装次第
         return this.parseAssignment(tokens)
     }
 }
@@ -165,7 +263,7 @@ private hasMultipleValues(tokens: Token[]): boolean {
 export enum TokenType {
     // ... 既存のトークン
     LEFT_BRACKET = 'LEFT_BRACKET',    // [
-    // RIGHT_BRACKET は既存（RETURN用）を流用
+    RIGHT_BRACKET = 'RIGHT_BRACKET',  // ] (統一構文移行により利用可能)
 }
 
 // Lexer拡張
@@ -174,6 +272,15 @@ if (char === '[') {
     cursor++;
     continue;
 }
+
+if (char === ']') {
+    tokens.push({ type: TokenType.RIGHT_BRACKET, value: char, line: lineNumber, column: cursor });
+    cursor++;
+    continue;
+}
+
+// 注: RIGHT_BRACKET は既に TokenType に定義済みの可能性があるため、
+// 実装時は既存の定義を確認すること
 ```
 
 ## ⚡ 拡張案2: 拡張コマンド機能
@@ -200,6 +307,23 @@ C=&3         : 拡張コマンド3を実行して結果をCに格納
 &100="custom_command.js"  : 外部JSファイルのロード
 &101=A,B     : カスタムコマンド101の実行
 ```
+
+### 🔄 TODO: 拡張コマンド名前改善
+**課題**: 数字によるコマンド管理は認知負荷が高い
+- `&1=A,B` より `&MAX=A,B` の方が直感的
+- `&20=A` より `&SQRT=A` の方が読みやすい
+
+**改善案**:
+- 未使用記号（`@`, `#`, `%`など）+ アルファベットで命名
+- 例: `@MAX=A,B`, `#SQRT=A`, `%FILE=A,B`
+- または: `&MAX=A,B`, `&SQRT=A`, `&FILE=A,B`（&記号維持）
+
+**実装方針**:
+1. レキサーでアルファベット識別子を追加
+2. ExtensionManagerで名前→ID変換テーブル
+3. 下位互換のため数字ID併用可能
+
+**優先度**: 中（配列実装後に検討）
 
 ### 実装アーキテクチャ
 ```typescript
@@ -335,7 +459,7 @@ P=&41=$A,$B     : 文字列検索（位置を返す）
     B=#2            : 第2引数を取得
     C=A+B           : 計算
     #0=C            : 戻り値を設定
-    ]               : リターン
+    #=!             : RETURN（統一構文）
 
 : 3. 戻り値の取得
 R=!=^ADD_FUNC,10,20 : 戻り値をRに格納
@@ -371,11 +495,11 @@ A=[P+1]         : 構造体.field1 を読み取り → A=200
 ^KEY_HANDLER
     K=#EVENT_DATA    : イベントデータ取得
     ?="Key pressed: " ?=K
-    ]
+    #=!  : RETURN（統一構文）
 
 ^TIMER_HANDLER  
     ?="Timer tick"
-    ]
+    #=!  : RETURN（統一構文）
 ```
 
 ## 🏗️ 実装アーキテクチャ統合
@@ -472,19 +596,19 @@ class ExtendedWorkerInterpreter extends WorkerInterpreter {
 [0]=64 [1]=34 [2]=25 [3]=12 [4]=22 [5]=11 [6]=90
 N=7
 
-: バブルソート実装
-I=0,N-2
-    J=0,N-I-2  
+: バブルソート実装（統一構文）
+@=I,0,N-2
+    @=J,0,N-I-2
         : 比較・交換
         ;=[J]>[J+1] !=^SWAP,J,J+1
-    @=J
-@=I
+    #=@
+#=@
 
 : 結果表示
 ?="Sorted array:"
-I=0,N-1
+@=I,0,N-1
     ?=[I] ?=" "
-@=I
+#=@
 
 ^SWAP
     : 引数取得（将来拡張で実装予定）
@@ -494,7 +618,7 @@ I=0,N-1
     T=[A]
     [A]=[B] 
     [B]=T
-    ]
+    #=!  : RETURN（統一構文）
 
 #=-1
 ```
