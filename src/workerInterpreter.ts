@@ -56,6 +56,8 @@ class WorkerInterpreter {
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
     private loopStack: LoopBlockInfo[] = []; // ループブロックの実行状態スタック
     private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
+    private statementExecutors: Map<string, (statement: any) => ExecutionResult> = new Map(); // ステートメントタイプと実行関数のマッピング
+    private expressionEvaluators: Map<string, (expr: any) => number | string> = new Map(); // 式タイプと評価関数のマッピング
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
     // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
@@ -85,6 +87,49 @@ class WorkerInterpreter {
         this.memorySpace = new MemorySpace(); // メモリ空間の初期化
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
+        
+        // ステートメント実行関数のマッピング
+        this.initializeStatementExecutors();
+    }
+    
+    /**
+     * ステートメント実行関数のマッピングを初期化します。
+     * Map-basedディスパッチパターンにより、switch文を排除し保守性を向上させます。
+     */
+    private initializeStatementExecutors(): void {
+        this.statementExecutors.set('AssignmentStatement', (s) => this.executeAssignment(s));
+        this.statementExecutors.set('OutputStatement', (s) => this.executeOutput(s));
+        this.statementExecutors.set('NewlineStatement', () => this.executeNewline());
+        this.statementExecutors.set('IfStatement', (s) => this.executeIf(s));
+        this.statementExecutors.set('IfBlockStatement', (s) => this.executeIfBlock(s));
+        this.statementExecutors.set('ForBlockStatement', (s) => this.executeForBlock(s));
+        this.statementExecutors.set('WhileBlockStatement', (s) => this.executeWhileBlock(s));
+        this.statementExecutors.set('GotoStatement', (s) => this.executeGoto(s));
+        this.statementExecutors.set('GosubStatement', (s) => this.executeGosub(s));
+        this.statementExecutors.set('ReturnStatement', () => this.executeReturn());
+        this.statementExecutors.set('HaltStatement', () => this.executeHalt());
+        this.statementExecutors.set('PokeStatement', (s) => this.executePoke(s));
+        this.statementExecutors.set('IoPutStatement', (s) => this.executeIoPut(s));
+        this.statementExecutors.set('ArrayAssignmentStatement', (s) => this.executeArrayAssignment(s));
+        this.statementExecutors.set('ArrayInitializationStatement', (s) => this.executeArrayInitialization(s));
+        
+        // インラインスタイルのステートメント（loopStackで処理される）
+        const noOpResult: ExecutionResult = { jump: false, halt: false, skipRemaining: false };
+        this.statementExecutors.set('ForStatement', () => noOpResult);
+        this.statementExecutors.set('NextStatement', () => noOpResult);
+        this.statementExecutors.set('WhileStatement', () => noOpResult);
+        
+        // 式評価関数のマッピング
+        this.expressionEvaluators.set('NumericLiteral', (e) => this.evaluateNumericLiteral(e));
+        this.expressionEvaluators.set('StringLiteral', (e) => this.evaluateStringLiteral(e));
+        this.expressionEvaluators.set('Identifier', (e) => this.evaluateIdentifier(e));
+        this.expressionEvaluators.set('UnaryExpression', (e) => this.evaluateUnaryExpression(e));
+        this.expressionEvaluators.set('BinaryExpression', (e) => this.evaluateBinaryExpression(e));
+        this.expressionEvaluators.set('PeekExpression', () => this.evaluatePeekExpression());
+        this.expressionEvaluators.set('RandomExpression', () => this.evaluateRandomExpression());
+        this.expressionEvaluators.set('CharLiteralExpression', (e) => this.evaluateCharLiteralExpression(e));
+        this.expressionEvaluators.set('IoGetExpression', () => this.evaluateIoGetExpression());
+        this.expressionEvaluators.set('ArrayAccessExpression', (e) => this.evaluateArrayAccessExpression(e));
     }
 
     /**
@@ -612,78 +657,16 @@ class WorkerInterpreter {
 
     /**
      * 単一のステートメントを実行します。
+     * Map-basedディスパッチパターンにより、switch文を排除し保守性を向上させます。
      * @param statement 実行するステートメント
      * @returns 実行結果（ジャンプ、停止、スキップの情報）
      */
     private executeStatement(statement: Statement): ExecutionResult {
-        switch (statement.type) {
-            case 'AssignmentStatement':
-                return this.executeAssignment(statement);
-            
-            case 'OutputStatement':
-                return this.executeOutput(statement);
-            
-            case 'NewlineStatement':
-                return this.executeNewline();
-            
-            case 'IfStatement':
-                return this.executeIf(statement);
-            
-            case 'IfBlockStatement':
-                return this.executeIfBlock(statement);
-            
-            case 'ForBlockStatement':
-                return this.executeForBlock(statement);
-            
-            case 'WhileBlockStatement':
-                return this.executeWhileBlock(statement);
-            
-            case 'GotoStatement':
-                return this.executeGoto(statement);
-            
-            case 'GosubStatement':
-                return this.executeGosub(statement);
-            
-            case 'ReturnStatement':
-                return this.executeReturn();
-            
-            case 'HaltStatement':
-                return this.executeHalt();
-            
-            case 'PokeStatement':
-                return this.executePoke(statement);
-
-            case 'IoPutStatement':
-                return this.executeIoPut(statement);
-
-            case 'ArrayAssignmentStatement':
-                return this.executeArrayAssignment(statement);
-
-            case 'ArrayInitializationStatement':
-                return this.executeArrayInitialization(statement);
-            
-            case 'ForStatement':
-                // インラインスタイルのFORステートメント（例: @=I,1,3 ?=I #=@）
-                // ブロックスタイルではForBlockStatementに変換される
-                // インラインスタイルではこのステートメントは無視され、loopStackで処理される
-                return { jump: false, halt: false, skipRemaining: false };
-            
-            case 'NextStatement':
-                // NEXTステートメント（#=@）
-                // ブロックスタイル: ForBlockStatement/WhileBlockStatementの終端として処理済み
-                // インラインスタイル: loopStackで処理される
-                // スタンドアロン: 対応するループがない場合は無視
-                return { jump: false, halt: false, skipRemaining: false };
-            
-            case 'WhileStatement':
-                // インラインスタイルのWHILEステートメント（例: @=(X<10) ?=X #=@）
-                // ブロックスタイルではWhileBlockStatementに変換される
-                // インラインスタイルではこのステートメントは無視され、loopStackで処理される
-                return { jump: false, halt: false, skipRemaining: false };
-            
-            default:
-                throw new Error(`未実装のステートメントタイプ: ${(statement as any).type}`);
+        const executor = this.statementExecutors.get(statement.type);
+        if (!executor) {
+            throw new Error(`未実装のステートメントタイプ: ${(statement as any).type}`);
         }
+        return executor(statement);
     }
 
 
@@ -858,40 +841,11 @@ class WorkerInterpreter {
     }
 
     private evaluateExpression(expr: Expression): number | string {
-        switch (expr.type) {
-            case 'NumericLiteral':
-                return this.evaluateNumericLiteral(expr as any);
-            
-            case 'StringLiteral':
-                return this.evaluateStringLiteral(expr as any);
-            
-            case 'Identifier':
-                return this.evaluateIdentifier(expr as any);
-            
-            case 'UnaryExpression':
-                return this.evaluateUnaryExpression(expr as any);
-            
-            case 'BinaryExpression':
-                return this.evaluateBinaryExpression(expr as any);
-            
-            case 'PeekExpression':
-                return this.evaluatePeekExpression();
-            
-            case 'RandomExpression':
-                return this.evaluateRandomExpression();
-
-            case 'CharLiteralExpression':
-                return this.evaluateCharLiteralExpression(expr as any);
-
-            case 'IoGetExpression':
-                return this.evaluateIoGetExpression();
-
-            case 'ArrayAccessExpression':
-                return this.evaluateArrayAccessExpression(expr as any);
-            
-            default:
-                throw new Error(`未実装の式タイプ: ${(expr as any).type}`);
+        const evaluator = this.expressionEvaluators.get(expr.type);
+        if (!evaluator) {
+            throw new Error(`未実装の式タイプ: ${(expr as any).type}`);
         }
+        return evaluator(expr);
     }
 
     /**
