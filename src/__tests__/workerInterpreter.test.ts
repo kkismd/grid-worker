@@ -280,18 +280,15 @@ describe('Parser (TDD Cycle 2.2)', () => {
     });
 
     test('should parse a numeric output statement (?=10)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('?=10');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: '?=10',
                     statements: [
                         {
                             type: 'OutputStatement',
@@ -306,18 +303,15 @@ describe('Parser (TDD Cycle 2.2)', () => {
     });
 
     test('should parse a string output statement (?="Hello")', () => {
-        const tokens: Token[] = [
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.STRING, value: 'Hello', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('?="Hello"');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: '?="Hello"',
                     statements: [
                         {
                             type: 'OutputStatement',
@@ -332,16 +326,15 @@ describe('Parser (TDD Cycle 2.2)', () => {
     });
 
     test('should parse a newline statement (/)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.SLASH, value: '/', line: 0, column: 0 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('/');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: '/',
                     statements: [
                         {
                             type: 'NewlineStatement',
@@ -368,20 +361,15 @@ describe('Parser (TDD Cycle 2.3)', () => {
     });
 
     test('should parse a simple arithmetic expression (C=A+B)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('C=A+B');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: 'C=A+B',
                     statements: [
                         {
                             type: 'AssignmentStatement',
@@ -403,16 +391,8 @@ describe('Parser (TDD Cycle 2.3)', () => {
     });
 
     test('should parse a complex arithmetic expression (D=10*5-2)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 4 },
-            { type: TokenType.NUMBER, value: '5', line: 0, column: 5 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 6 },
-            { type: TokenType.NUMBER, value: '2', line: 0, column: 7 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('D=10*5-2');
+        const ast = interpreter.getProgram();
         // 標準的な演算子優先順位: 10*(5-2) = 10*3 = 30
         expect(ast).toEqual({
             type: 'Program',
@@ -420,6 +400,7 @@ describe('Parser (TDD Cycle 2.3)', () => {
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: 'D=10*5-2',
                     statements: [
                         {
                             type: 'AssignmentStatement',
@@ -447,24 +428,15 @@ describe('Parser (TDD Cycle 2.3)', () => {
     });
 
     test('should parse an expression with parentheses (E=(A+B)*C)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'E', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.LEFT_PAREN, value: '(', line: 0, column: 2 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 3 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 4 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
-            { type: TokenType.RIGHT_PAREN, value: ')', line: 0, column: 6 },
-            { type: TokenType.ASTERISK, value: '*', line: 0, column: 7 },
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 8 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('E=(A+B)*C');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: 'E=(A+B)*C',
                     statements: [
                         {
                             type: 'AssignmentStatement',
@@ -505,20 +477,15 @@ describe('Parser (TDD Cycle 2.4)', () => {
     });
 
     test('should parse a comparison expression (F=A>B)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'F', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('F=A>B');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: 'F=A>B',
                     statements: [
                         {
                             type: 'AssignmentStatement',
@@ -540,20 +507,15 @@ describe('Parser (TDD Cycle 2.4)', () => {
     });
 
     test('should parse an equality comparison (G=X=Y)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'G', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'X', line: 0, column: 2 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'Y', line: 0, column: 4 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('G=X=Y');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: 'G=X=Y',
                     statements: [
                         {
                             type: 'AssignmentStatement',
@@ -575,16 +537,8 @@ describe('Parser (TDD Cycle 2.4)', () => {
     });
 
     test('should parse a logical expression (H=A&B|C)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'H', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.AMPERSAND, value: '&', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 4 },
-            { type: TokenType.PIPE, value: '|', line: 0, column: 5 },
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 6 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('H=A&B|C');
+        const ast = interpreter.getProgram();
         // 左から右へ評価: ((A&B)|C)
         expect(ast).toEqual({
             type: 'Program',
@@ -592,6 +546,7 @@ describe('Parser (TDD Cycle 2.4)', () => {
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: 'H=A&B|C',
                     statements: [
                         {
                             type: 'AssignmentStatement',
@@ -632,23 +587,15 @@ describe('Parser (TDD Cycle 2.5)', () => {
     });
 
     test('should parse an IF statement (;=A>100 ?=100)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 8 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 9 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 10 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript(';=A>100 ?=100');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: ';=A>100 ?=100',
                     statements: [
                         {
                             type: 'IfStatement',
@@ -665,8 +612,8 @@ describe('Parser (TDD Cycle 2.5)', () => {
                         {
                             type: 'OutputStatement',
                             line: 0,
-                            column: 8,
-                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
+                            column: 0,
+                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 2 },
                         },
                     ],
                 },
@@ -675,26 +622,15 @@ describe('Parser (TDD Cycle 2.5)', () => {
     });
 
     test('should parse an IF statement with multiple actions', () => {
-        const tokens: Token[] = [
-            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 4 },
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 8 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 9 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 10 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 14 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 15 },
-            { type: TokenType.NUMBER, value: '200', line: 0, column: 16 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript(';=A>100 ?=100 B=200');
+        const ast = interpreter.getProgram();
         expect(ast).toEqual({
             type: 'Program',
             line: 0,
             body: [
                 {
                     lineNumber: 0,
+                    sourceText: ';=A>100 ?=100 B=200',
                     statements: [
                         {
                             type: 'IfStatement',
@@ -711,15 +647,15 @@ describe('Parser (TDD Cycle 2.5)', () => {
                         {
                             type: 'OutputStatement',
                             line: 0,
-                            column: 8,
-                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 10 },
+                            column: 0,
+                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 2 },
                         },
                         {
                             type: 'AssignmentStatement',
                             line: 0,
-                            column: 14,
-                            variable: { type: 'Identifier', name: 'B', line: 0, column: 14 },
-                            value: { type: 'NumericLiteral', value: 200, line: 0, column: 16 },
+                            column: 0,
+                            variable: { type: 'Identifier', name: 'B', line: 0, column: 0 },
+                            value: { type: 'NumericLiteral', value: 200, line: 0, column: 2 },
                         },
                     ],
                 },
@@ -809,12 +745,8 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
     });
 
     test('should parse GOTO statement with label (#=^START)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.LABEL_DEFINITION, value: '^START', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('#=^START');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -825,12 +757,8 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
     });
 
     test('should parse GOSUB statement with label (!=^MYSUB)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.BANG, value: '!', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.LABEL_DEFINITION, value: '^MYSUB', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('!=^MYSUB');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -841,12 +769,8 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
     });
 
     test('should parse RETURN statement (#=!)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.BANG, value: '!', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('#=!');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -854,13 +778,8 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
     });
 
     test('should parse HALT statement (#=-1)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 3 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('#=-1');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -868,32 +787,15 @@ describe('WorkerInterpreter - Control Flow Statements (Phase 2B.4)', () => {
     });
 
     test('should reject GOTO with number (#=100)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 2 },
-        ];
-        expect(() => interpreter.parse(tokens)).toThrow('GOTOにはラベル');
+        expect(() => interpreter.loadScript('#=100')).toThrow('GOTOにはラベル');
     });
 
     test('should reject GOTO with variable (#=A)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-        ];
-        expect(() => interpreter.parse(tokens)).toThrow('GOTOにはラベル');
+        expect(() => interpreter.loadScript('#=A')).toThrow('GOTOにはラベル');
     });
 
     test('should reject GOSUB with expression (!=A+10)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.BANG, value: '!', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
-        ];
-        expect(() => interpreter.parse(tokens)).toThrow('GOSUBにはラベル');
+        expect(() => interpreter.loadScript('!=A+10')).toThrow('GOSUBにはラベル');
     });
 });
 
@@ -910,13 +812,8 @@ describe('WorkerInterpreter - Unary Minus Operator (Phase 2B.3.5)', () => {
     });
 
     test('should parse negative number literal (A=-100)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 3 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('A=-100');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -929,13 +826,8 @@ describe('WorkerInterpreter - Unary Minus Operator (Phase 2B.3.5)', () => {
     });
 
     test('should parse unary minus with variable (B=-A)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 3 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('B=-A');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -948,15 +840,8 @@ describe('WorkerInterpreter - Unary Minus Operator (Phase 2B.3.5)', () => {
     });
 
     test('should parse complex expression with unary minus (C=10+-5)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 4 },
-            { type: TokenType.NUMBER, value: '5', line: 0, column: 5 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('C=10+-5');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -971,17 +856,8 @@ describe('WorkerInterpreter - Unary Minus Operator (Phase 2B.3.5)', () => {
     });
 
     test('should parse unary minus with parentheses (D=-(A+B))', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'D', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 2 },
-            { type: TokenType.LEFT_PAREN, value: '(', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 4 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 5 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 6 },
-            { type: TokenType.RIGHT_PAREN, value: ')', line: 0, column: 7 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('D=-(A+B)');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1006,20 +882,12 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
     });
 
     test('should parse FOR loop with default step (@=I,1,100)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.AT, value: '@', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 2 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 4 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 6 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('@=I,1,100\n#=@');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('ForStatement');
+        expect(stmt?.type).toBe('ForBlockStatement');
         const forStmt = stmt as any;
         expect(forStmt.variable.name).toBe('I');
         expect(forStmt.start.type).toBe('NumericLiteral');
@@ -1027,26 +895,16 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.end.type).toBe('NumericLiteral');
         expect(forStmt.end.value).toBe(100);
         expect(forStmt.step).toBeUndefined(); // デフォルトステップ
+        expect(forStmt.body).toHaveLength(0); // 空のループ本体
     });
 
     test('should parse FOR loop with negative step (@=J,10,1,-1)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.AT, value: '@', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'J', line: 0, column: 2 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 6 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 7 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 8 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 9 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('@=J,10,1,-1\n#=@');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('ForStatement');
+        expect(stmt?.type).toBe('ForBlockStatement');
         const forStmt = stmt as any;
         expect(forStmt.variable.name).toBe('J');
         expect(forStmt.start.value).toBe(10);
@@ -1055,25 +913,16 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.step.type).toBe('UnaryExpression');
         expect(forStmt.step.operator).toBe('-');
         expect(forStmt.step.operand.value).toBe(1);
+        expect(forStmt.body).toHaveLength(0); // 空のループ本体
     });
 
     test('should parse FOR loop with variable expressions (@=K,A,B,C)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.AT, value: '@', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'K', line: 0, column: 2 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 4 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 6 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 7 },
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 8 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('@=K,A,B,C\n#=@');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('ForStatement');
+        expect(stmt?.type).toBe('ForBlockStatement');
         const forStmt = stmt as any;
         expect(forStmt.variable.name).toBe('K');
         expect(forStmt.start.type).toBe('Identifier');
@@ -1082,15 +931,12 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.end.name).toBe('B');
         expect(forStmt.step.type).toBe('Identifier');
         expect(forStmt.step.name).toBe('C');
+        expect(forStmt.body).toHaveLength(0); // 空のループ本体
     });
 
     test('should parse NEXT statement (#=@)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.HASH, value: '#', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.AT, value: '@', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('#=@');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1101,12 +947,8 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
     });
 
     test('should distinguish FOR from regular assignment (A=1)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('A=1');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1115,20 +957,12 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
 
     // 新しいFOR構文テスト (@=I,1,100)
     test('should parse new FOR syntax (@=I,1,100)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.AT, value: '@', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'I', line: 0, column: 2 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 4 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 5 },
-            { type: TokenType.NUMBER, value: '100', line: 0, column: 6 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('@=I,1,100\n#=@');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('ForStatement');
+        expect(stmt?.type).toBe('ForBlockStatement');
         const forStmt = stmt as any;
         expect(forStmt.variable.name).toBe('I');
         expect(forStmt.start.type).toBe('NumericLiteral');
@@ -1136,32 +970,23 @@ describe('WorkerInterpreter - FOR/NEXT Statements (Phase 2B.5)', () => {
         expect(forStmt.end.type).toBe('NumericLiteral');
         expect(forStmt.end.value).toBe(100);
         expect(forStmt.step).toBeUndefined(); // デフォルトstep
+        expect(forStmt.body).toHaveLength(0); // 空のループ本体
     });
 
     test('should parse new FOR syntax with step (@=J,10,1,-1)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.AT, value: '@', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'J', line: 0, column: 2 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 6 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 7 },
-            { type: TokenType.COMMA, value: ',', line: 0, column: 8 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 9 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 10 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('@=J,10,1,-1\n#=@');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
-        expect(stmt?.type).toBe('ForStatement');
+        expect(stmt?.type).toBe('ForBlockStatement');
         const forStmt = stmt as any;
         expect(forStmt.variable.name).toBe('J');
         expect(forStmt.start.value).toBe(10);
         expect(forStmt.end.value).toBe(1);
         expect(forStmt.step.type).toBe('UnaryExpression');
         expect(forStmt.step.operator).toBe('-');
+        expect(forStmt.body).toHaveLength(0); // 空のループ本体
     });
 });
 
@@ -1178,12 +1003,8 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
     });
 
     test('should parse PEEK expression (A=`)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('A=`');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1194,12 +1015,8 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
     });
 
     test('should parse POKE statement (`=A)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('`=A');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1210,12 +1027,8 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
     });
 
     test('should parse POKE with numeric literal (`=42)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '42', line: 0, column: 2 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('`=42');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1226,14 +1039,8 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
     });
 
     test('should parse POKE with expression (`=A+10)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('`=A+10');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1243,14 +1050,8 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
     });
 
     test('should parse PEEK in expression (B=A+`)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.PLUS, value: '+', line:0, column: 3 },
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 4 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('B=A+`');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1263,14 +1064,8 @@ describe('WorkerInterpreter - PEEK/POKE Statements (Phase 2B.6)', () => {
     });
 
     test('should parse PEEK in subtraction (C=`-2)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 2 },
-            { type: TokenType.MINUS, value: '-', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '2', line: 0, column: 4 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('C=`-2');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(1);
         const stmt = ast.body[0]?.statements[0];
@@ -1297,18 +1092,8 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
     });
 
     test('should parse multiple assignments on one line (A=10 B=20 C=30)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 6 },
-            { type: TokenType.NUMBER, value: '20', line: 0, column: 7 },
-            { type: TokenType.IDENTIFIER, value: 'C', line: 0, column: 10 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
-            { type: TokenType.NUMBER, value: '30', line: 0, column: 12 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('A=10 B=20 C=30');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(3);
         
@@ -1332,20 +1117,8 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
     });
 
     test('should parse assignment with output (A=10 B=20 ?=A+B)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 2 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 5 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 6 },
-            { type: TokenType.NUMBER, value: '20', line: 0, column: 7 },
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 10 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 12 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 13 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 14 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('A=10 B=20 ?=A+B');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(3);
         
@@ -1355,20 +1128,8 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
     });
 
     test('should parse IF with multiple subsequent statements (;=A>10 ?="Yes" B=1)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 2 },
-            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '10', line: 0, column: 4 },
-            { type: TokenType.QUESTION, value: '?', line: 0, column: 7 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 8 },
-            { type: TokenType.STRING, value: 'Yes', line: 0, column: 9 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 15 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 16 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 17 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript(';=A>10 ?="Yes" B=1');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(3);
         
@@ -1390,20 +1151,8 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
     });
 
     test('should parse PEEK/POKE with assignment (A=` `=A+1 B=`)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 2 },
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 4 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 5 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 6 },
-            { type: TokenType.PLUS, value: '+', line: 0, column: 7 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 8 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 10 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 11 },
-            { type: TokenType.BACKTICK, value: '`', line: 0, column: 12 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript('A=` `=A+1 B=`');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(3);
         
@@ -1422,23 +1171,8 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
     });
 
     test('should parse complex line with control flow (;=X>0 #=^SKIP A=1 B=2)', () => {
-        const tokens: Token[] = [
-            { type: TokenType.SEMICOLON, value: ';', line: 0, column: 0 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 1 },
-            { type: TokenType.IDENTIFIER, value: 'X', line: 0, column: 2 },
-            { type: TokenType.GREATER_THAN, value: '>', line: 0, column: 3 },
-            { type: TokenType.NUMBER, value: '0', line: 0, column: 4 },
-            { type: TokenType.HASH, value: '#', line: 0, column: 6 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 7 },
-            { type: TokenType.LABEL_DEFINITION, value: '^SKIP', line: 0, column: 8 },
-            { type: TokenType.IDENTIFIER, value: 'A', line: 0, column: 14 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 15 },
-            { type: TokenType.NUMBER, value: '1', line: 0, column: 16 },
-            { type: TokenType.IDENTIFIER, value: 'B', line: 0, column: 18 },
-            { type: TokenType.EQUALS, value: '=', line: 0, column: 19 },
-            { type: TokenType.NUMBER, value: '2', line: 0, column: 20 },
-        ];
-        const ast = interpreter.parse(tokens);
+        interpreter.loadScript(';=X>0 #=^SKIP A=1 B=2');
+        const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
         expect(ast.body[0]?.statements).toHaveLength(4);
         
@@ -1717,103 +1451,6 @@ describe('WorkerInterpreter - Output Statements (Phase 3.2)', () => {
     });
 });
 
-// ========================================
-// Phase 2C: 空白区切り構文への最適化リファクタリング
-// ========================================
-
-describe('Phase 2C.1: String literal protection in whitespace splitting', () => {
-    let interpreter: WorkerInterpreter;
-    let mockLogFn: jest.Mock;
-    let mockPokeFn: jest.Mock;
-
-    beforeEach(() => {
-        mockLogFn = jest.fn();
-        mockPokeFn = jest.fn();
-        const gridData = Array.from(new Int16Array(10000));
-        interpreter = new WorkerInterpreter({
-            gridData,
-            peekFn: (index) => gridData[index] ?? 0,
-            pokeFn: (index, value) => {
-                gridData[index] = value;
-                mockPokeFn(index, value);
-            },
-            logFn: mockLogFn,
-        });
-    });
-
-    test('should split simple statements by whitespace', () => {
-        const result = interpreter.splitLineByWhitespace('A=10 B=20');
-        expect(result).toEqual(['A=10', 'B=20']);
-    });
-
-    test('should protect whitespace inside string literals', () => {
-        const result = interpreter.splitLineByWhitespace('?="Hello World" B=20');
-        expect(result).toEqual(['?="Hello World"', 'B=20']);
-    });
-
-    test('should handle string with trailing space', () => {
-        const result = interpreter.splitLineByWhitespace('?="Value: " ?=100 /');
-        expect(result).toEqual(['?="Value: "', '?=100', '/']);
-    });
-
-    test('should handle multiple spaces between statements', () => {
-        const result = interpreter.splitLineByWhitespace('A=10   B=20');
-        expect(result).toEqual(['A=10', 'B=20']);
-    });
-
-    test('should handle leading and trailing spaces', () => {
-        const result = interpreter.splitLineByWhitespace('  A=10 B=20  ');
-        expect(result).toEqual(['A=10', 'B=20']);
-    });
-
-    test('should handle string with escaped double quotes', () => {
-        const result = interpreter.splitLineByWhitespace('?="He said ""Hello""" A=10');
-        expect(result).toEqual(['?="He said ""Hello"""', 'A=10']);
-    });
-
-    test('should handle empty string literal', () => {
-        const result = interpreter.splitLineByWhitespace('?="" A=10');
-        expect(result).toEqual(['?=""', 'A=10']);
-    });
-
-    test('should handle string at the end', () => {
-        const result = interpreter.splitLineByWhitespace('A=10 ?="End"');
-        expect(result).toEqual(['A=10', '?="End"']);
-    });
-
-    test('should handle single statement with no spaces', () => {
-        const result = interpreter.splitLineByWhitespace('A=10');
-        expect(result).toEqual(['A=10']);
-    });
-
-    test('should handle empty line', () => {
-        const result = interpreter.splitLineByWhitespace('');
-        expect(result).toEqual([]);
-    });
-
-    test('should handle line with only spaces', () => {
-        const result = interpreter.splitLineByWhitespace('   ');
-        expect(result).toEqual([]);
-    });
-
-    test('should protect whitespace inside character literals', () => {
-        const result = interpreter.splitLineByWhitespace("A='A' B=' ' C='z'");
-        expect(result).toEqual(["A='A'", "B=' '", "C='z'"]);
-    });
-
-    test('should handle single quote in character literals', () => {
-        const result = interpreter.splitLineByWhitespace("A=''' B='A' C='B'");
-        expect(result).toEqual(["A='''", "B='A'", "C='B'"]);
-    });
-
-    test('should handle mixed string and character literals', () => {
-        const result = interpreter.splitLineByWhitespace('?="Hello" A=\'A\' B=" world" C=\' \'');
-        expect(result).toEqual(['?="Hello"', "A='A'", 'B=" world"', "C=' '"]);
-    });
-});
-
-// ========================================
-// Phase 3.3: 比較演算子・論理演算子
 // ========================================
 
 describe('Phase 3.3: Comparison and logical operators', () => {
