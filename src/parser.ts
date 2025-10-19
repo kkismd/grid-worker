@@ -122,16 +122,8 @@ export class Parser {
         const sourceText = this.scriptLines[lineNumber];
         if (!sourceText) return null;
 
-        // 行を空白で分割してから各ステートメントをパース
-        const stmtStrings = this.splitLineByWhitespace(sourceText);
-        const parsedStatements: Statement[] = [];
-        
-        for (const stmtString of stmtStrings) {
-            const stmt = this.parseStatementString(stmtString, lineNumber);
-            if (stmt) {
-                parsedStatements.push(stmt);
-            }
-        }
+        // 行をパースしてステートメント配列を取得
+        const parsedStatements = this.parseLineStatements(sourceText, lineNumber);
         
         // ブロック構造を試行
         const ifBlock = this.tryProcessIfBlock(parsedStatements, sourceText, lineNumber);
@@ -192,6 +184,95 @@ export class Parser {
             };
             
             return { line, endLine };
+        }
+        
+        return null;
+    }
+
+    /**
+     * 行をパースしてステートメント配列を返します。
+     * 空白で分割し、各ステートメント文字列を基本パースします。
+     * 
+     * @param sourceText パース対象の行テキスト
+     * @param lineNumber 行番号
+     * @returns パースされたステートメント配列
+     */
+    private parseLineStatements(sourceText: string, lineNumber: number): Statement[] {
+        const stmtStrings = this.splitLineByWhitespace(sourceText);
+        const parsedStatements: Statement[] = [];
+        
+        for (const stmtString of stmtStrings) {
+            const stmt = this.parseStatementString(stmtString, lineNumber);
+            if (stmt) {
+                parsedStatements.push(stmt);
+            }
+        }
+        
+        return parsedStatements;
+    }
+
+    /**
+     * 単独のステートメントがブロック構造（FOR/WHILE/IF）の場合、
+     * 対応するブロックステートメントに変換します。
+     * 
+     * @param parsedStatements パース済みステートメント配列
+     * @param lineNumber 行番号
+     * @param detectIf IFブロックを検出するか（collectIfBlock内では無効にする）
+     * @returns ブロックステートメントと終端行番号、またはnull
+     */
+    private detectAndConvertBlockStructure(
+        parsedStatements: Statement[],
+        lineNumber: number,
+        detectIf: boolean = true
+    ): { blockStmt: any; endLine: number } | null {
+        // 単独のステートメントでない場合はブロック検出しない
+        if (parsedStatements.length !== 1) {
+            return null;
+        }
+        
+        const stmt = parsedStatements[0];
+        if (!stmt) {
+            return null;
+        }
+        
+        // FORループの検出
+        if (isForStatement(stmt)) {
+            const innerBody = this.collectLoopBlock(lineNumber + 1);
+            const blockStmt: any = {
+                type: 'ForBlockStatement',
+                line: lineNumber,
+                variable: stmt.variable,
+                start: stmt.start,
+                end: stmt.end,
+                step: stmt.step,
+                body: innerBody.body,
+            };
+            return { blockStmt, endLine: innerBody.endLine };
+        }
+        
+        // WHILEループの検出
+        if (isWhileStatement(stmt)) {
+            const innerBody = this.collectLoopBlock(lineNumber + 1);
+            const blockStmt: any = {
+                type: 'WhileBlockStatement',
+                line: lineNumber,
+                condition: stmt.condition,
+                body: innerBody.body,
+            };
+            return { blockStmt, endLine: innerBody.endLine };
+        }
+        
+        // IFブロックの検出（detectIfがtrueの場合のみ）
+        if (detectIf && isIfStatement(stmt)) {
+            const blockStmt: any = {
+                type: 'IfBlockStatement',
+                line: lineNumber,
+                condition: stmt.condition,
+                thenBody: [],
+                elseBody: [],
+            };
+            const endLine = this.collectIfBlock(blockStmt, lineNumber + 1);
+            return { blockStmt, endLine };
         }
         
         return null;
@@ -333,70 +414,16 @@ export class Parser {
                 continue;
             }
 
-            // 行をステートメント文字列に分割
-            const stmtStrings = this.splitLineByWhitespace(sourceText);
-            const parsedStatements: Statement[] = [];
+            // 行をパースしてステートメント配列を取得
+            const parsedStatements = this.parseLineStatements(sourceText, i);
             
-            // 各ステートメント文字列を基本パース
-            for (const stmtString of stmtStrings) {
-                const stmt = this.parseStatementString(stmtString, i);
-                if (stmt) {
-                    parsedStatements.push(stmt);
-                }
-            }
-            
-            // ブロック構造を検出（ForStatement/WhileStatement/IfStatementが単独の場合）
-            if (parsedStatements.length === 1) {
-                const stmt = parsedStatements[0];
-                
-                if (stmt && isForStatement(stmt)) {
-                    // 内側のFORループを再帰的にパース
-                    const innerBody = this.collectLoopBlock(i + 1);
-                    const forBlockStmt: any = {
-                        type: 'ForBlockStatement',
-                        line: i,
-                        variable: stmt.variable,
-                        start: stmt.start,
-                        end: stmt.end,
-                        step: stmt.step,
-                        body: innerBody.body,
-                    };
-                    currentBody.push(forBlockStmt);
-                    // 内側ループの終端（#=@）までスキップ
-                    i = innerBody.endLine;
-                    continue;
-                }
-                
-                if (stmt && isWhileStatement(stmt)) {
-                    // 内側のWHILEループを再帰的にパース
-                    const innerBody = this.collectLoopBlock(i + 1);
-                    const whileBlockStmt: any = {
-                        type: 'WhileBlockStatement',
-                        line: i,
-                        condition: stmt.condition,
-                        body: innerBody.body,
-                    };
-                    currentBody.push(whileBlockStmt);
-                    // 内側ループの終端（#=@）までスキップ
-                    i = innerBody.endLine;
-                    continue;
-                }
-                
-                if (stmt && isIfStatement(stmt)) {
-                    // 内側のブロックIFを再帰的にパース
-                    const ifBlockStmt: any = {
-                        type: 'IfBlockStatement',
-                        line: i,
-                        condition: stmt.condition,
-                        thenBody: [],
-                        elseBody: [],
-                    };
-                    const endLine = this.collectIfBlock(ifBlockStmt, i + 1);
-                    currentBody.push(ifBlockStmt);
-                    // 内側IFの終端（#=;）までスキップ
-                    i = endLine;
-                    continue;
-                }
+            // ブロック構造を検出（IFブロックは検出しない - 無限再帰を防ぐ）
+            const blockInfo = this.detectAndConvertBlockStructure(parsedStatements, i, true);
+            if (blockInfo) {
+                currentBody.push(blockInfo.blockStmt);
+                // ブロックの終端までスキップ
+                i = blockInfo.endLine;
+                continue;
             }
             
             // 通常のステートメントを追加
@@ -439,51 +466,16 @@ export class Parser {
                 return { body, endLine: i };
             }
 
-            // 行をステートメント文字列に分割
-            const stmtStrings = this.splitLineByWhitespace(sourceText);
-            const parsedStatements: Statement[] = [];
+            // 行をパースしてステートメント配列を取得
+            const parsedStatements = this.parseLineStatements(sourceText, i);
             
-            // 各ステートメント文字列を基本パース
-            for (const stmtString of stmtStrings) {
-                const stmt = this.parseStatementString(stmtString, i);
-                if (stmt) {
-                    parsedStatements.push(stmt);
-                }
-            }
-            
-            // ブロック構造を検出（ForStatement/WhileStatementが単独の場合）
-            if (parsedStatements.length === 1) {
-                const stmt = parsedStatements[0];
-                
-                if (stmt && (isForStatement(stmt) || isWhileStatement(stmt))) {
-                    // 内側のループを再帰的にパース
-                    const innerBody = this.collectLoopBlock(i + 1);
-                    
-                    let blockStmt: any;
-                    if (isForStatement(stmt)) {
-                        blockStmt = {
-                            type: 'ForBlockStatement',
-                            line: i,
-                            variable: stmt.variable,
-                            start: stmt.start,
-                            end: stmt.end,
-                            step: stmt.step,
-                            body: innerBody.body,
-                        };
-                    } else {
-                        blockStmt = {
-                            type: 'WhileBlockStatement',
-                            line: i,
-                            condition: stmt.condition,
-                            body: innerBody.body,
-                        };
-                    }
-                    
-                    body.push(blockStmt);
-                    // 内側ループの終端（#=@）までスキップ
-                    i = innerBody.endLine;
-                    continue;
-                }
+            // ブロック構造を検出（IFブロックは検出しない - ループ内でIF検出は不要）
+            const blockInfo = this.detectAndConvertBlockStructure(parsedStatements, i, false);
+            if (blockInfo) {
+                body.push(blockInfo.blockStmt);
+                // ブロックの終端までスキップ
+                i = blockInfo.endLine;
+                continue;
             }
             
             // 通常のステートメントを追加
