@@ -5,8 +5,6 @@ import WorkerInterpreter from './workerInterpreter.js';
 const GRID_WIDTH = 100;
 const GRID_HEIGHT = 100;
 const CELL_SIZE = 4;
-const CANVAS_WIDTH = GRID_WIDTH * CELL_SIZE;
-const CANVAS_HEIGHT = GRID_HEIGHT * CELL_SIZE;
 const GRID_AREA = GRID_WIDTH * GRID_HEIGHT;
 
 // Speed presets
@@ -35,7 +33,6 @@ let globalInterval: number | null = null;
 let currentStepsPerFrame = 1000; // Default to "Fast"
 
 // --- Keyboard Input State ---
-let currentKeyCode = 0; // 現在押されているキーのASCIIコード（0 = 何も押されていない）
 const keyQueue: number[] = []; // キーの入力キュー
 let keyboardInputEnabled = false; // キーボード入力の有効/無効状態
 
@@ -590,7 +587,6 @@ document.addEventListener('keydown', (e) => {
     }
     
     if (keyCode > 0) {
-        currentKeyCode = keyCode;
         keyQueue.push(keyCode);
         
         // キーボード状態表示を更新
@@ -610,10 +606,7 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-document.addEventListener('keyup', (e) => {
-    // キーが離されたときは currentKeyCode をクリア
-    currentKeyCode = 0;
-    
+document.addEventListener('keyup', (_e) => {
     // キーボード状態表示を更新
     updateKeyboardStatus();
 });

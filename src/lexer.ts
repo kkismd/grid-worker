@@ -93,13 +93,11 @@ export class Lexer {
             // 数値リテラル
             if (/[0-9]/.test(char)) {
                 let value = '';
-                let isHex = false;
                 
                 // 0xまたは0Xで始まる場合は16進数
                 if (char === '0' && cursor + 1 < lineText.length) {
                     const nextChar = lineText[cursor + 1];
                     if (nextChar === 'x' || nextChar === 'X') {
-                        isHex = true;
                         cursor += 2; // '0x'をスキップ
                         
                         // 16進数の読み取り

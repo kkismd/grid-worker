@@ -129,7 +129,7 @@ export class CharacterVRAMRenderer {
     /**
      * ANSI エスケープシーケンス生成
      */
-    private generateANSI(changes: GridChange[], currentFrame: number[][]): string {
+    private generateANSI(changes: GridChange[], _currentFrame: number[][]): string {
         let output = '';
         
         for (const change of changes) {

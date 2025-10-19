@@ -205,10 +205,8 @@ export class RealTimeCLIRunner {
             const frameStart = Date.now();
             
             // 1フレーム分実行（ステップ制限なし）
-            let frameSteps = 0;
             for (let i = 0; i < this.config.stepsPerFrame; i++) {
                 const result = generator.next();
-                frameSteps++;
                 this.totalSteps++;
                 
                 if (result.done) {
