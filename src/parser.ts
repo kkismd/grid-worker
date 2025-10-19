@@ -1,7 +1,7 @@
 // src/parser.ts
 
 import { Lexer, TokenType, type Token } from './lexer.js';
-import type { Program, Statement, Expression, Line } from './ast.js';
+import type { Program, Statement, Expression, Line, ForStatement, WhileStatement } from './ast.js';
 import {
     isForStatement,
     isWhileStatement,
@@ -198,6 +198,55 @@ export class Parser {
     }
 
     /**
+     * インラインループステートメント（ForStatementまたはWhileStatement）を
+     * ブロックループステートメント（ForBlockStatementまたはWhileBlockStatement）に変換します。
+     * 
+     * @param inlineStmt 変換元のインラインループステートメント
+     * @param sourceText ソース行のテキスト
+     * @param lineNumber 行番号
+     * @returns 変換されたブロックループステートメントを含むLineと終端行番号
+     */
+    private convertInlineLoopToBlock(
+        inlineStmt: ForStatement | WhileStatement,
+        sourceText: string,
+        lineNumber: number
+    ): { line: Line; endLine: number } {
+        // #=@ まで本体を収集
+        const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
+        
+        let blockStmt: any;
+        if (isForStatement(inlineStmt)) {
+            // ForBlockStatementに変換
+            blockStmt = {
+                type: 'ForBlockStatement',
+                line: lineNumber,
+                variable: inlineStmt.variable,
+                start: inlineStmt.start,
+                end: inlineStmt.end,
+                step: inlineStmt.step,
+                body: body,
+            };
+        } else {
+            // WhileBlockStatementに変換
+            blockStmt = {
+                type: 'WhileBlockStatement',
+                line: lineNumber,
+                condition: inlineStmt.condition,
+                body: body,
+            };
+        }
+        
+        // ブロック全体を1つのステートメントとして追加
+        const line: Line = {
+            lineNumber: lineNumber,
+            statements: [blockStmt],
+            sourceText: sourceText,
+        };
+        
+        return { line, endLine };
+    }
+
+    /**
      * パースされたステートメントがブロックFORループかどうかを判定し、
      * ブロックFORの場合はそれを処理してLineを返します。
      * ブロックFORでない場合はnullを返します。
@@ -209,31 +258,7 @@ export class Parser {
     ): { line: Line; endLine: number } | null {
         // ブロックFORループ検出: 1行に1つだけForStatementがある場合
         if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'ForStatement') {
-            const inlineFor = parsedStatements[0] as any;
-            
-            // ForBlockStatementに変換
-            const blockFor: any = {
-                type: 'ForBlockStatement',
-                line: lineNumber,
-                variable: inlineFor.variable,
-                start: inlineFor.start,
-                end: inlineFor.end,
-                step: inlineFor.step,
-                body: [],
-            };
-            
-            // #=@ まで本体を収集
-            const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
-            blockFor.body = body;
-            
-            // ブロック全体を1つのステートメントとして追加
-            const line: Line = {
-                lineNumber: lineNumber,
-                statements: [blockFor],
-                sourceText: sourceText,
-            };
-            
-            return { line, endLine };
+            return this.convertInlineLoopToBlock(parsedStatements[0], sourceText, lineNumber);
         }
         
         return null;
@@ -251,28 +276,7 @@ export class Parser {
     ): { line: Line; endLine: number } | null {
         // ブロックWHILEループ検出: 1行に1つだけWhileStatementがある場合
         if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'WhileStatement') {
-            const inlineWhile = parsedStatements[0] as any;
-            
-            // WhileBlockStatementに変換
-            const blockWhile: any = {
-                type: 'WhileBlockStatement',
-                line: lineNumber,
-                condition: inlineWhile.condition,
-                body: [],
-            };
-            
-            // #=@ まで本体を収集
-            const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
-            blockWhile.body = body;
-            
-            // ブロック全体を1つのステートメントとして追加
-            const line: Line = {
-                lineNumber: lineNumber,
-                statements: [blockWhile],
-                sourceText: sourceText,
-            };
-            
-            return { line, endLine };
+            return this.convertInlineLoopToBlock(parsedStatements[0], sourceText, lineNumber);
         }
         
         return null;
@@ -451,34 +455,31 @@ export class Parser {
             if (parsedStatements.length === 1) {
                 const stmt = parsedStatements[0];
                 
-                if (stmt && isForStatement(stmt)) {
-                    // 内側のFORループを再帰的にパース
+                if (stmt && (isForStatement(stmt) || isWhileStatement(stmt))) {
+                    // 内側のループを再帰的にパース
                     const innerBody = this.collectLoopBlock(i + 1);
-                    const forBlockStmt: any = {
-                        type: 'ForBlockStatement',
-                        line: i,
-                        variable: stmt.variable,
-                        start: stmt.start,
-                        end: stmt.end,
-                        step: stmt.step,
-                        body: innerBody.body,
-                    };
-                    body.push(forBlockStmt);
-                    // 内側ループの終端（#=@）までスキップ
-                    i = innerBody.endLine;
-                    continue;
-                }
-                
-                if (stmt && isWhileStatement(stmt)) {
-                    // 内側のWHILEループを再帰的にパース
-                    const innerBody = this.collectLoopBlock(i + 1);
-                    const whileBlockStmt: any = {
-                        type: 'WhileBlockStatement',
-                        line: i,
-                        condition: stmt.condition,
-                        body: innerBody.body,
-                    };
-                    body.push(whileBlockStmt);
+                    
+                    let blockStmt: any;
+                    if (isForStatement(stmt)) {
+                        blockStmt = {
+                            type: 'ForBlockStatement',
+                            line: i,
+                            variable: stmt.variable,
+                            start: stmt.start,
+                            end: stmt.end,
+                            step: stmt.step,
+                            body: innerBody.body,
+                        };
+                    } else {
+                        blockStmt = {
+                            type: 'WhileBlockStatement',
+                            line: i,
+                            condition: stmt.condition,
+                            body: innerBody.body,
+                        };
+                    }
+                    
+                    body.push(blockStmt);
                     // 内側ループの終端（#=@）までスキップ
                     i = innerBody.endLine;
                     continue;
