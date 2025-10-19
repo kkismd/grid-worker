@@ -17,6 +17,7 @@ export interface RealTimeCLIRunnerConfig {
     gridDisplaySize?: number;  // グリッド表示サイズ（デフォルト: 20x20）
     splitScreen?: boolean;     // 上下分割画面（デフォルト: false）
     characterMode?: boolean;   // キャラクターVRAMモード（デフォルト: false）
+    outputFile?: string;       // トランスクリプト出力先ファイル（デフォルト: なし）
 }
 
 /**
@@ -26,7 +27,17 @@ export interface RealTimeCLIRunnerConfig {
  * ビジーループを避け、適切なCPU使用率でスクリプトを実行する。
  */
 export class RealTimeCLIRunner {
-    private config: Required<RealTimeCLIRunnerConfig>;
+    private config: RealTimeCLIRunnerConfig & {
+        debug: boolean;
+        verbose: boolean;
+        frameRate: number;
+        stepsPerFrame: number;
+        showFPS: boolean;
+        showGrid: boolean;
+        gridDisplaySize: number;
+        splitScreen: boolean;
+        characterMode: boolean;
+    };
     private gridData: number[];
     private gridRenderer: GridRenderer;
     private gridDiffRenderer: GridDiffRenderer;
@@ -51,6 +62,7 @@ export class RealTimeCLIRunner {
             gridDisplaySize: config.gridDisplaySize ?? 20,
             splitScreen: config.splitScreen ?? false,
             characterMode: config.characterMode ?? false,
+            ...(config.outputFile && { outputFile: config.outputFile }),
         };
 
         // 100x100 グリッドを初期化
@@ -155,8 +167,8 @@ export class RealTimeCLIRunner {
                 this.println(`📊 総実行: ${this.totalSteps.toLocaleString()} ステップ, ${this.frameCount} フレーム`);
             }
 
-            // 結果を表示
-            this.displayResults();
+            // 結果を表示（トランスクリプトファイル出力含む）
+            await this.displayResults();
 
         } catch (error) {
             this.println('\n❌ 実行エラー:' + (error instanceof Error ? error.message : error));
@@ -308,12 +320,13 @@ export class RealTimeCLIRunner {
     /**
      * システムメッセージ出力（println）
      * デバッグログやシステム情報など、スクリプト出力とは分離
+     * stderrに出力することで、stdoutのリダイレクト時に分離可能
      */
     private println(...args: any[]): void {
         const message = args.join(' ');
         
-        // 常にコンソールに出力（グリッド表示に影響されない）
-        console.log(message);
+        // stderrに出力（システムメッセージとスクリプト出力を分離）
+        process.stderr.write(message + '\n');
     }
 
     /**
@@ -356,7 +369,7 @@ export class RealTimeCLIRunner {
     /**
      * 結果表示
      */
-    private displayResults(): void {
+    private async displayResults(): Promise<void> {
         if (this.config.verbose) {
             this.println('\n' + '='.repeat(50));
             this.println('📊 実行結果');
@@ -369,8 +382,31 @@ export class RealTimeCLIRunner {
             // トランスクリプト
             if (this.transcript.length > 0) {
                 this.println('\n📝 トランスクリプト:');
-                this.transcript.forEach(line => this.println(line));
+                // transcript配列には既に改行が含まれているので、そのまま結合して出力
+                process.stderr.write(this.transcript.join(''));
             }
+        }
+
+        // outputFileが指定されている場合、トランスクリプトをファイルに出力
+        if (this.config.outputFile && this.transcript.length > 0) {
+            await this.writeTranscriptToFile();
+        }
+    }
+
+    /**
+     * トランスクリプトをファイルに出力
+     */
+    private async writeTranscriptToFile(): Promise<void> {
+        if (!this.config.outputFile) return;
+
+        try {
+            const fs = await import('fs/promises');
+            // transcript配列には既に改行('\n')が含まれているので、単純に連結
+            const content = this.transcript.join('');
+            await fs.writeFile(this.config.outputFile, content, 'utf-8');
+            this.println(`\n💾 トランスクリプトを保存しました: ${this.config.outputFile}`);
+        } catch (error) {
+            this.println(`\n❌ トランスクリプトの保存に失敗しました: ${error instanceof Error ? error.message : error}`);
         }
     }
 }

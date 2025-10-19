@@ -237,7 +237,8 @@ async function main() {
                     showGrid: options.showGrid,
                     splitScreen: options.splitScreen,
                     characterMode: options.characterMode,
-                    ...(options.gridSize && { gridDisplaySize: options.gridSize })
+                    ...(options.gridSize && { gridDisplaySize: options.gridSize }),
+                    ...(options.output && { outputFile: options.output })
                 };
                 const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
                 await realtimeRunner.executeRealTime(script, path.basename(scriptFile));
