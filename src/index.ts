@@ -606,7 +606,7 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-document.addEventListener('keyup', (e) => {
+document.addEventListener('keyup', (_e) => {
     // キーボード状態表示を更新
     updateKeyboardStatus();
 });

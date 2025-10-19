@@ -1,29 +1,10 @@
 // src/workerInterpreter.ts
 
 import { Lexer, type Token } from './lexer.js';
-import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
-import {
-    isForStatement,
-    isWhileStatement,
-    isIfStatement,
-    isForBlockStatement,
-    isWhileBlockStatement,
-    isIfBlockStatement,
-} from './ast.js';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 型アノテーションで使用（インライン型定義）
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast.js';
 import { MemorySpace } from './memorySpace.js';
 import { Parser } from './parser.js';
-
-/**
- * インタプリタの実行状態を保持するインターフェース。
- * Generator Function内で状態を管理するために使用されます。
- */
-interface InterpreterState {
-    programCounter: number; // 現在の実行行/ステートメントのインデックス
-    variables: Map<string, number>; // ユーザー変数 (A-Z)
-    systemVariables: Map<string, number>; // システム変数 (%, X, Yなど)
-    callStack: number[]; // GOSUBのリターンアドレススタック
-    // ... その他、インタプリタが必要とする状態
-}
 
 /**
  * ブロック構造ループの実行状態を保持するインターフェース。
