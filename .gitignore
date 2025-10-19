@@ -66,3 +66,9 @@ coverage/
 .cache/
 .eslintcache
 .prettierignore
+
+# Test and temporary files
+examples/test_*.ws
+examples/*_simple.ws
+*.txt
+!package.txt
