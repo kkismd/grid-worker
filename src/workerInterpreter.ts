@@ -1,6 +1,6 @@
 // src/workerInterpreter.ts
 
-import { Lexer, TokenType, type Token } from './lexer.js';
+import { Lexer, type Token } from './lexer.js';
 import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, WhileStatement } from './ast.js';
 import {
     isForStatement,
