@@ -264,11 +264,10 @@ class WorkerInterpreter {
                         }
                     } else if (currentLoop.type === 'while') {
                         // WHILEループ: 条件を再評価
-                        const condition = this.evaluateExpression(currentLoop.condition!);
-                        
-                        if (typeof condition === 'string') {
-                            throw new Error('WHILEループの条件は数値でなければなりません');
-                        }
+                        const condition = this.assertNumber(
+                            this.evaluateExpression(currentLoop.condition!),
+                            'WHILEループの条件は数値でなければなりません'
+                        );
                         
                         if (condition !== 0) {
                             // 次のイテレーション
@@ -350,16 +349,32 @@ class WorkerInterpreter {
         }
     }
 
+    // ==================== ヘルパーメソッド ====================
+
+    /**
+     * 値が数値であることを検証します。
+     * @param value 検証する値
+     * @param errorMessage 文字列だった場合のエラーメッセージ
+     * @returns 数値として検証された値
+     * @throws {Error} 値が文字列の場合
+     */
+    private assertNumber(value: number | string, errorMessage: string): number {
+        if (typeof value === 'string') {
+            throw new Error(errorMessage);
+        }
+        return value;
+    }
+
     // ==================== ステートメント実行メソッド ====================
 
     /**
      * 代入ステートメントを実行します。
      */
     private executeAssignment(statement: any): ExecutionResult {
-        const value = this.evaluateExpression(statement.value);
-        if (typeof value === 'string') {
-            throw new Error('変数には数値のみを代入できます');
-        }
+        const value = this.assertNumber(
+            this.evaluateExpression(statement.value),
+            '変数には数値のみを代入できます'
+        );
         this.variables.set(statement.variable.name, value);
         return { jump: false, halt: false, skipRemaining: false };
     }
@@ -385,10 +400,10 @@ class WorkerInterpreter {
      * インラインIF文を実行します。
      */
     private executeIf(statement: any): ExecutionResult {
-        const condition = this.evaluateExpression(statement.condition);
-        if (typeof condition === 'string') {
-            throw new Error('IF条件は数値でなければなりません');
-        }
+        const condition = this.assertNumber(
+            this.evaluateExpression(statement.condition),
+            'IF条件は数値でなければなりません'
+        );
         // 条件が0（偽）の場合、この行の残りをスキップ
         if (condition === 0) {
             return { jump: false, halt: false, skipRemaining: true };
@@ -400,10 +415,10 @@ class WorkerInterpreter {
      * ブロックIF文を実行します。
      */
     private executeIfBlock(statement: any): ExecutionResult {
-        const condition = this.evaluateExpression(statement.condition);
-        if (typeof condition === 'string') {
-            throw new Error('IF条件は数値でなければなりません');
-        }
+        const condition = this.assertNumber(
+            this.evaluateExpression(statement.condition),
+            'IF条件は数値でなければなりません'
+        );
         
         // 条件が真（非0）の場合、thenBodyを実行
         if (condition !== 0) {
@@ -431,16 +446,20 @@ class WorkerInterpreter {
     private executeForBlock(statement: any): ExecutionResult {
         const forStmt = statement;
         const varName = forStmt.variable.name;
-        const startValue = this.evaluateExpression(forStmt.start);
-        const endValue = this.evaluateExpression(forStmt.end);
+        const startValue = this.assertNumber(
+            this.evaluateExpression(forStmt.start),
+            'FORループのパラメータは数値でなければなりません'
+        );
+        const endValue = this.assertNumber(
+            this.evaluateExpression(forStmt.end),
+            'FORループのパラメータは数値でなければなりません'
+        );
         const stepValue = forStmt.step 
-            ? this.evaluateExpression(forStmt.step) 
+            ? this.assertNumber(
+                this.evaluateExpression(forStmt.step),
+                'FORループのパラメータは数値でなければなりません'
+            )
             : 1;
-        
-        // 型チェック
-        if (typeof startValue === 'string' || typeof endValue === 'string' || typeof stepValue === 'string') {
-            throw new Error('FORループのパラメータは数値でなければなりません');
-        }
         
         // ステップ値が0の場合はエラー
         if (stepValue === 0) {
@@ -483,12 +502,10 @@ class WorkerInterpreter {
         const whileStmt = statement;
         
         // 条件を評価
-        const condition = this.evaluateExpression(whileStmt.condition);
-        
-        // 型チェック
-        if (typeof condition === 'string') {
-            throw new Error('WHILEループの条件は数値でなければなりません');
-        }
+        const condition = this.assertNumber(
+            this.evaluateExpression(whileStmt.condition),
+            'WHILEループの条件は数値でなければなりません'
+        );
         
         // 条件が偽ならループをスキップ
         if (condition === 0) {
@@ -565,12 +582,10 @@ class WorkerInterpreter {
         const y = this.variables.get('Y') ?? 0;
         
         // 値を評価
-        const value = this.evaluateExpression(statement.value);
-        
-        // 文字列は不可
-        if (typeof value === 'string') {
-            throw new Error('POKEには数値が必要です');
-        }
+        const value = this.assertNumber(
+            this.evaluateExpression(statement.value),
+            'POKEには数値が必要です'
+        );
         
         // 値を0-65535の範囲にクランプ（16ビット値対応）
         const clampedValue = Math.max(0, Math.min(65535, Math.floor(value)));
@@ -585,12 +600,10 @@ class WorkerInterpreter {
      */
     private executeIoPut(statement: any): ExecutionResult {
         // VTL互換 1byte出力: $システム変数に値を書き込み
-        const value = this.evaluateExpression(statement.value);
-        
-        // 文字列は不可
-        if (typeof value === 'string') {
-            throw new Error('1byte出力には数値が必要です');
-        }
+        const value = this.assertNumber(
+            this.evaluateExpression(statement.value),
+            '1byte出力には数値が必要です'
+        );
         
         if (this.putFn) {
             // 値を0-255の範囲にクランプ
@@ -607,22 +620,20 @@ class WorkerInterpreter {
      */
     private executeArrayAssignment(statement: any): ExecutionResult {
         // 配列への代入: [index]=value または [-1]=value（スタックプッシュ）
-        const value = this.evaluateExpression(statement.value);
-        
-        // 文字列は不可
-        if (typeof value === 'string') {
-            throw new Error('配列には数値のみを代入できます');
-        }
+        const value = this.assertNumber(
+            this.evaluateExpression(statement.value),
+            '配列には数値のみを代入できます'
+        );
         
         if (statement.isLiteral) {
             // [-1]=value: スタックにプッシュ
             this.memorySpace.pushStack(Math.floor(value));
         } else {
             // 通常の配列代入
-            const index = this.evaluateExpression(statement.index);
-            if (typeof index === 'string') {
-                throw new Error('配列のインデックスは数値でなければなりません');
-            }
+            const index = this.assertNumber(
+                this.evaluateExpression(statement.index),
+                '配列のインデックスは数値でなければなりません'
+            );
             this.memorySpace.writeArray(Math.floor(index), Math.floor(value));
         }
         return { jump: false, halt: false, skipRemaining: false };
@@ -633,20 +644,18 @@ class WorkerInterpreter {
      */
     private executeArrayInitialization(statement: any): ExecutionResult {
         // 配列の初期化: [index]=value1,value2,value3,...
-        const index = this.evaluateExpression(statement.index);
-        
-        // インデックスは数値でなければならない
-        if (typeof index === 'string') {
-            throw new Error('配列のインデックスは数値でなければなりません');
-        }
+        const index = this.assertNumber(
+            this.evaluateExpression(statement.index),
+            '配列のインデックスは数値でなければなりません'
+        );
         
         // 値を評価
         const values: number[] = [];
         for (const expr of statement.values) {
-            const value = this.evaluateExpression(expr);
-            if (typeof value === 'string') {
-                throw new Error('配列初期化の値は数値でなければなりません');
-            }
+            const value = this.assertNumber(
+                this.evaluateExpression(expr),
+                '配列初期化の値は数値でなければなりません'
+            );
             values.push(Math.floor(value));
         }
         
@@ -705,12 +714,10 @@ class WorkerInterpreter {
      * 単項演算式を評価
      */
     private evaluateUnaryExpression(expr: { type: 'UnaryExpression'; operator: string; operand: Expression }): number {
-        const operand = this.evaluateExpression(expr.operand);
-        
-        // 文字列を含む演算は未サポート
-        if (typeof operand === 'string') {
-            throw new Error('文字列演算はサポートされていません');
-        }
+        const operand = this.assertNumber(
+            this.evaluateExpression(expr.operand),
+            '文字列演算はサポートされていません'
+        );
         
         switch (expr.operator) {
             case '!': return operand === 0 ? 1 : 0; // NOT演算子
@@ -726,13 +733,14 @@ class WorkerInterpreter {
      * 二項演算式を評価
      */
     private evaluateBinaryExpression(expr: { type: 'BinaryExpression'; operator: string; left: Expression; right: Expression }): number {
-        const left = this.evaluateExpression(expr.left);
-        const right = this.evaluateExpression(expr.right);
-        
-        // 文字列を含む演算は未サポート
-        if (typeof left === 'string' || typeof right === 'string') {
-            throw new Error('文字列演算はサポートされていません');
-        }
+        const left = this.assertNumber(
+            this.evaluateExpression(expr.left),
+            '文字列演算はサポートされていません'
+        );
+        const right = this.assertNumber(
+            this.evaluateExpression(expr.right),
+            '文字列演算はサポートされていません'
+        );
         
         switch (expr.operator) {
             case '+': return left + right;
@@ -832,10 +840,10 @@ class WorkerInterpreter {
             return this.memorySpace.popStack();
         } else {
             // 通常の配列アクセス
-            const index = this.evaluateExpression(expr.index);
-            if (typeof index === 'string') {
-                throw new Error('配列のインデックスは数値でなければなりません');
-            }
+            const index = this.assertNumber(
+                this.evaluateExpression(expr.index),
+                '配列のインデックスは数値でなければなりません'
+            );
             return this.memorySpace.readArray(Math.floor(index));
         }
     }
