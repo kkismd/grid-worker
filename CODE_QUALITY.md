@@ -27,10 +27,15 @@
 - any型（no-explicit-any）: 41件（43件から2件減）
 - 未使用変数（no-unused-vars）: 0件 ✅
 
-**合計**: 88件（107件から19件削減、17.8%改善） 初回作成時: 107件
+**合計**: 76件（107件から31件削減、29.0%改善）
+
+初回作成時: 107件
 - クリーンアップ第1段階（2025-10-19）: 101件（未使用変数6件削除）
 - クリーンアップ第2段階（2025-10-19）: 88件（未使用変数13件削除）
-- **累計削減**: 19件（17.8%改善）
+- ループ共通化リファクタリング（2025-10-19）: 84件（複雑度警告4件削減）
+- ブロック検出共通化リファクタリング（2025-10-19）: 82件（複雑度警告2件削減）
+- Map-basedディスパッチリファクタリング（2025-10-19）: 76件（複雑度・ステートメント数警告6件削減）
+- **累計削減**: 31件（29.0%改善）
 
 ### 警告の分類
 
@@ -48,7 +53,7 @@
 | `parser.ts` | `collectIfBlock` | 17 | 15 | ブロック構造の収集 |
 | `parser.ts` | `splitLineByWhitespace` | 17 | 15 | トークン分割の複雑な処理 |
 | `workerInterpreter.ts` | `run` | 31 | 15 | メインループ、多様な実行フロー |
-| `workerInterpreter.ts` | `executeStatement` | 19 | 15 | 多数のステートメント種別の分岐 |
+| ~~`workerInterpreter.ts`~~ | ~~`executeStatement`~~ | ~~19~~ | ~~15~~ | ~~多数のステートメント種別の分岐~~ → **Map-basedディスパッチで解消** ✅ |
 | `workerInterpreter.ts` | `evaluateBinaryExpression` | 28 | 15 | 多数の演算子を処理 |
 | `cli.ts` | `parseArgs` | 46 | 15 | 多数のCLIオプションを処理 |
 | `cli.ts` | `main` | 23 | 15 | 実行モードの多様な分岐 |
@@ -343,10 +348,15 @@ private convertInlineLoopToBlock(
 **改善効果**:
 - ✅ **コード削減**: 約50-80行（約3-5%削減）
 - ✅ **保守性向上**: ループ処理の一元化
+
+**実装状況**: ✅ **完了** (2025-10-19)
+- `convertInlineLoopToBlock()`メソッドを実装
+- `tryProcessForBlock()`と`tryProcessWhileBlock()`を共通化
+- ESLint警告4件削減（複雑度警告）
 - ✅ **拡張性向上**: 新しいループ構造の追加が容易
 - ✅ **バグ混入リスク低減**: 修正箇所の削減
 
-**優先度**: **MEDIUM** - IF実装よりも費用対効果が高い
+**優先度**: ~~**MEDIUM**~~ → **完了** ✅
 
 **IF実装との比較**:
 | 特徴 | IF実装 | FOR/WHILE実装 |
@@ -355,7 +365,79 @@ private convertInlineLoopToBlock(
 | 現状の評価 | A（優秀） | B（改善の余地） |
 | 改善の効果 | 小 | 大（50-80行削減） |
 | リスク | 高（複雑化） | 低（シンプル化） |
-| 優先度 | LOW | MEDIUM |
+| 優先度 | LOW | ~~MEDIUM~~ → **完了** ✅ |
+
+### 3. インタプリタのMap-basedディスパッチ（`workerInterpreter.ts`）
+
+**評価**: **B**（改善の余地あり）
+
+**現状**:
+- `executeStatement()`: 18個のcase文（72行）
+- `evaluateExpression()`: 11個のcase文（33行）
+- 各caseは単純な委譲パターン（ロジックなし）
+
+**問題点**:
+1. **巨大なswitch文**: 縦に長く、全体把握が困難
+2. **複雑度警告**: `executeStatement()`で19（制限15）
+3. **保守性の問題**: 新しいステートメント/式追加時に複数箇所修正が必要
+
+**判断基準**:
+| パターン | 特徴 | リファクタリング推奨 |
+|---------|------|---------------------|
+| 単純な委譲 | ロジックなし、各分岐が独立 | ✅ YES（Map-basedディスパッチ） |
+| 複雑なロジック | 分岐間で依存関係、全体の流れが重要 | ❌ NO（現状維持） |
+
+`executeStatement()`と`evaluateExpression()`は**単純な委譲パターン**に該当し、Map-basedディスパッチで可読性が向上する。
+
+**実装内容** (2025-10-19):
+
+```typescript
+// クラスフィールドに2つのMapを追加
+private statementExecutors: Map<string, (statement: any) => ExecutionResult> = new Map();
+private expressionEvaluators: Map<string, (expr: any) => number | string> = new Map();
+
+// コンストラクタからinitializeStatementExecutors()を呼び出し
+constructor(...) {
+    // ...
+    this.initializeStatementExecutors();
+}
+
+// 初期化メソッドで18個のステートメント実行関数と10個の式評価関数を一元管理
+private initializeStatementExecutors(): void {
+    // ステートメント実行関数の登録（18個）
+    this.statementExecutors.set('AssignmentStatement', (s) => this.executeAssignment(s));
+    this.statementExecutors.set('PrintStatement', (s) => this.executePrint(s));
+    // ... 16個のステートメント
+    
+    // 式評価関数の登録（10個）
+    this.expressionEvaluators.set('NumericLiteral', (e) => this.evaluateNumericLiteral(e));
+    this.expressionEvaluators.set('StringLiteral', (e) => this.evaluateStringLiteral(e));
+    // ... 8個の式
+}
+
+// executeStatement(): 72行のswitch文 → 5行のMap検索
+private executeStatement(statement: Statement): ExecutionResult {
+    const executor = this.statementExecutors.get(statement.type);
+    if (!executor) throw new Error(`未実装: ${statement.type}`);
+    return executor(statement);
+}
+
+// evaluateExpression(): 33行のswitch文 → 5行のMap検索
+private evaluateExpression(expr: Expression): number | string {
+    const evaluator = this.expressionEvaluators.get(expr.type);
+    if (!evaluator) throw new Error(`未実装の式タイプ: ${expr.type}`);
+    return evaluator(expr);
+}
+```
+
+**改善効果**:
+- ✅ **コード削減**: 約100行（switch文削除）- 37行（初期化追加）= **純削減63行**
+- ✅ **複雑度削減**: `executeStatement()`（19→4）、`evaluateExpression()`（推定15→4）
+- ✅ **ESLint警告削減**: 6件削減（複雑度2件 + ステートメント数4件）
+- ✅ **保守性向上**: 新しいステートメント/式タイプの追加がマップへの1行追加のみに
+- ✅ **可読性向上**: 100行以上のswitch文 → Map定義で全体を一目で把握可能
+
+**優先度**: ~~**MEDIUM**~~ → **完了** ✅
 
 ---
 
