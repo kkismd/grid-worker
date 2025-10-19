@@ -261,6 +261,104 @@
 長期目標（6ヶ月）: 85件前後を維持（言語実装の性質上、これ以上の削減は非現実的）
 ```
 
+## コード設計の評価と改善提案
+
+### 1. IF実装の設計評価（2025年10月19日）
+
+**評価**: ✅ **優秀（A評価）** - 現状維持を推奨
+
+**設計概要**:
+- `IfStatement`（インラインIF）を一時的に作成し、`IfBlockStatement`（ブロックIF）に変換する2段階処理
+- `parser.ts`の`tryProcessIfBlock()`と`collectIfBlock()`で実装
+
+**評価理由**:
+1. **VTL仕様の忠実な表現**: インラインIF（行内制御）とブロックIF（構造化）を明確に区別
+2. **段階的パース**: 字句解析→構造解析の一貫性
+3. **再帰処理の一貫性**: ネストされたIFも同じパターンで処理
+4. **パフォーマンス影響**: 一時オブジェクト作成はパース時のみ、実行時には影響なし
+5. **保守性と可読性**: コードの意図が明確
+
+**改善の余地**: 小（型アサーション`as any`の削減など）
+**優先度**: **LOW** - 大規模な変更は不要
+
+---
+
+### 2. FOR/WHILEループ処理の共通化評価（2025年10月19日）
+
+**評価**: ⚠️ **改善の余地あり（B評価）** - リファクタリングを推奨
+
+**問題点**:
+1. **コード重複**: `tryProcessForBlock()`と`tryProcessWhileBlock()`が80%以上重複
+2. **保守性**: 新しいループ構造（DO-UNTIL等）を追加する際、3箇所の修正が必要
+3. **一貫性**: 同じパターンが2箇所にコピー&ペースト
+
+**重複箇所**:
+
+```typescript
+// tryProcessForBlock (行205-241) と tryProcessWhileBlock (行247-280) の共通パターン:
+// 1. 単独ステートメント検出 (length === 1)
+// 2. 型チェック (ForStatement / WhileStatement)
+// 3. 一時変数取得 (as any)
+// 4. ブロックステートメント作成
+// 5. collectLoopBlock() 呼び出し（完全に共通）
+// 6. body設定と戻り値作成
+
+// collectLoopBlock (行426-510) 内のFOR/WHILE処理も同様に重複
+```
+
+**推奨される改善案**: ヘルパー関数`convertInlineLoopToBlock()`の抽出
+
+```typescript
+private convertInlineLoopToBlock(
+    inlineStmt: ForStatement | WhileStatement,
+    sourceText: string,
+    lineNumber: number
+): { line: Line; endLine: number } {
+    const { body, endLine } = this.collectLoopBlock(lineNumber + 1);
+    
+    let blockStmt: any;
+    if (isForStatement(inlineStmt)) {
+        blockStmt = {
+            type: 'ForBlockStatement',
+            line: lineNumber,
+            variable: inlineStmt.variable,
+            start: inlineStmt.start,
+            end: inlineStmt.end,
+            step: inlineStmt.step,
+            body: body,
+        };
+    } else {
+        blockStmt = {
+            type: 'WhileBlockStatement',
+            line: lineNumber,
+            condition: inlineStmt.condition,
+            body: body,
+        };
+    }
+    
+    return { line: { lineNumber, statements: [blockStmt], sourceText }, endLine };
+}
+```
+
+**改善効果**:
+- ✅ **コード削減**: 約50-80行（約3-5%削減）
+- ✅ **保守性向上**: ループ処理の一元化
+- ✅ **拡張性向上**: 新しいループ構造の追加が容易
+- ✅ **バグ混入リスク低減**: 修正箇所の削減
+
+**優先度**: **MEDIUM** - IF実装よりも費用対効果が高い
+
+**IF実装との比較**:
+| 特徴 | IF実装 | FOR/WHILE実装 |
+|------|--------|---------------|
+| 共通化の余地 | 低 | 高（80%が共通） |
+| 現状の評価 | A（優秀） | B（改善の余地） |
+| 改善の効果 | 小 | 大（50-80行削減） |
+| リスク | 高（複雑化） | 低（シンプル化） |
+| 優先度 | LOW | MEDIUM |
+
+---
+
 ## ベストプラクティス
 
 ### 新規コードのガイドライン
@@ -269,6 +367,7 @@
 2. **ステートメント数**: 30ステートメント以下を目指す
 3. **未使用変数**: 作成しない（即座に削除）
 4. **型指定**: 可能な限り具体的な型を使用（ただしインタプリタ部分は例外）
+5. **コード重複**: 共通パターンを見つけたら積極的にヘルパー関数を抽出
 
 ### ESLintルールの妥当性
 
