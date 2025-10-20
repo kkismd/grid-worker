@@ -3251,3 +3251,337 @@ describe('Stack Operations - Execution', () => {
     });
 });
 
+// ==================== 入力機能のテスト ====================
+
+describe('WorkerInterpreter - Input Features (A=? and A=$)', () => {
+    let interpreter: WorkerInterpreter;
+    let logs: any[] = [];
+    const gridData = new Array(100 * 100).fill(0);
+    
+    // モック関数
+    const logFn = (...args: any[]) => logs.push(args);
+    const peekFn = (index: number) => gridData[index] ?? 0;
+    const pokeFn = (x: number, y: number, value: number) => {
+        const index = (y % 100) * 100 + (x % 100);
+        gridData[index] = value;
+    };
+
+    beforeEach(() => {
+        logs = [];
+        gridData.fill(0);
+    });
+
+    // ==================== A=$ (1文字入力) のテスト ====================
+
+    describe('Input Character (A=$)', () => {
+        test('should read a single byte from getFn', () => {
+            const getFn = jest.fn().mockReturnValue(65); // 'A'のASCIIコード
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getFn,
+            });
+            
+            interpreter.loadScript('A=$');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(getFn).toHaveBeenCalled();
+            expect(interpreter.getVariable('A')).toBe(65);
+        });
+
+        test('should clamp input to 0-255 range', () => {
+            const getFn = jest.fn().mockReturnValue(300); // 範囲外の値
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getFn,
+            });
+            
+            interpreter.loadScript('A=$');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(255); // 255にクランプ
+        });
+
+        test('should handle negative input', () => {
+            const getFn = jest.fn().mockReturnValue(-10);
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getFn,
+            });
+            
+            interpreter.loadScript('A=$');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(0); // 0にクランプ
+        });
+
+        test('should throw error if getFn is not provided', () => {
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                // getFn not provided
+            });
+            
+            interpreter.loadScript('A=$');
+            const gen = interpreter.run();
+            
+            expect(() => {
+                while (!gen.next().done) {}
+            }).toThrow('1byte入力機能が設定されていません');
+        });
+
+        test('should use input in arithmetic expression', () => {
+            const getFn = jest.fn().mockReturnValue(10);
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getFn,
+            });
+            
+            interpreter.loadScript('A=$+5');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(15);
+        });
+    });
+
+    // ==================== A=? (数値入力) のテスト ====================
+
+    describe('Input Number (A=?)', () => {
+        test('should read a line and convert to number', () => {
+            const getLineFn = jest.fn().mockReturnValue('123');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(getLineFn).toHaveBeenCalled();
+            expect(interpreter.getVariable('A')).toBe(123);
+        });
+
+        test('should handle negative numbers', () => {
+            const getLineFn = jest.fn().mockReturnValue('-456');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(-456);
+        });
+
+        test('should trim whitespace from input', () => {
+            const getLineFn = jest.fn().mockReturnValue('  789  ');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(789);
+        });
+
+        test('should return 0 for non-numeric input', () => {
+            const getLineFn = jest.fn().mockReturnValue('abc');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(0);
+        });
+
+        test('should return 0 for empty input', () => {
+            const getLineFn = jest.fn().mockReturnValue('');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(0);
+        });
+
+        test('should wrap large numbers to 16-bit signed integer', () => {
+            const getLineFn = jest.fn().mockReturnValue('70000'); // 16ビット範囲外
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            // 70000を16ビットラップアラウンド: (70000 << 16) >> 16 = 4464
+            expect(interpreter.getVariable('A')).toBe(4464);
+        });
+
+        test('should throw error if getLineFn is not provided', () => {
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                // getLineFn not provided
+            });
+            
+            interpreter.loadScript('A=?');
+            const gen = interpreter.run();
+            
+            expect(() => {
+                while (!gen.next().done) {}
+            }).toThrow('行入力機能が設定されていません');
+        });
+
+        test('should use input in arithmetic expression', () => {
+            const getLineFn = jest.fn().mockReturnValue('50');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=?*2');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(100);
+        });
+
+        test('should handle mixed input scenario', () => {
+            const getLineFn = jest.fn()
+                .mockReturnValueOnce('10')
+                .mockReturnValueOnce('20');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=? B=? C=A+B');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(interpreter.getVariable('A')).toBe(10);
+            expect(interpreter.getVariable('B')).toBe(20);
+            expect(interpreter.getVariable('C')).toBe(30);
+        });
+    });
+
+    // ==================== 複合テスト ====================
+
+    describe('Combined Input and Output', () => {
+        test('should echo character input', () => {
+            const getFn = jest.fn().mockReturnValue(72); // 'H'
+            const putFn = jest.fn();
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getFn,
+                putFn,
+            });
+            
+            interpreter.loadScript('A=$ $=A');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(putFn).toHaveBeenCalledWith(72);
+        });
+
+        test('should echo number input', () => {
+            const getLineFn = jest.fn().mockReturnValue('42');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('A=? ?=A');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(logs).toContainEqual([42]);
+        });
+
+        test('should prompt and read input', () => {
+            const getLineFn = jest.fn().mockReturnValue('25');
+            interpreter = new WorkerInterpreter({
+                gridData,
+                peekFn,
+                pokeFn,
+                logFn,
+                getLineFn,
+            });
+            
+            interpreter.loadScript('?="Enter a number: " A=? ?="You entered: " ?=A');
+            const gen = interpreter.run();
+            while (!gen.next().done) {}
+            
+            expect(logs).toContainEqual(['Enter a number: ']);
+            expect(logs).toContainEqual(['You entered: ']);
+            expect(logs).toContainEqual([25]);
+        });
+    });
+});
+
+

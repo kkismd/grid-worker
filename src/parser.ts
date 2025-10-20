@@ -1082,6 +1082,14 @@ export class Parser {
             };
         }
 
+        if (token.type === TokenType.QUESTION) {
+            return {
+                type: 'InputNumberExpression',
+                line: token.line,
+                column: token.column,
+            };
+        }
+
         throw new Error(`構文エラー: 無効な式トークン '${token.value}' (行: ${token.line + 1})`);
     }
 
@@ -1361,6 +1369,7 @@ export class Parser {
             TokenType.TILDE,
             TokenType.CHAR_LITERAL,
             TokenType.DOLLAR,
+            TokenType.QUESTION,
             ...this.getBinaryOperatorTypes(),
         ].includes(tokenType);
     }

@@ -221,6 +221,7 @@ export type Expression =
     | RandomExpression
     | CharLiteralExpression
     | IoGetExpression
+    | InputNumberExpression
     | ArrayAccessExpression;
 
 /**
@@ -301,6 +302,15 @@ export interface CharLiteralExpression extends ASTNode {
  */
 export interface IoGetExpression extends ASTNode {
     type: 'IoGetExpression';
+}
+
+/**
+ * 数値入力式 (例: A=?)
+ * ユーザーから1行の入力を受け取り、数値に変換する
+ * C言語の fgets() + atoi() に相当
+ */
+export interface InputNumberExpression extends ASTNode {
+    type: 'InputNumberExpression';
 }
 
 // ==================== 配列・スタック機能 ====================
@@ -390,5 +400,6 @@ export const isPeekExpression = createTypeGuard<PeekExpression>('PeekExpression'
 export const isRandomExpression = createTypeGuard<RandomExpression>('RandomExpression');
 export const isCharLiteralExpression = createTypeGuard<CharLiteralExpression>('CharLiteralExpression');
 export const isIoGetExpression = createTypeGuard<IoGetExpression>('IoGetExpression');
+export const isInputNumberExpression = createTypeGuard<InputNumberExpression>('InputNumberExpression');
 export const isArrayAccessExpression = createTypeGuard<ArrayAccessExpression>('ArrayAccessExpression');
 

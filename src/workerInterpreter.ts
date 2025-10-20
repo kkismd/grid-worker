@@ -51,6 +51,7 @@ class WorkerInterpreter {
     private logFn: (...args: any[]) => void;
     private getFn: (() => number) | undefined; // 1byte入力関数（0-255の値を返す）
     private putFn: ((value: number) => void) | undefined; // 1byte出力関数（0-255の値を受け取る）
+    private getLineFn: (() => string) | undefined; // 行入力関数（文字列を返す、A=?用）
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
@@ -75,6 +76,7 @@ class WorkerInterpreter {
         logFn: (...args: any[]) => void;
         getFn?: () => number; // 1byte入力関数（0-255の値を返す）
         putFn?: (value: number) => void; // 1byte出力関数（0-255の値を受け取る）
+        getLineFn?: () => string; // 行入力関数（文字列を返す、A=?用）
     }) {
         this.gridData = config.gridData;
         this.peekFn = config.peekFn;
@@ -82,6 +84,7 @@ class WorkerInterpreter {
         this.logFn = config.logFn;
         this.getFn = config.getFn;
         this.putFn = config.putFn;
+        this.getLineFn = config.getLineFn;
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
         this.parser = new Parser(); // Parserのインスタンスを初期化
         this.memorySpace = new MemorySpace(); // メモリ空間の初期化
@@ -129,6 +132,7 @@ class WorkerInterpreter {
         this.expressionEvaluators.set('RandomExpression', () => this.evaluateRandomExpression());
         this.expressionEvaluators.set('CharLiteralExpression', (e) => this.evaluateCharLiteralExpression(e));
         this.expressionEvaluators.set('IoGetExpression', () => this.evaluateIoGetExpression());
+        this.expressionEvaluators.set('InputNumberExpression', () => this.evaluateInputNumberExpression());
         this.expressionEvaluators.set('ArrayAccessExpression', (e) => this.evaluateArrayAccessExpression(e));
     }
 
@@ -827,6 +831,26 @@ class WorkerInterpreter {
             return Math.max(0, Math.min(255, Math.floor(value)));
         } else {
             throw new Error('1byte入力機能が設定されていません');
+        }
+    }
+
+    /**
+     * 数値入力式を評価（行入力 + atoi）
+     */
+    private evaluateInputNumberExpression(): number {
+        // C言語の fgets() + atoi() 相当
+        if (this.getLineFn) {
+            const line = this.getLineFn();
+            const value = parseInt(line.trim(), 10);
+            // NaNの場合は0を返す
+            if (isNaN(value)) {
+                return 0;
+            }
+            // 16ビット符号あり整数にラップアラウンド
+            // JavaScriptのビット演算で自動的に32ビット整数に変換され、その後16ビットに切り詰める
+            return (value << 16) >> 16;
+        } else {
+            throw new Error('行入力機能が設定されていません');
         }
     }
 
