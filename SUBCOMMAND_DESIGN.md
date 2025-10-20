@@ -1,5 +1,22 @@
 # CLIサブコマンド設計案
 
+## 実装状況 ✅
+
+**実装完了日**: 2025年10月20日  
+**実装ブランチ**: feature/no-grid-option  
+**実装ステータス**: ✅ Phase 1-3 完了（8サブコマンド全て実装済み）
+
+### 実装内容
+- ✅ 8つのサブコマンド（run, exec, debug, watch, text, play, repl, bench）
+- ✅ サブコマンドごとのデフォルト設定とプリセット
+- ✅ サブコマンド別ヘルプシステム
+- ✅ オプション優先順位（コマンドライン > サブコマンドデフォルト）
+- ✅ 後方互換性（従来の方法も引き続き動作）
+- ✅ 全252テストパス
+- ✅ ESLint警告76件（変化なし）
+
+---
+
 ## 現状の問題
 
 オプションが16個以上あり、典型的なユースケースで毎回多くのオプションを指定する必要がある：
@@ -318,28 +335,30 @@ npm run cli debug examples/hello.ws
 
 ---
 
-## 移行計画
+## 移行計画 ✅ 完了
 
-### Phase 1: サブコマンド実装
-1. `parseSubcommand()` 関数追加
-2. プリセット定義追加
-3. オプションマージロジック実装
+### Phase 1: サブコマンド実装 ✅ 完了
+1. ✅ `parseSubcommand()` 関数追加
+2. ✅ プリセット定義追加（8サブコマンド）
+3. ✅ オプションマージロジック実装（`mergeOptions()`）
 
-### Phase 2: ヘルプ改善
-1. サブコマンド別ヘルプ
-2. 使用例の追加
-3. README更新
+### Phase 2: ヘルプ改善 ✅ 完了
+1. ✅ サブコマンド別ヘルプ（`showSubcommandHelp()`）
+2. ✅ 使用例の追加（各サブコマンド）
+3. ✅ メインヘルプ更新
 
-### Phase 3: テスト
-1. 各サブコマンドの動作確認
-2. オプション上書きテスト
-3. 後方互換性テスト
+### Phase 3: テスト ✅ 完了
+1. ✅ 各サブコマンドの動作確認（run, exec, debug, watch等）
+2. ✅ オプション上書きテスト（exec --verboseなど）
+3. ✅ 後方互換性テスト（従来の方法）
+4. ✅ 全252テスト パス
+5. ✅ ESLint警告76件（増加なし）
 
 ---
 
 ## 実装後の使用例比較
 
-### Before（現在）
+### Before（実装前）
 ```bash
 # デバッグ実行
 npm run cli -- examples/test.ws --debug --verbose
@@ -358,7 +377,7 @@ npm run cli -- examples/script.ws --no-grid
 npm run cli -- examples/script.ws --realtime --no-grid  # リアルタイムでもグリッド非表示
 ```
 
-### After（サブコマンド導入後）
+### After（サブコマンド導入後）✅ 実装完了
 ```bash
 # デバッグ実行
 npm run cli debug examples/test.ws
