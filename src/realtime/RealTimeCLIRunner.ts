@@ -14,6 +14,7 @@ export interface RealTimeCLIRunnerConfig {
     stepsPerFrame?: number;    // 1フレームあたりの実行ステップ数（デフォルト: 1000）
     showFPS?: boolean;         // FPS表示（デフォルト: false）
     showGrid?: boolean;        // グリッド表示（デフォルト: false）
+    noGrid?: boolean;          // グリッド表示を抑制（デフォルト: false）
     gridDisplaySize?: number;  // グリッド表示サイズ（デフォルト: 20x20）
     splitScreen?: boolean;     // 上下分割画面（デフォルト: false）
     characterMode?: boolean;   // キャラクターVRAMモード（デフォルト: false）
@@ -58,7 +59,8 @@ export class RealTimeCLIRunner {
             frameRate: config.frameRate ?? 30,
             stepsPerFrame: config.stepsPerFrame ?? 1000,
             showFPS: config.showFPS ?? false,
-            showGrid: config.showGrid ?? false,
+            // noGridオプションが優先、なければshowGridを使用
+            showGrid: config.noGrid ? false : (config.showGrid ?? false),
             gridDisplaySize: config.gridDisplaySize ?? 20,
             splitScreen: config.splitScreen ?? false,
             characterMode: config.characterMode ?? false,

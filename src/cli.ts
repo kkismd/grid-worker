@@ -23,6 +23,7 @@ interface CLIOptions {
     stepsPerFrame?: number;
     showFPS: boolean;
     showGrid: boolean;
+    noGrid: boolean;
     gridSize?: number;
     splitScreen: boolean;
     characterMode: boolean;
@@ -39,6 +40,7 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
         realtime: false,
         showFPS: false,
         showGrid: false,
+        noGrid: false,
         splitScreen: false,
         characterMode: false
     };
@@ -119,6 +121,9 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
             case '-g':
                 options.showGrid = true;
                 break;
+            case '--no-grid':
+                options.noGrid = true;
+                break;
             case '--split-screen':
             case '-s':
                 options.splitScreen = true;
@@ -163,6 +168,7 @@ WorkerScript CLI - Grid Worker スクリプト実行環境
   -u, --unlimited         ステップ数無制限で実行
   -m, --max-steps N       最大ステップ数を指定（デフォルト: 100000）
   -q, --quiet             進捗表示を無効化（クリーンな出力）
+  --no-grid               グリッド表示を抑制（テキスト出力のみ）
   -r, --realtime          リアルタイムモード（キーボード入力対応）
   --fps N                 フレームレート指定（デフォルト: 30）
   --steps-per-frame N     1フレームあたりの実行ステップ数（デフォルト: 1000）
@@ -210,6 +216,7 @@ async function main() {
                 verbose: options.verbose,
                 unlimitedSteps: options.unlimitedSteps,
                 quiet: options.quiet,
+                noGrid: options.noGrid,
                 ...(options.maxSteps && { maxSteps: options.maxSteps }),
                 ...(options.output && { outputFile: options.output })
             };
@@ -235,6 +242,7 @@ async function main() {
                     ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
                     showFPS: options.showFPS,
                     showGrid: options.showGrid,
+                    noGrid: options.noGrid,
                     splitScreen: options.splitScreen,
                     characterMode: options.characterMode,
                     ...(options.gridSize && { gridDisplaySize: options.gridSize }),
@@ -249,6 +257,7 @@ async function main() {
                     verbose: options.verbose,
                     unlimitedSteps: options.unlimitedSteps,
                     quiet: options.quiet,
+                    noGrid: options.noGrid,
                     ...(options.maxSteps && { maxSteps: options.maxSteps }),
                     ...(options.output && { outputFile: options.output })
                 };
