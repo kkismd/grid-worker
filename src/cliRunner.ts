@@ -12,6 +12,7 @@ export interface CLIRunnerConfig {
     unlimitedSteps?: boolean;
     maxSteps?: number;
     quiet?: boolean;
+    noGrid?: boolean;
 }
 
 export class CLIRunner {
@@ -220,8 +221,10 @@ export class CLIRunner {
      * 実行結果を表示
      */
     private displayResults(): void {
-        // グリッドの表示
-        this.displayGrid();
+        // グリッドの表示（noGridオプションがfalseの場合のみ）
+        if (!this.config.noGrid) {
+            this.displayGrid();
+        }
         
         // 出力ファイルに保存
         if (this.config.outputFile) {
