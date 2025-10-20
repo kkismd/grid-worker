@@ -344,122 +344,51 @@ export interface ArrayInitializationStatement extends ASTNode {
 // ============================================================================
 
 /**
+ * 型ガード関数を生成するファクトリー関数
+ * 同一パターンの型ガード関数を効率的に作成します
+ */
+function createTypeGuard<T extends { type: string }>(
+    typeName: string
+): (obj: { type: string }) => obj is T {
+    return (obj: { type: string }): obj is T => obj.type === typeName;
+}
+
+/**
  * Statement型のType Guard関数群
  * TypeScriptの型推論を活用し、型安全なコードを実現します。
  */
 
-export function isAssignmentStatement(stmt: Statement): stmt is AssignmentStatement {
-    return stmt.type === 'AssignmentStatement';
-}
-
-export function isOutputStatement(stmt: Statement): stmt is OutputStatement {
-    return stmt.type === 'OutputStatement';
-}
-
-export function isNewlineStatement(stmt: Statement): stmt is NewlineStatement {
-    return stmt.type === 'NewlineStatement';
-}
-
-export function isIfStatement(stmt: Statement): stmt is IfStatement {
-    return stmt.type === 'IfStatement';
-}
-
-export function isIfBlockStatement(stmt: Statement): stmt is IfBlockStatement {
-    return stmt.type === 'IfBlockStatement';
-}
-
-export function isGotoStatement(stmt: Statement): stmt is GotoStatement {
-    return stmt.type === 'GotoStatement';
-}
-
-export function isGosubStatement(stmt: Statement): stmt is GosubStatement {
-    return stmt.type === 'GosubStatement';
-}
-
-export function isReturnStatement(stmt: Statement): stmt is ReturnStatement {
-    return stmt.type === 'ReturnStatement';
-}
-
-export function isHaltStatement(stmt: Statement): stmt is HaltStatement {
-    return stmt.type === 'HaltStatement';
-}
-
-export function isForStatement(stmt: Statement): stmt is ForStatement {
-    return stmt.type === 'ForStatement';
-}
-
-export function isForBlockStatement(stmt: Statement): stmt is ForBlockStatement {
-    return stmt.type === 'ForBlockStatement';
-}
-
-export function isNextStatement(stmt: Statement): stmt is NextStatement {
-    return stmt.type === 'NextStatement';
-}
-
-export function isWhileStatement(stmt: Statement): stmt is WhileStatement {
-    return stmt.type === 'WhileStatement';
-}
-
-export function isWhileBlockStatement(stmt: Statement): stmt is WhileBlockStatement {
-    return stmt.type === 'WhileBlockStatement';
-}
-
-export function isPokeStatement(stmt: Statement): stmt is PokeStatement {
-    return stmt.type === 'PokeStatement';
-}
-
-export function isIoPutStatement(stmt: Statement): stmt is IoPutStatement {
-    return stmt.type === 'IoPutStatement';
-}
-
-export function isArrayAssignmentStatement(stmt: Statement): stmt is ArrayAssignmentStatement {
-    return stmt.type === 'ArrayAssignmentStatement';
-}
-
-export function isArrayInitializationStatement(stmt: Statement): stmt is ArrayInitializationStatement {
-    return stmt.type === 'ArrayInitializationStatement';
-}
+export const isAssignmentStatement = createTypeGuard<AssignmentStatement>('AssignmentStatement');
+export const isOutputStatement = createTypeGuard<OutputStatement>('OutputStatement');
+export const isNewlineStatement = createTypeGuard<NewlineStatement>('NewlineStatement');
+export const isIfStatement = createTypeGuard<IfStatement>('IfStatement');
+export const isIfBlockStatement = createTypeGuard<IfBlockStatement>('IfBlockStatement');
+export const isGotoStatement = createTypeGuard<GotoStatement>('GotoStatement');
+export const isGosubStatement = createTypeGuard<GosubStatement>('GosubStatement');
+export const isReturnStatement = createTypeGuard<ReturnStatement>('ReturnStatement');
+export const isHaltStatement = createTypeGuard<HaltStatement>('HaltStatement');
+export const isForStatement = createTypeGuard<ForStatement>('ForStatement');
+export const isForBlockStatement = createTypeGuard<ForBlockStatement>('ForBlockStatement');
+export const isNextStatement = createTypeGuard<NextStatement>('NextStatement');
+export const isWhileStatement = createTypeGuard<WhileStatement>('WhileStatement');
+export const isWhileBlockStatement = createTypeGuard<WhileBlockStatement>('WhileBlockStatement');
+export const isPokeStatement = createTypeGuard<PokeStatement>('PokeStatement');
+export const isIoPutStatement = createTypeGuard<IoPutStatement>('IoPutStatement');
+export const isArrayAssignmentStatement = createTypeGuard<ArrayAssignmentStatement>('ArrayAssignmentStatement');
+export const isArrayInitializationStatement = createTypeGuard<ArrayInitializationStatement>('ArrayInitializationStatement');
 
 /**
  * Expression型のType Guard関数群
  */
 
-export function isNumericLiteral(expr: Expression): expr is NumericLiteral {
-    return expr.type === 'NumericLiteral';
-}
+export const isNumericLiteral = createTypeGuard<NumericLiteral>('NumericLiteral');
+export const isStringLiteral = createTypeGuard<StringLiteral>('StringLiteral');
+export const isIdentifier = createTypeGuard<Identifier>('Identifier');
+export const isUnaryExpression = createTypeGuard<UnaryExpression>('UnaryExpression');
+export const isBinaryExpression = createTypeGuard<BinaryExpression>('BinaryExpression');
+export const isPeekExpression = createTypeGuard<PeekExpression>('PeekExpression');
+export const isRandomExpression = createTypeGuard<RandomExpression>('RandomExpression');
+export const isCharLiteralExpression = createTypeGuard<CharLiteralExpression>('CharLiteralExpression');
+export const isIoGetExpression = createTypeGuard<IoGetExpression>('IoGetExpression');
+export const isArrayAccessExpression = createTypeGuard<ArrayAccessExpression>('ArrayAccessExpression');
 
-export function isStringLiteral(expr: Expression): expr is StringLiteral {
-    return expr.type === 'StringLiteral';
-}
-
-export function isIdentifier(expr: Expression): expr is Identifier {
-    return expr.type === 'Identifier';
-}
-
-export function isUnaryExpression(expr: Expression): expr is UnaryExpression {
-    return expr.type === 'UnaryExpression';
-}
-
-export function isBinaryExpression(expr: Expression): expr is BinaryExpression {
-    return expr.type === 'BinaryExpression';
-}
-
-export function isPeekExpression(expr: Expression): expr is PeekExpression {
-    return expr.type === 'PeekExpression';
-}
-
-export function isRandomExpression(expr: Expression): expr is RandomExpression {
-    return expr.type === 'RandomExpression';
-}
-
-export function isCharLiteralExpression(expr: Expression): expr is CharLiteralExpression {
-    return expr.type === 'CharLiteralExpression';
-}
-
-export function isIoGetExpression(expr: Expression): expr is IoGetExpression {
-    return expr.type === 'IoGetExpression';
-}
-
-export function isArrayAccessExpression(expr: Expression): expr is ArrayAccessExpression {
-    return expr.type === 'ArrayAccessExpression';
-}

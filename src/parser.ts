@@ -363,6 +363,29 @@ export class Parser {
         return null;
     }
 
+    // ==================== ヘルパーメソッド ====================
+
+    /**
+     * シンプルなステートメントオブジェクトを構築します。
+     * 繰り返されるステートメント構築パターンを共通化します。
+     */
+    private createSimpleStatement(
+        type: string,
+        token: Token,
+        nextIndex: number,
+        additionalProps?: Record<string, any>
+    ): { statement: Statement; nextIndex: number } {
+        return {
+            statement: {
+                type,
+                line: token.line,
+                column: token.column,
+                ...additionalProps
+            } as Statement,
+            nextIndex
+        };
+    }
+
     /**
      * 指定された行が #=; (EndIf) かどうかを判定します。
      */
@@ -543,41 +566,18 @@ export class Parser {
 
             // #=! パターン（新 RETURN文）
             if (thirdToken.type === TokenType.BANG) {
-                return {
-                    statement: {
-                        type: 'ReturnStatement',
-                        line: token.line,
-                        column: token.column,
-                    },
-                    nextIndex: startIndex + 3
-                };
+                return this.createSimpleStatement('ReturnStatement', token, startIndex + 3);
             }
 
-            // #=@ パターン（NEXT文）- 統一構造
+            // #=@ パターン（NEXT文）
             if (thirdToken.type === TokenType.AT) {
-                return {
-                    statement: {
-                        type: 'NextStatement',
-                        line: token.line,
-                        column: token.column,
-                        // variable: undefined, // #=@は変数指定なし（統一構造）
-                    },
-                    nextIndex: startIndex + 3
-                };
+                return this.createSimpleStatement('NextStatement', token, startIndex + 3);
             }
 
-            // #=^LABEL パターン（通常のGOTO）
+            // #=^LABEL パターン（GOTO）
             if (thirdToken.type === TokenType.LABEL_DEFINITION) {
                 const labelName = thirdToken.value.substring(1);
-                return {
-                    statement: {
-                        type: 'GotoStatement',
-                        line: token.line,
-                        column: token.column,
-                        target: labelName,
-                    },
-                    nextIndex: startIndex + 3
-                };
+                return this.createSimpleStatement('GotoStatement', token, startIndex + 3, { target: labelName });
             }
 
             throw new Error(`構文エラー: GOTOにはラベル（^LABEL形式）が必要です`);
@@ -884,7 +884,7 @@ export class Parser {
             };
         }
 
-        // #=@ パターン（NEXT文）- 統一構造
+        // #=@ パターン（NEXT文）
         if (thirdToken.type === TokenType.AT) {
             return {
                 type: 'NextStatement',
@@ -893,9 +893,9 @@ export class Parser {
             };
         }
 
-        // #=^LABEL パターン（通常のGOTO）
+        // #=^LABEL パターン（GOTO）
         if (thirdToken.type === TokenType.LABEL_DEFINITION) {
-            const labelName = thirdToken.value.substring(1); // ^ を除去
+            const labelName = thirdToken.value.substring(1);
             return {
                 type: 'GotoStatement',
                 line: firstToken.line,
