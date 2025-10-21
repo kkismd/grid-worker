@@ -213,6 +213,32 @@ class WorkerInterpreter {
     // ==================== Phase 3: インタプリタ実装 ====================
 
     /**
+     * ステートメント列を統一的に実行するGeneratorメソッド。
+     * すべてのブロック構造（FOR, WHILE, IF）で共通して使用されます。
+     * 
+     * @param statements 実行するステートメント列
+     * @returns ExecutionResult（jump, halt, skipRemainingの情報）
+     * @yields 各ステートメント実行後に制御を返す
+     */
+    private *executeStatements(statements: Statement[]): Generator<void, ExecutionResult, void> {
+        for (const stmt of statements) {
+            // ステートメント実行
+            const result = this.executeStatement(stmt);
+            
+            // jump/haltの場合は即座に呼び出し元に伝播
+            if (result.jump || result.halt) {
+                return result;
+            }
+            
+            // 1ステートメント実行完了、制御を返す
+            yield;
+        }
+        
+        // 正常終了
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
      * ロードされたスクリプトを実行します（Generator Functionとして実装）。
      * 外部からのクロック（next()呼び出し）ごとに1ステートメントを実行します。
      * @yields 実行状態（継続可能かどうか）
