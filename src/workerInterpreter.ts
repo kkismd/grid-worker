@@ -2,7 +2,7 @@
 
 import { Lexer, type Token } from './lexer.js';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 型アノテーションで使用（インライン型定義）
-import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line } from './ast.js';
+import type { Program, Statement, Expression, Identifier, NumericLiteral, StringLiteral, Line, ForBlockStatement, WhileBlockStatement } from './ast.js';
 import { MemorySpace } from './memorySpace.js';
 import { Parser } from './parser.js';
 
@@ -222,12 +222,25 @@ class WorkerInterpreter {
      */
     private *executeStatements(statements: Statement[]): Generator<void, ExecutionResult, void> {
         for (const stmt of statements) {
-            // ステートメント実行
-            const result = this.executeStatement(stmt);
-            
-            // jump/haltの場合は即座に呼び出し元に伝播
-            if (result.jump || result.halt) {
-                return result;
+            // ブロック系ステートメントは専用のGeneratorヘルパーで処理
+            if (stmt.type === 'ForBlockStatement') {
+                const result = yield* this.executeForBlockGenerator(stmt);
+                if (result.jump || result.halt) {
+                    return result;
+                }
+            } else if (stmt.type === 'WhileBlockStatement') {
+                const result = yield* this.executeWhileBlockGenerator(stmt);
+                if (result.jump || result.halt) {
+                    return result;
+                }
+            } else {
+                // 通常のステートメント実行
+                const result = this.executeStatement(stmt);
+                
+                // jump/haltの場合は即座に呼び出し元に伝播
+                if (result.jump || result.halt) {
+                    return result;
+                }
             }
             
             // 1ステートメント実行完了、制御を返す
@@ -239,11 +252,86 @@ class WorkerInterpreter {
     }
 
     /**
+     * FORブロックをGenerator方式で実行するヘルパー
+     */
+    private *executeForBlockGenerator(statement: ForBlockStatement): Generator<void, ExecutionResult, void> {
+        const varName = statement.variable.name;
+        const startValue = this.assertNumber(
+            this.evaluateExpression(statement.start),
+            'FORループのパラメータは数値でなければなりません'
+        );
+        const endValue = this.assertNumber(
+            this.evaluateExpression(statement.end),
+            'FORループのパラメータは数値でなければなりません'
+        );
+        const stepValue = statement.step 
+            ? this.assertNumber(
+                this.evaluateExpression(statement.step),
+                'FORループのパラメータは数値でなければなりません'
+            )
+            : 1;
+        
+        // ステップ値が0の場合はエラー
+        if (stepValue === 0) {
+            throw new Error('FORループのステップ値は0にできません');
+        }
+        
+        // ループ変数の初期値を設定
+        this.variables.set(varName, startValue);
+        
+        // ループ実行
+        for (let currentValue = startValue; 
+             stepValue > 0 ? currentValue <= endValue : currentValue >= endValue; 
+             currentValue += stepValue) {
+            
+            // ループ変数を更新
+            this.variables.set(varName, currentValue);
+            
+            // ━━━━ ブロック内のステートメントを再帰的に実行 ━━━━
+            const result = yield* this.executeStatements(statement.body);
+            
+            if (result.jump || result.halt) {
+                return result;
+            }
+        }
+        
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
+     * WHILEブロックをGenerator方式で実行するヘルパー
+     */
+    private *executeWhileBlockGenerator(statement: WhileBlockStatement): Generator<void, ExecutionResult, void> {
+        // WHILEループ実行
+        while (true) {
+            // 条件を評価
+            const condition = this.assertNumber(
+                this.evaluateExpression(statement.condition),
+                'WHILEループの条件は数値でなければなりません'
+            );
+            
+            // 条件が偽ならループ終了
+            if (condition === 0) {
+                break;
+            }
+            
+            // ━━━━ ブロック内のステートメントを再帰的に実行 ━━━━
+            const result = yield* this.executeStatements(statement.body);
+            
+            if (result.jump || result.halt) {
+                return result;
+            }
+        }
+        
+        return { jump: false, halt: false, skipRemaining: false };
+    }
+
+    /**
      * ロードされたスクリプトを実行します（Generator Functionとして実装）。
      * 外部からのクロック（next()呼び出し）ごとに1ステートメントを実行します。
      * @yields 実行状態（継続可能かどうか）
      */
-    public *run(): Generator<void, void, unknown> {
+    public *run(): Generator<void, void, void> {
         if (!this.program) {
             throw new Error('スクリプトがロードされていません。loadScript()を先に呼び出してください。');
         }
@@ -254,126 +342,20 @@ class WorkerInterpreter {
         this.callStack = [];
         this.loopStack = [];
 
-        // プログラム実行ループ（loopStackに処理が残っている場合も継続）
-        while (this.currentLineIndex < this.program.body.length || this.loopStack.length > 0) {
-            // loopStackがある場合、ループ内のステートメントを優先実行
-            if (this.loopStack.length > 0) {
-                const currentLoop = this.loopStack[this.loopStack.length - 1]!;
-                
-                // bodyIndex が body.length に達した場合、ループの次のイテレーション
-                if (currentLoop.bodyIndex >= currentLoop.body.length) {
-                    if (currentLoop.type === 'for') {
-                        // FORループ: 変数を更新して条件チェック
-                        const newValue = currentLoop.currentValue! + currentLoop.step!;
-                        const shouldContinue = currentLoop.step! > 0
-                            ? newValue <= currentLoop.end!
-                            : newValue >= currentLoop.end!;
-                        
-                        if (shouldContinue) {
-                            // 次のイテレーション
-                            this.variables.set(currentLoop.variable!, newValue);
-                            currentLoop.currentValue = newValue;
-                            currentLoop.bodyIndex = 0;
-                            
-                            // 最初のステートメントを実行
-                            if (currentLoop.body.length > 0) {
-                                const stmt = currentLoop.body[0]!;
-                                const result = this.executeStatement(stmt);
-                                if (result.jump || result.halt) {
-                                    if (result.halt) return;
-                                }
-                                currentLoop.bodyIndex = 1;
-                                yield;
-                                continue;
-                            }
-                        } else {
-                            // ループ終了
-                            this.loopStack.pop();
-                            yield;
-                            continue;
-                        }
-                    } else if (currentLoop.type === 'while') {
-                        // WHILEループ: 条件を再評価
-                        const condition = this.assertNumber(
-                            this.evaluateExpression(currentLoop.condition!),
-                            'WHILEループの条件は数値でなければなりません'
-                        );
-                        
-                        if (condition !== 0) {
-                            // 次のイテレーション
-                            currentLoop.bodyIndex = 0;
-                            
-                            // 最初のステートメントを実行
-                            if (currentLoop.body.length > 0) {
-                                const stmt = currentLoop.body[0]!;
-                                const result = this.executeStatement(stmt);
-                                if (result.jump || result.halt) {
-                                    if (result.halt) return;
-                                }
-                                currentLoop.bodyIndex = 1;
-                                yield;
-                                continue;
-                            }
-                        } else {
-                            // ループ終了
-                            this.loopStack.pop();
-                            yield;
-                            continue;
-                        }
-                    }
-                }
-                
-                // 次のステートメントを実行
-                if (currentLoop.bodyIndex < currentLoop.body.length) {
-                    const stmt = currentLoop.body[currentLoop.bodyIndex]!;
-                    const result = this.executeStatement(stmt);
-                    if (result.jump || result.halt) {
-                        if (result.halt) return;
-                    }
-                    currentLoop.bodyIndex++;
-                    yield;
-                    continue;
-                }
-            }
-            
+        // シンプルな行ベース実行ループ
+        while (this.currentLineIndex < this.program.body.length) {
             const line = this.program.body[this.currentLineIndex];
             if (!line) break;
 
-            let skipRemaining = false;
-            let jumped = false;
-
-            for (const statement of line.statements) {
-                if (skipRemaining) {
-                    // IF条件が偽だった場合、この行の残りをスキップ
-                    yield; // スキップされたステートメントもyieldする
-                    continue;
-                }
-                
-                const result = this.executeStatement(statement);
-                
-                // GOTO/GOSUB/RETURNの場合、currentLineIndexが変更される
-                if (result.jump) {
-                    // ジャンプ先が設定されている場合
-                    jumped = true;
-                    yield;
-                    break; // この行の残りのステートメントをスキップしてジャンプ先へ
-                }
-                
-                if (result.halt) {
-                    // プログラム停止
-                    return;
-                }
-                
-                if (result.skipRemaining) {
-                    skipRemaining = true;
-                }
-                
-                // 1ステートメント実行後にyieldして制御を返す
-                yield;
+            // executeStatements()を使って行内のステートメントを実行
+            const result = yield* this.executeStatements(line.statements);
+            
+            if (result.halt) {
+                return;
             }
-
-            // ジャンプしていない場合のみ次の行へ進む
-            if (!jumped) {
+            
+            // ジャンプしていない場合のみ次の行へ
+            if (!result.jump) {
                 this.currentLineIndex++;
             }
         }
@@ -474,6 +456,8 @@ class WorkerInterpreter {
      * FORブロック文を実行します。
      */
     private executeForBlock(statement: any): ExecutionResult {
+        // NOTE: この実装は一時的なもの。実際のGenerator処理はexecuteStatementsで委譲される。
+        // ここでは旧loopStack方式を一旦残すが、run()では使われない。
         const forStmt = statement;
         const varName = forStmt.variable.name;
         const startValue = this.assertNumber(
@@ -496,20 +480,19 @@ class WorkerInterpreter {
             throw new Error('FORループのステップ値は0にできません');
         }
         
-        // 初回のループ条件チェック
+        // 条件チェック
         const shouldExecute = stepValue > 0 
             ? startValue <= endValue 
             : startValue >= endValue;
         
         if (!shouldExecute) {
-            // ループをスキップ（bodyを実行しない）
             return { jump: false, halt: false, skipRemaining: false };
         }
         
         // ループ変数に開始値を設定
         this.variables.set(varName, startValue);
         
-        // ループ情報をスタックにpush（最初のステートメントは実行しない）
+        // 旧方式（実際にはexecuteStatementsで処理される）
         this.loopStack.push({
             type: 'for',
             variable: varName,
@@ -521,7 +504,6 @@ class WorkerInterpreter {
             currentValue: startValue,
         });
         
-        // run()のloopStack処理に任せる
         return { jump: false, halt: false, skipRemaining: false };
     }
 
@@ -529,6 +511,7 @@ class WorkerInterpreter {
      * WHILEブロック文を実行します。
      */
     private executeWhileBlock(statement: any): ExecutionResult {
+        // NOTE: この実装は一時的なもの。実際のGenerator処理はexecuteStatementsで委譲される。
         const whileStmt = statement;
         
         // 条件を評価
@@ -542,7 +525,7 @@ class WorkerInterpreter {
             return { jump: false, halt: false, skipRemaining: false };
         }
         
-        // ループ情報をスタックにpush（最初のステートメントは実行しない）
+        // 旧方式（実際にはexecuteStatementsで処理される）
         this.loopStack.push({
             type: 'while',
             condition: whileStmt.condition,
@@ -550,7 +533,6 @@ class WorkerInterpreter {
             bodyIndex: 0,
         });
         
-        // run()のloopStack処理に任せる
         return { jump: false, halt: false, skipRemaining: false };
     }
 
