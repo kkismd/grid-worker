@@ -7,6 +7,15 @@ import { MemorySpace } from './memorySpace.js';
 import { Parser } from './parser.js';
 
 /**
+ * 行入力の結果を表すインターフェース。
+ * A=? で使用され、入力が完了したかどうかと現在の入力内容を保持します。
+ */
+export interface LineInputResult {
+    complete: boolean;  // 行が完成したか（Enterが押されたか）
+    value: string;      // 現在の入力内容
+}
+
+/**
  * ブロック構造ループの実行状態を保持するインターフェース。
  * 
  * マルチワーカー協調動作のため、ループ内の各ステートメントごとにyieldする必要があります。
@@ -51,11 +60,13 @@ class WorkerInterpreter {
     private logFn: (...args: any[]) => void;
     private getFn: (() => number) | undefined; // 1byte入力関数（0-255の値を返す）
     private putFn: ((value: number) => void) | undefined; // 1byte出力関数（0-255の値を受け取る）
-    private getLineFn: (() => string) | undefined; // 行入力関数（文字列を返す、A=?用）
+    private getLineFn: (() => LineInputResult) | undefined; // 行入力関数（LineInputResultを返す、A=?用）
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
     private loopStack: LoopBlockInfo[] = []; // ループブロックの実行状態スタック
+    private waitingForInput: boolean = false; // 入力待ち状態フラグ（A=?で使用）
+    private echoedLength: number = 0; // エコーバック済みの文字数（A=?で使用）
     private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     private statementExecutors: Map<string, (statement: any) => ExecutionResult> = new Map(); // ステートメントタイプと実行関数のマッピング
     private expressionEvaluators: Map<string, (expr: any) => number | string> = new Map(); // 式タイプと評価関数のマッピング
@@ -76,7 +87,7 @@ class WorkerInterpreter {
         logFn: (...args: any[]) => void;
         getFn?: () => number; // 1byte入力関数（0-255の値を返す）
         putFn?: (value: number) => void; // 1byte出力関数（0-255の値を受け取る）
-        getLineFn?: () => string; // 行入力関数（文字列を返す、A=?用）
+        getLineFn?: () => LineInputResult; // 行入力関数（LineInputResultを返す、A=?用）
     }) {
         this.gridData = config.gridData;
         this.peekFn = config.peekFn;
@@ -837,21 +848,41 @@ class WorkerInterpreter {
     /**
      * 数値入力式を評価（行入力 + atoi）
      */
+    /**
+     * 数値入力式を評価（行入力 + atoi）
+     * A=? で使用されます。
+     */
     private evaluateInputNumberExpression(): number {
-        // C言語の fgets() + atoi() 相当
-        if (this.getLineFn) {
-            const line = this.getLineFn();
-            const value = parseInt(line.trim(), 10);
-            // NaNの場合は0を返す
-            if (isNaN(value)) {
-                return 0;
-            }
-            // 16ビット符号あり整数にラップアラウンド
-            // JavaScriptのビット演算で自動的に32ビット整数に変換され、その後16ビットに切り詰める
-            return (value << 16) >> 16;
-        } else {
+        if (!this.getLineFn) {
             throw new Error('行入力機能が設定されていません');
         }
+        
+        const result = this.getLineFn();
+        
+        if (!result.complete) {
+            // 入力途中 - エコーバックして入力待ち状態にする
+            this.waitingForInput = true;
+            
+            // エコーバック済みより先の文字だけを表示（ポインタ方式）
+            if (result.value.length > this.echoedLength) {
+                const newChars = result.value.substring(this.echoedLength);
+                this.logFn(newChars);
+                this.echoedLength = result.value.length;
+            }
+            
+            return 0; // ダミー値（次のフレームで再実行される）
+        }
+        
+        // 入力完了 - parseIntして次のステートメントへ進む
+        this.waitingForInput = false;
+        this.echoedLength = 0; // リセット
+        
+        const value = parseInt(result.value, 10);
+        if (isNaN(value)) {
+            return 0;
+        }
+        // 16ビット符号あり整数にラップアラウンド
+        return (value << 16) >> 16;
     }
 
     /**
