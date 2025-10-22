@@ -13,8 +13,9 @@ npm install
 ### スクリプトファイルの実行
 
 ```bash
-# 基本実行
+# 基本実行（デフォルト: runサブコマンド）
 npm run cli examples/hello.ws
+npm run cli run examples/hello.ws  # runは省略可
 
 # リアルタイムモード（30fps、キーボード入力対応）
 npm run cli -- examples/hello.ws --realtime
@@ -37,21 +38,90 @@ npm run cli -- examples/square.ws --debug
 npm run cli -- examples/hello.ws --output result.json
 ```
 
-### リアルタイムモードのオプション
+### サブコマンドシステム
 
-- `--realtime`, `-r` - リアルタイム実行モード（30fps、Raw Mode）
-- `--show-grid`, `-g` - グリッド表示を有効化
-- `--char-mode`, `-c` - キャラクターVRAMモード（16ビット値をASCII+カラーとして表示）
-- `--split-screen`, `-s` - 上下分割画面モード（グリッド+トランスクリプト）
-- `--verbose`, `-v` - 詳細情報を表示
+CLIは目的別のサブコマンドをサポートし、各サブコマンドには最適化されたデフォルト設定があります。
 
-**キャラクターVRAMモード** (`--char-mode`):
-- グリッド値（0-65535）を16ビット値として解釈
-- ビット 0-7: ASCII文字コード
-- ビット 8-11: 前景色（0-15、ANSI 16色）
-- ビット 12-15: 背景色（0-15、ANSI 16色）
-- エンコーディング計算式: `value = ASCII + (fg_color * 256) + (bg_color * 4096)`
-- 16進数リテラル使用例: `0x7148` = 'H'（0x48） + 前景色1（赤） + 背景色7（白）
+```bash
+# 通常実行（デフォルト）
+npm run cli run examples/hello.ws
+
+# テキスト出力専用（パイプライン向け、グリッド表示なし）
+npm run cli exec examples/data.ws | jq
+
+# デバッグ実行（詳細ログ + デバッグ情報）
+npm run cli debug examples/test.ws
+
+# リアルタイム監視（分割画面 + グリッド + トランスクリプト）
+npm run cli watch examples/pattern.ws
+
+# テキストゲーム/対話処理（グリッドなしリアルタイム）
+npm run cli text examples/text-game.ws
+
+# グリッドゲームモード（高応答性 + グリッド表示）
+npm run cli play examples/game.ws
+
+# インタラクティブモード（REPL）
+npm run cli repl
+
+# ベンチマーク実行（統計情報表示）
+npm run cli bench examples/benchmark.ws
+```
+
+**サブコマンド別デフォルト設定:**
+
+| サブコマンド | リアルタイム | グリッド表示 | 詳細モード | 目的 |
+|------------|------------|------------|-----------|------|
+| `run`      | OFF        | OFF        | OFF       | 通常実行 |
+| `exec`     | OFF        | OFF        | OFF       | パイプライン向け（--no-grid自動設定） |
+| `debug`    | OFF        | OFF        | ON        | デバッグ実行 |
+| `watch`    | ON         | ON         | OFF       | リアルタイム監視（分割画面） |
+| `text`     | ON         | OFF        | OFF       | テキストゲーム |
+| `play`     | ON         | ON         | OFF       | グリッドゲーム |
+| `repl`     | OFF        | OFF        | OFF       | 対話実行 |
+| `bench`    | OFF        | OFF        | OFF       | ベンチマーク |
+
+**オプション優先順位:** CLI引数で明示的に指定したオプションは、サブコマンドのデフォルト設定より優先されます。
+
+```bash
+# watchサブコマンドでもグリッド表示を無効化
+npm run cli watch examples/test.ws --no-grid
+```
+
+### 主要オプション
+
+**基本オプション:**
+- `-h`, `--help` - ヘルプを表示
+- `-i`, `--interactive` - インタラクティブ（REPL）モード
+- `-d`, `--debug` - デバッグ情報を表示
+- `-v`, `--verbose` - 詳細なログを出力
+- `-o`, `--output FILE` - 出力をファイルに保存
+- `-q`, `--quiet` - 進捗表示を無効化（クリーンな出力）
+
+**実行制御:**
+- `-u`, `--unlimited` - ステップ数無制限で実行
+- `-m`, `--max-steps N` - 最大ステップ数を指定（デフォルト: 100000）
+
+**リアルタイムモード:**
+- `-r`, `--realtime` - リアルタイム実行モード（30fps、Raw Mode、キーボード入力対応）
+- `--fps N` - フレームレート指定（デフォルト: 30）
+- `--steps-per-frame N` - 1フレームあたりの実行ステップ数（デフォルト: 1000）
+- `--show-fps` - FPS表示を有効化
+
+**グリッド表示:**
+- `-g`, `--show-grid` - グリッド表示を有効化（リアルタイムモード専用）
+- `--no-grid` - グリッド表示を抑制（テキスト出力のみ）
+- `-s`, `--split-screen` - 上下分割画面モード（グリッド+トランスクリプト）
+- `--grid-size N` - グリッド表示サイズ（デフォルト: 20x20）
+
+**キャラクターVRAMモード:**
+- `-c`, `--char-mode` - キャラクターVRAMモード（16ビット値をASCII+カラーとして表示）
+  - グリッド値（0-65535）を16ビット値として解釈
+  - ビット 0-7: ASCII文字コード
+  - ビット 8-11: 前景色（0-15、ANSI 16色）
+  - ビット 12-15: 背景色（0-15、ANSI 16色）
+  - エンコーディング計算式: `value = ASCII + (fg_color * 256) + (bg_color * 4096)`
+  - 16進数リテラル使用例: `0x7148` = 'H'（0x48） + 前景色1（赤） + 背景色7（白）
 
 ### インタラクティブモード
 
@@ -122,26 +192,77 @@ X=0 Y=0
 
 ### 制御構造
 
+#### インラインIF（1行形式）
 ```workerscript
-: IF文
+: IF文（条件が真の時のみ実行）
 ;=A>10 ?="大きい" /
+```
 
-: FORループ
-I=1,10
+#### ブロックIF（複数行形式）
+```workerscript
+: ブロックIF-ELSE-FI構造
+A=10
+;=A>5
+  ?="A is greater than 5"
+  /
+;
+  ?="A is not greater than 5"
+  /
+#=;
+
+: ELSE部なしのブロックIF
+B=3
+;=B=3
+  ?="B equals 3"
+  /
+#=;
+
+: ブロックIFのネスト
+;=A>0
+  ;=B>0
+    ?="Both positive"
+    /
+  #=;
+#=;
+```
+
+**ブロックIF構造の特徴:**
+- `;=<条件>` が単独で行にある場合、ブロックIF構造として解釈
+- 条件が真（0でない値）の場合、THEN部（`;=` から `;` まで）のステートメントを実行
+- 条件が偽（0）の場合、ELSE部（`;` から `#=;` まで）のステートメントを実行
+- ELSE部は省略可能（`;` の行を省略すると、ELSE部なしのIF文になります）
+- `#=;` でブロックを終了（統一構文パターン：FOR/WHILEの `@=...#=@` と同様）
+- ブロックIFは入れ子にできます
+
+#### FORループ（統一構文）
+```workerscript
+: FORループ（@= で開始、#=@ で終了）
+@=I,1,10
   ?=I /
-@=I
+#=@
+```
 
-: GOTO/GOSUB
+#### WHILEループ（統一構文）
+```workerscript
+: WHILEループ（@= で開始、#=@ で終了）
+@=(X<100)
+  X=X+1
+#=@
+```
+
+#### GOTO/GOSUB/RETURN
+```workerscript
+: GOTO/GOSUB（統一構文）
 #=^MYLABEL     : ラベルにジャンプ
 !=^MYSUB       : サブルーチン呼び出し
-]              : サブルーチンから復帰
+#=!            : サブルーチンから復帰（RETURN）
 
 ^MYLABEL
   ?="ラベル" /
 
 ^MYSUB
   ?="サブルーチン" /
-  ]
+  #=!
 ```
 
 ## 📊 出力例

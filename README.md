@@ -36,7 +36,7 @@ VTL（Very Tiny Language）互換のWorkerScriptプログラミング言語と�
 - **VTL互換記号** - `$`(I/O), `` ` ``(グリッド), `~`(ランダム)
 - **文字リテラル** - `'A'` 形式での文字操作
 - **16進数リテラル** - `0xFF`, `0x1A2B` などの16進数表記対応
-- **ブロックIF構造** - `;=<条件>` ... `#=;` による複数行IF-ELSE-FI (ELSE部は `;` で区切り)
+- **ブロックIF構造** - `;=<条件>` ... `;` ... `#=;` による複数行IF-ELSE-FI (ELSE部は `;` で区切り、省略可能)
 - **統一制御構造** - インラインIF, FOR/WHILE (`@=`開始、`#=@`終了), GOTO/GOSUB (`#=!`でRETURN)
 - **演算子** - 算術、比較、論理演算子完備
 - **インラインコメント** - `:` でのコメント記述
@@ -65,7 +65,15 @@ npm run cli examples/hello.ws              # ファイル実行
 npm run cli examples/hello.ws --realtime   # リアルタイム実行
 npm run cli examples/hello.ws --realtime --show-grid           # グリッド表示
 npm run cli examples/hello.ws --realtime --show-grid --char-mode  # キャラクターVRAMモード
-npm run cli                                # REPLモード
+
+# サブコマンドシステム（目的別の最適化されたデフォルト設定）
+npm run cli exec examples/data.ws | jq    # テキスト出力専用（パイプライン向け）
+npm run cli debug examples/test.ws        # デバッグ実行（詳細ログ）
+npm run cli watch examples/pattern.ws     # リアルタイム監視（分割画面）
+npm run cli text examples/text-game.ws    # テキストゲーム（グリッドなしリアルタイム）
+npm run cli play examples/game.ws         # グリッドゲーム（高応答性）
+npm run cli repl                          # インタラクティブモード（REPL）
+npm run cli bench examples/benchmark.ws   # ベンチマーク実行
 ```
 
 **キャラクターVRAMモード** (`--char-mode`):
@@ -98,8 +106,17 @@ X=50 Y=50              : グリッド座標設定
 
 ### 制御構造（統一構文）
 ```workerscript
-: IF文
+: インラインIF
 ;=A>100 ?="Big number!"
+
+: ブロックIF（ELSE部は省略可能）
+;=A>5
+  ?="Greater than 5"
+  /
+;
+  ?="5 or less"
+  /
+#=;
 
 : FORループ（統一構文 @= で開始、#=@ で終了）
 @=I,1,100
@@ -190,20 +207,30 @@ A='A' B='Z' C='0'
 
 ### 5. ブロックIF構造例 (`examples/block-if-test.ws`)
 ```workerscript
-: Block IF-ELSE-FI structure
+: Block IF without ELSE
 A=10
 ;=A>5
   ?="A is greater than 5"
   /
+#=;
+
+: Block IF-ELSE-FI structure
+B=3
+;=B>5
+  ?="B is greater than 5"
+  /
 ;
-  ?="A is not greater than 5"
+  ?="B is not greater than 5"
   /
 #=;
 
-: Block IF without ELSE
-B=3
-;=B=3
-  ?="B equals 3"
+: Block IF with equality check
+C=8
+;=C=8
+  ?="C equals 8"
+  /
+;
+  ?="C does not equal 8"
   /
 #=;
 ```
