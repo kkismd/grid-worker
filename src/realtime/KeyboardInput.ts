@@ -10,6 +10,8 @@ export interface KeyboardInputOptions {
     maxBufferSize?: number;
     /** デバッグ出力を有効にする */
     debug?: boolean;
+    /** 終了時のクリーンアップコールバック */
+    onCleanup?: () => void;
 }
 
 export class KeyboardInput {
@@ -18,10 +20,14 @@ export class KeyboardInput {
     private maxBufferSize: number;
     private debug: boolean;
     private keyPressHandler: ((data: string) => void) | null = null;
+    private sigintHandler: (() => void) | null = null;
+    private exitHandler: (() => void) | null = null;
+    private cleanupCallback?: () => void;
 
     constructor(options: KeyboardInputOptions = {}) {
         this.maxBufferSize = options.maxBufferSize ?? 1000;
         this.debug = options.debug ?? false;
+        this.cleanupCallback = options.onCleanup;
     }
 
     /**
@@ -69,7 +75,18 @@ export class KeyboardInput {
             this.keyPressHandler = null;
         }
 
-        // Raw Mode無効化
+        // シグナルハンドラー削除
+        if (this.sigintHandler) {
+            process.off('SIGINT', this.sigintHandler);
+            this.sigintHandler = null;
+        }
+
+        if (this.exitHandler) {
+            process.off('exit', this.exitHandler);
+            this.exitHandler = null;
+        }
+
+        // Raw Mode無効化（端末モードを元に戻す）
         if (process.stdin.isTTY) {
             process.stdin.setRawMode(false);
             process.stdin.pause();
@@ -156,21 +173,34 @@ export class KeyboardInput {
      * 終了ハンドラーを設定
      */
     private setupExitHandlers(): void {
-        // SIGINT (Ctrl+C)
-        process.on('SIGINT', () => {
+        // SIGINT (Ctrl+C) - 新しいハンドラーを作成して保存
+        this.sigintHandler = () => {
             this.gracefulExit();
-        });
+        };
+        process.on('SIGINT', this.sigintHandler);
 
-        // プロセス終了時
-        process.on('exit', () => {
+        // プロセス終了時 - 新しいハンドラーを作成して保存
+        this.exitHandler = () => {
             this.disable();
-        });
+        };
+        process.on('exit', this.exitHandler);
     }
 
     /**
      * 安全に終了
      */
     private gracefulExit(): void {
+        // クリーンアップコールバックを実行（カーソル表示など）
+        if (this.cleanupCallback) {
+            try {
+                this.cleanupCallback();
+            } catch (error) {
+                if (this.debug) {
+                    console.error('[KeyboardInput] Cleanup callback error:', error);
+                }
+            }
+        }
+        
         this.disable();
         console.log('\n[KeyboardInput] Exiting...');
         process.exit(0);

@@ -87,11 +87,30 @@ export class RealTimeCLIRunner {
             this.config.gridDisplaySize
         );
         
-        // キーボード入力を初期化
+        // キーボード入力を初期化（Ctrl-C時のクリーンアップ処理を登録）
         this.keyboard = new KeyboardInput({
             debug: this.config.debug,
             maxBufferSize: 1000,
+            onCleanup: () => this.cleanupDisplay()
         });
+    }
+    
+    /**
+     * ディスプレイのクリーンアップ（カーソル復元など）
+     */
+    private cleanupDisplay(): void {
+        if (this.config.showGrid) {
+            if (this.config.splitScreen && this.splitScreenRenderer) {
+                // 上下分割画面のクリーンアップ
+                process.stdout.write(this.splitScreenRenderer.cleanup());
+            } else if (this.config.characterMode) {
+                // キャラクターVRAMモードのクリーンアップ
+                process.stdout.write(CharacterVRAMRenderer.showCursor());
+            } else {
+                // 通常グリッド表示のクリーンアップ
+                process.stdout.write(GridDiffRenderer.showCursor());
+            }
+        }
     }
 
     /**
@@ -178,21 +197,8 @@ export class RealTimeCLIRunner {
                 this.println('スタックトレース:' + error.stack);
             }
         } finally {
-            // グリッド表示を終了
-            if (this.config.showGrid) {
-                if (this.config.splitScreen && this.splitScreenRenderer) {
-                    // 上下分割画面のクリーンアップ
-                    process.stdout.write(this.splitScreenRenderer.cleanup());
-                } else if (this.config.characterMode) {
-                    // キャラクターVRAMモードのクリーンアップ
-                    process.stdout.write(CharacterVRAMRenderer.showCursor());
-                    console.log('\n');
-                } else {
-                    // 通常グリッド表示のクリーンアップ
-                    process.stdout.write(GridDiffRenderer.showCursor());
-                    console.log('\n');  // グリッドの下に改行
-                }
-            }
+            // グリッド表示を終了（通常終了時のクリーンアップ）
+            this.cleanupDisplay();
             
             // キーボード入力を無効化
             this.keyboard.disable();

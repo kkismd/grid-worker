@@ -118,6 +118,14 @@ export class CLIRunner {
 
         const commands: string[] = [];
         
+        // Ctrl+Cハンドラーを設定
+        const sigintHandler = () => {
+            console.log('\n👋 インタラクティブモードを終了します');
+            rl.close();
+            process.exit(0);
+        };
+        process.on('SIGINT', sigintHandler);
+        
         rl.prompt();
 
         rl.on('line', async (input) => {
@@ -163,6 +171,8 @@ export class CLIRunner {
         });
 
         rl.on('close', () => {
+            // ハンドラーをクリーンアップ
+            process.off('SIGINT', sigintHandler);
             console.log('\n👋 インタラクティブモードを終了します');
             process.exit(0);
         });
