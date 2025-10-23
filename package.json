@@ -31,5 +31,8 @@
   "overrides": {
     "glob": "^10.0.0",
     "inflight": "npm:@isaacs/inflight@^1.0.4"
+  },
+  "dependencies": {
+    "vibe-kanban-web-companion": "^0.0.5"
   }
 }

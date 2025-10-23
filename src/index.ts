@@ -1,5 +1,6 @@
 // src/index.ts
 import WorkerInterpreter from './workerInterpreter.js';
+import { VibeKanbanWebCompanion } from 'vibe-kanban-web-companion';
 
 // --- Constants ---
 const GRID_WIDTH = 100;
@@ -711,3 +712,9 @@ updateKeyboardStatus();
 logSystem('Multi-Worker System initialized.');
 logSystem('Click "Add New Worker" to create workers.');
 logSystem('');
+
+// Initialize Vibe Kanban Web Companion
+const vibeKanbanRoot = document.getElementById('vibe-kanban-root');
+if (vibeKanbanRoot) {
+    VibeKanbanWebCompanion(vibeKanbanRoot);
+}
