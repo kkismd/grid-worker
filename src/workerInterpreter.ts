@@ -7,6 +7,16 @@ import { MemorySpace } from './memorySpace.js';
 import { Parser } from './parser.js';
 
 /**
+ * 入力待ちエラークラス（A=?で入力待ちの場合にスロー）
+ */
+export class InputWaitingError extends Error {
+    constructor(message: string = 'Waiting for input') {
+        super(message);
+        this.name = 'InputWaitingError';
+    }
+}
+
+/**
  * ブロック構造ループの実行状態を保持するインターフェース。
  * 
  * マルチワーカー協調動作のため、ループ内の各ステートメントごとにyieldする必要があります。
@@ -849,6 +859,12 @@ class WorkerInterpreter {
         // C言語の fgets() + atoi() 相当
         if (this.getLineFn) {
             const line = this.getLineFn();
+            
+            // 入力がない場合は入力待ちエラーをスロー
+            if (line === null || line === '') {
+                throw new InputWaitingError('Waiting for number input');
+            }
+            
             const value = parseInt(line.trim(), 10);
             // NaNの場合は0を返す
             if (isNaN(value)) {
