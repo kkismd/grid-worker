@@ -1,5 +1,6 @@
 // src/index.ts
-import WorkerInterpreter from './workerInterpreter.js';
+import WorkerInterpreter, { InputWaitingError } from './workerInterpreter.js';
+import { VibeKanbanWebCompanion } from 'vibe-kanban-web-companion';
 
 // --- Constants ---
 const GRID_WIDTH = 100;
@@ -21,8 +22,9 @@ interface Worker {
     id: number;
     interpreter: WorkerInterpreter | null;
     generator: Generator<void, void, unknown> | null;
-    status: 'stopped' | 'running' | 'paused';
+    status: 'stopped' | 'running' | 'paused' | 'waiting-input';
     stepCount: number;
+    inputBuffer: string | null; // 行入力バッファ（A=?用）
 }
 
 // --- State ---
@@ -259,6 +261,16 @@ function executeGlobalStep() {
             
             updateWorkerStatus(worker.id);
         } catch (error) {
+            // InputWaitingErrorの場合は入力待ち状態に
+            if (error instanceof InputWaitingError) {
+                worker.status = 'waiting-input';
+                updateWorkerStatus(worker.id);
+                showInputForm(worker.id);
+                logSystem(`Worker ${worker.id} waiting for input...`);
+                return;
+            }
+            
+            // その他のエラーは停止
             worker.status = 'stopped';
             updateWorkerStatus(worker.id);
             if (error instanceof Error) {
@@ -286,8 +298,27 @@ function updateWorkerStatus(workerId: number) {
     
     const statusElement = document.getElementById(`status-${workerId}`);
     if (statusElement) {
-        statusElement.textContent = `${worker.status} (${worker.stepCount} steps)`;
-        statusElement.className = `worker-status status-${worker.status}`;
+        let statusText = '';
+        switch (worker.status) {
+            case 'running':
+                statusText = `running (${worker.stepCount} steps)`;
+                statusElement.className = 'worker-status status-running';
+                break;
+            case 'paused':
+                statusText = `paused (${worker.stepCount} steps)`;
+                statusElement.className = 'worker-status status-paused';
+                break;
+            case 'waiting-input':
+                statusText = `⏸ waiting for input... (${worker.stepCount} steps)`;
+                statusElement.className = 'worker-status status-waiting';
+                break;
+            case 'stopped':
+            default:
+                statusText = `stopped (${worker.stepCount} steps)`;
+                statusElement.className = 'worker-status status-stopped';
+                break;
+        }
+        statusElement.textContent = statusText;
     }
     
     // ワーカーの状態が変わったらキーボード状態も更新
@@ -319,6 +350,7 @@ function startWorker(workerId: number) {
             logFn: (...args) => logWorkerOutput(workerId, ...args),
             getFn: getKeyInput,
             putFn: (value: number) => putOutput(workerId, value),
+            getLineFn: () => getLineInput(workerId),
         });
         
         worker.interpreter.loadScript(script);
@@ -425,6 +457,7 @@ function addWorker() {
         generator: null,
         status: 'stopped',
         stepCount: 0,
+        inputBuffer: null,
     };
     
     workers.set(workerId, worker);
@@ -451,6 +484,16 @@ function addWorker() {
             <button class="stop-btn" data-worker-id="${workerId}">Stop</button>
         </div>
         <div class="worker-status status-stopped" id="status-${workerId}">stopped (0 steps)</div>
+        
+        <!-- 入力フォームセクション（初期は非表示） -->
+        <div class="worker-input-section" id="input-section-${workerId}">
+            <label class="worker-input-label">Input:</label>
+            <input type="text" 
+                   class="worker-input-field" 
+                   id="input-field-${workerId}"
+                   placeholder="Enter number...">
+            <button class="worker-input-submit" data-worker-id="${workerId}">Enter</button>
+        </div>
     `;
     
     workersContainer.appendChild(card);
@@ -485,6 +528,7 @@ function cloneFirstWorker() {
         generator: null,
         status: 'stopped',
         stepCount: 0,
+        inputBuffer: null,
     };
     
     workers.set(workerId, worker);
@@ -506,6 +550,16 @@ function cloneFirstWorker() {
             <button class="stop-btn" data-worker-id="${workerId}">Stop</button>
         </div>
         <div class="worker-status status-stopped" id="status-${workerId}">stopped (0 steps)</div>
+        
+        <!-- 入力フォームセクション（初期は非表示） -->
+        <div class="worker-input-section" id="input-section-${workerId}">
+            <label class="worker-input-label">Input:</label>
+            <input type="text" 
+                   class="worker-input-field" 
+                   id="input-field-${workerId}"
+                   placeholder="Enter number...">
+            <button class="worker-input-submit" data-worker-id="${workerId}">Enter</button>
+        </div>
     `;
     
     workersContainer.appendChild(card);
@@ -553,6 +607,18 @@ workersContainer.addEventListener('click', (e) => {
         stopWorker(workerId);
     } else if (target.classList.contains('remove-btn')) {
         removeWorker(workerId);
+    } else if (target.classList.contains('worker-input-submit')) {
+        submitInput(workerId);
+    }
+});
+
+// Event delegation for input fields (Enter key)
+workersContainer.addEventListener('keydown', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('worker-input-field') && e.key === 'Enter') {
+        e.preventDefault();
+        const workerId = parseInt(target.id.replace('input-field-', ''));
+        submitInput(workerId);
     }
 });
 
@@ -642,7 +708,9 @@ function shouldCaptureKeyboard(): boolean {
     }
     
     // 実行中のワーカーがない場合は無効
-    const hasRunningWorkers = Array.from(workers.values()).some(worker => worker.status === 'running');
+    const hasRunningWorkers = Array.from(workers.values()).some(worker => 
+        worker.status === 'running' || worker.status === 'waiting-input'
+    );
     if (!hasRunningWorkers) {
         return false;
     }
@@ -663,7 +731,9 @@ function updateKeyboardStatus() {
             document.activeElement.tagName === 'INPUT'
         )) {
             keyboardStatus.textContent = 'Keyboard disabled - Text input has focus';
-        } else if (!Array.from(workers.values()).some(worker => worker.status === 'running')) {
+        } else if (!Array.from(workers.values()).some(worker => 
+            worker.status === 'running' || worker.status === 'waiting-input'
+        )) {
             keyboardStatus.textContent = 'Keyboard disabled - No workers running';
         } else if (!keyboardInputEnabled) {
             keyboardStatus.textContent = 'Keyboard disabled - Click to enable';
@@ -696,6 +766,87 @@ function getKeyInput(): number {
     return 0;
 }
 
+// --- Input Form Functions (A=? support) ---
+
+/**
+ * ワーカーの入力フォームを表示する
+ */
+function showInputForm(workerId: number) {
+    const inputSection = document.getElementById(`input-section-${workerId}`) as HTMLDivElement;
+    
+    if (inputSection) {
+        inputSection.classList.add('active');
+        
+        // 入力フィールドにフォーカス
+        const inputField = document.getElementById(`input-field-${workerId}`) as HTMLInputElement;
+        if (inputField) {
+            inputField.focus();
+        }
+    }
+}
+
+/**
+ * ワーカーの入力フォームを非表示にする
+ */
+function hideInputForm(workerId: number) {
+    const inputSection = document.getElementById(`input-section-${workerId}`) as HTMLDivElement;
+    
+    if (inputSection) {
+        inputSection.classList.remove('active');
+    }
+}
+
+/**
+ * 入力を送信する
+ */
+function submitInput(workerId: number) {
+    const worker = workers.get(workerId);
+    if (!worker || worker.status !== 'waiting-input') {
+        return;
+    }
+    
+    const inputField = document.getElementById(`input-field-${workerId}`) as HTMLInputElement;
+    
+    if (!inputField) return;
+    
+    // 入力値を取得してバッファに設定
+    const inputValue = inputField.value;
+    worker.inputBuffer = inputValue;
+    
+    // 入力フィールドをクリア
+    inputField.value = '';
+    
+    // 入力フォームを非表示
+    hideInputForm(workerId);
+    
+    // ワーカーを再開
+    worker.status = 'running';
+    updateWorkerStatus(workerId);
+    startGlobalExecution();
+    
+    logSystem(`Worker ${workerId} received input: "${inputValue}"`);
+}
+
+/**
+ * 行入力を取得する関数（A=?用）
+ */
+function getLineInput(workerId: number): string | null {
+    const worker = workers.get(workerId);
+    if (!worker) {
+        return null;
+    }
+    
+    // inputBufferに値がある場合はそれを返す
+    if (worker.inputBuffer !== null) {
+        const value = worker.inputBuffer;
+        worker.inputBuffer = null; // バッファをクリア
+        return value;
+    }
+    
+    // inputBufferが空の場合は入力待ち
+    return null;
+}
+
 // --- Initialization ---
 drawGrid(); // Draw the initial grid on load.
 
@@ -711,3 +862,9 @@ updateKeyboardStatus();
 logSystem('Multi-Worker System initialized.');
 logSystem('Click "Add New Worker" to create workers.');
 logSystem('');
+
+// Initialize Vibe Kanban Web Companion
+const vibeKanbanRoot = document.getElementById('vibe-kanban-root');
+if (vibeKanbanRoot) {
+    VibeKanbanWebCompanion(vibeKanbanRoot);
+}
