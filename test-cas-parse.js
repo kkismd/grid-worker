@@ -4,7 +4,7 @@
  * Compare-And-Swap操作が正しくパース・実行されることを確認
  */
 
-import { Parser } from '../src/parser.js';
+import { Parser } from './src/parser.js';
 
 // テストケース
 const testCases = [
@@ -48,7 +48,7 @@ for (const testCase of testCases) {
         
         // CAS式が含まれているか確認
         let hasCAS = false;
-        const checkForCAS = (obj: any) => {
+        const checkForCAS = (obj) => {
             if (!obj || typeof obj !== 'object') return;
             
             if (obj.type === 'CompareAndSwapExpression') {
