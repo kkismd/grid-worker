@@ -57,6 +57,84 @@ export interface Token {
 }
 
 export class Lexer {
+    private readHexadecimalLiteral(lineText: string, cursor: number): { value: string; newCursor: number } {
+        let value = '';
+        let currentCursor = cursor + 2; // '0x'をスキップ
+        
+        while (currentCursor < lineText.length) {
+            const currentChar = lineText[currentCursor];
+            if (!currentChar || !/[0-9A-Fa-f]/.test(currentChar)) {
+                break;
+            }
+            value += currentChar;
+            currentCursor++;
+        }
+        
+        return { value, newCursor: currentCursor };
+    }
+
+    private tryReadHexadecimalNumber(
+        char: string,
+        lineText: string,
+        cursor: number,
+        lineNumber: number
+    ): { token: Token | null; newCursor: number } {
+        // 16進数リテラルでない場合
+        if (char !== '0' || cursor + 1 >= lineText.length) {
+            return { token: null, newCursor: cursor };
+        }
+
+        const nextChar = lineText[cursor + 1];
+        if (nextChar !== 'x' && nextChar !== 'X') {
+            return { token: null, newCursor: cursor };
+        }
+
+        const startColumn = cursor;
+        const hexResult = this.readHexadecimalLiteral(lineText, cursor);
+        
+        if (hexResult.value.length === 0) {
+            throw new Error(`Invalid hexadecimal literal at line ${lineNumber + 1}`);
+        }
+        
+        const decimalValue = parseInt(hexResult.value, 16).toString();
+        const token: Token = { 
+            type: TokenType.NUMBER, 
+            value: decimalValue, 
+            line: lineNumber, 
+            column: startColumn 
+        };
+        
+        return { token, newCursor: hexResult.newCursor };
+    }
+
+    private readStringLiteral(lineText: string, cursor: number): { value: string; newCursor: number; terminated: boolean } {
+        let value = '';
+        let currentCursor = cursor + 1; // 開始の " をスキップ
+        
+        while (currentCursor < lineText.length) {
+            const currentChar = lineText[currentCursor];
+            
+            if (currentChar !== '"') {
+                value += currentChar;
+                currentCursor++;
+                continue;
+            }
+            
+            // ダブルクォートを発見
+            if (lineText[currentCursor + 1] === '"') {
+                // "" はエスケープされたダブルクォート
+                value += '"';
+                currentCursor += 2;
+            } else {
+                // 文字列の終了
+                currentCursor++;
+                return { value, newCursor: currentCursor, terminated: true };
+            }
+        }
+        
+        return { value, newCursor: currentCursor, terminated: false };
+    }
+
     /**
      * 単一の行をトークンに分割します。
      * @param lineText 字句解析する行のテキスト。
@@ -92,38 +170,16 @@ export class Lexer {
 
             // 数値リテラル
             if (/[0-9]/.test(char)) {
-                let value = '';
-                
-                // 0xまたは0Xで始まる場合は16進数
-                if (char === '0' && cursor + 1 < lineText.length) {
-                    const nextChar = lineText[cursor + 1];
-                    if (nextChar === 'x' || nextChar === 'X') {
-                        cursor += 2; // '0x'をスキップ
-                        
-                        // 16進数の読み取り
-                        while (cursor < lineText.length) {
-                            const currentChar = lineText[cursor];
-                            if (currentChar && /[0-9A-Fa-f]/.test(currentChar)) {
-                                value += currentChar;
-                                cursor++;
-                            } else {
-                                break;
-                            }
-                        }
-                        
-                        if (value.length === 0) {
-                            throw new Error(`Invalid hexadecimal literal at line ${lineNumber + 1}`);
-                        }
-                        
-                        // 16進数を10進数に変換して格納
-                        const decimalValue = parseInt(value, 16).toString();
-                        tokens.push({ type: TokenType.NUMBER, value: decimalValue, line: lineNumber, column: cursor - value.length - 2 });
-                        continue;
-                    }
+                // 16進数リテラルの試行
+                const hexResult = this.tryReadHexadecimalNumber(char, lineText, cursor, lineNumber);
+                if (hexResult.token) {
+                    tokens.push(hexResult.token);
+                    cursor = hexResult.newCursor;
+                    continue;
                 }
                 
                 // 通常の10進数
-                value = char;
+                let value = char;
                 cursor++;
                 while (cursor < lineText.length) {
                     const currentChar = lineText[cursor];
@@ -147,35 +203,15 @@ export class Lexer {
 
             // 文字列リテラル
             if (char === '"') {
-                let value = '';
                 const startColumn = cursor;
-                cursor++; // 開始の " をスキップ
+                const stringResult = this.readStringLiteral(lineText, cursor);
                 
-                while (cursor < lineText.length) {
-                    const currentChar = lineText[cursor];
-                    
-                    if (currentChar === '"') {
-                        // ダブルクォートを発見
-                        if (lineText[cursor + 1] === '"') {
-                            // "" はエスケープされたダブルクォート
-                            value += '"';  // 1つのダブルクォートとして値に追加
-                            cursor += 2;   // "" の2文字分進める
-                        } else {
-                            // 文字列の終了
-                            cursor++; // 終了の " をスキップ
-                            tokens.push({ type: TokenType.STRING, value, line: lineNumber, column: startColumn });
-                            break;
-                        }
-                    } else {
-                        value += currentChar;
-                        cursor++;
-                    }
-                }
-                
-                if (cursor > lineText.length || (cursor === lineText.length && lineText[cursor - 1] !== '"')) {
-                    // 文字列が閉じていない
+                if (!stringResult.terminated) {
                     throw new Error(`Unterminated string literal at line ${lineNumber + 1}`);
                 }
+                
+                tokens.push({ type: TokenType.STRING, value: stringResult.value, line: lineNumber, column: startColumn });
+                cursor = stringResult.newCursor;
                 continue;
             }
 
