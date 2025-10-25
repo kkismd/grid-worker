@@ -106,6 +106,7 @@ class WorkerInterpreter {
         this.expressionEvaluators.set('IoGetExpression', () => this.evaluateIoGetExpression());
         this.expressionEvaluators.set('InputNumberExpression', () => this.evaluateInputNumberExpression());
         this.expressionEvaluators.set('ArrayAccessExpression', (e) => this.evaluateArrayAccessExpression(e));
+        this.expressionEvaluators.set('CompareAndSwapExpression', (e) => this.evaluateCompareAndSwapExpression(e));
     }
 
     /**
@@ -749,6 +750,50 @@ class WorkerInterpreter {
                 '配列のインデックスは数値でなければなりません'
             );
             return this.memorySpace.readArray(Math.floor(index));
+        }
+    }
+
+    /**
+     * Compare-And-Swap式を評価します。
+     * グリッド[X,Y]の値が期待値と一致する場合のみ新値を書き込みます。
+     * アトミックな操作として実行され、他のワーカーとの競合を防ぎます。
+     * @param expr CompareAndSwapExpression
+     * @returns 1=成功（期待値と一致し、書き込み完了）、0=失敗（値が期待値と異なった）
+     */
+    private evaluateCompareAndSwapExpression(expr: { type: 'CompareAndSwapExpression'; expected: Expression; newValue: Expression }): number {
+        // X, Y座標を取得
+        const x = this.getVariable('X');
+        const y = this.getVariable('Y');
+        
+        // 期待値と新値を評価
+        const expected = this.assertNumber(
+            this.evaluateExpression(expr.expected),
+            'CAS式の期待値は数値でなければなりません'
+        );
+        const newValue = this.assertNumber(
+            this.evaluateExpression(expr.newValue),
+            'CAS式の新値は数値でなければなりません'
+        );
+        
+        // グリッドのインデックスを計算（100x100グリッド）
+        const index = Math.floor(y) * 100 + Math.floor(x);
+        
+        // 範囲チェック
+        if (index < 0 || index >= this.gridData.length) {
+            throw new Error(`グリッド座標が範囲外です: X=${x}, Y=${y}`);
+        }
+        
+        // 現在の値を取得
+        const currentValue = this.gridData[index] ?? 0;
+        
+        // Compare-And-Swap操作
+        if (currentValue === expected) {
+            // 期待値と一致したので新値を書き込む
+            this.pokeFn(Math.floor(x), Math.floor(y), newValue);
+            return 1; // 成功
+        } else {
+            // 期待値と異なるので書き込みしない
+            return 0; // 失敗
         }
     }
 
