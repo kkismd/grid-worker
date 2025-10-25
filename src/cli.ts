@@ -523,29 +523,86 @@ WorkerScript CLI - ${config.description}
     console.log('');
 }
 
+function buildCLIRunnerConfig(options: CLIOptions): CLIRunnerConfig {
+    return {
+        debug: options.debug,
+        verbose: options.verbose,
+        unlimitedSteps: options.unlimitedSteps,
+        quiet: options.quiet,
+        noGrid: options.noGrid,
+        ...(options.maxSteps && { maxSteps: options.maxSteps }),
+        ...(options.output && { outputFile: options.output })
+    };
+}
+
+function buildRealTimeRunnerConfig(options: CLIOptions): RealTimeCLIRunnerConfig {
+    return {
+        debug: options.debug,
+        verbose: options.verbose,
+        ...(options.frameRate && { frameRate: options.frameRate }),
+        ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
+        showFPS: options.showFPS,
+        showGrid: options.showGrid,
+        noGrid: options.noGrid,
+        splitScreen: options.splitScreen,
+        characterMode: options.characterMode,
+        ...(options.gridSize && { gridDisplaySize: options.gridSize }),
+        ...(options.output && { outputFile: options.output })
+    };
+}
+
+async function executeInteractiveMode(options: CLIOptions): Promise<void> {
+    if (options.verbose) console.log('📝 インタラクティブモードを開始します...');
+    const runnerConfig = buildCLIRunnerConfig(options);
+    const runner = new CLIRunner(runnerConfig);
+    await runner.startInteractiveMode();
+}
+
+async function executeNormalMode(script: string, scriptFile: string, options: CLIOptions): Promise<void> {
+    const runnerConfig = buildCLIRunnerConfig(options);
+    const runner = new CLIRunner(runnerConfig);
+    await runner.executeScript(script, path.basename(scriptFile));
+}
+
+async function executeRealtimeMode(script: string, scriptFile: string, options: CLIOptions): Promise<void> {
+    if (options.verbose) console.log('⚡ リアルタイムモードで実行します...');
+    const realtimeConfig = buildRealTimeRunnerConfig(options);
+    const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
+    await realtimeRunner.executeRealTime(script, path.basename(scriptFile));
+}
+
+async function executeScriptFile(scriptFile: string, options: CLIOptions): Promise<void> {
+    if (!fs.existsSync(scriptFile)) {
+        console.error(`❌ ファイルが見つかりません: ${scriptFile}`);
+        process.exit(1);
+    }
+
+    const script = fs.readFileSync(scriptFile, 'utf-8');
+    if (options.verbose) console.log(`📄 スクリプトファイルを読み込みました: ${scriptFile}`);
+    
+    if (options.realtime) {
+        await executeRealtimeMode(script, scriptFile, options);
+    } else {
+        await executeNormalMode(script, scriptFile, options);
+    }
+}
+
 async function main() {
     const args = process.argv.slice(2);
     
-    // サブコマンドをパース
     const { subcommand, remainingArgs } = parseSubcommand(args);
-    
-    // オプションをパース
     const { options: parsedOptions, scriptFile } = parseArgs(remainingArgs);
     
-    // ヘルプ表示
     if (parsedOptions.help) {
-        // サブコマンドが明示的に指定されている場合はサブコマンド別ヘルプ
         const firstArg = args[0];
         if (firstArg && !firstArg.startsWith('-') && !firstArg.endsWith('.ws') && SUBCOMMANDS[firstArg as Subcommand]) {
             showSubcommandHelp(subcommand);
         } else {
-            // それ以外はメインヘルプ
             showHelp();
         }
         process.exit(0);
     }
     
-    // サブコマンドのデフォルト値とマージ
     const subcommandConfig = SUBCOMMANDS[subcommand];
     const options = mergeOptions(subcommandConfig.defaults, parsedOptions);
 
@@ -558,61 +615,9 @@ async function main() {
 
     try {
         if (options.interactive) {
-            // インタラクティブモード
-            if (options.verbose) console.log('📝 インタラクティブモードを開始します...');
-            const runnerConfig: CLIRunnerConfig = {
-                debug: options.debug,
-                verbose: options.verbose,
-                unlimitedSteps: options.unlimitedSteps,
-                quiet: options.quiet,
-                noGrid: options.noGrid,
-                ...(options.maxSteps && { maxSteps: options.maxSteps }),
-                ...(options.output && { outputFile: options.output })
-            };
-            const runner = new CLIRunner(runnerConfig);
-            await runner.startInteractiveMode();
+            await executeInteractiveMode(options);
         } else if (scriptFile) {
-            // ファイル実行モード
-            if (!fs.existsSync(scriptFile)) {
-                console.error(`❌ ファイルが見つかりません: ${scriptFile}`);
-                process.exit(1);
-            }
-
-            const script = fs.readFileSync(scriptFile, 'utf-8');
-            if (options.verbose) console.log(`📄 スクリプトファイルを読み込みました: ${scriptFile}`);
-            
-            if (options.realtime) {
-                // リアルタイムモード
-                if (options.verbose) console.log('⚡ リアルタイムモードで実行します...');
-                const realtimeConfig: RealTimeCLIRunnerConfig = {
-                    debug: options.debug,
-                    verbose: options.verbose,
-                    ...(options.frameRate && { frameRate: options.frameRate }),
-                    ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
-                    showFPS: options.showFPS,
-                    showGrid: options.showGrid,
-                    noGrid: options.noGrid,
-                    splitScreen: options.splitScreen,
-                    characterMode: options.characterMode,
-                    ...(options.gridSize && { gridDisplaySize: options.gridSize }),
-                    ...(options.output && { outputFile: options.output })
-                };
-                const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
-                await realtimeRunner.executeRealTime(script, path.basename(scriptFile));
-            } else {
-                // 通常モード
-                const runnerConfig: CLIRunnerConfig = {
-                    debug: options.debug,
-                    verbose: options.verbose,
-                    unlimitedSteps: options.unlimitedSteps,
-                    quiet: options.quiet,
-                    noGrid: options.noGrid,
-                    ...(options.maxSteps && { maxSteps: options.maxSteps }),
-                    ...(options.output && { outputFile: options.output })
-                };
-                const runner = new CLIRunner(runnerConfig);
-                await runner.executeScript(script, path.basename(scriptFile));
-            }
+            await executeScriptFile(scriptFile, options);
         } else {
             console.error('❌ スクリプトファイルまたは --interactive オプションが必要です');
             showHelp();
