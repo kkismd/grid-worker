@@ -228,6 +228,119 @@ function mergeOptions(
     return merged;
 }
 
+function parseBooleanOption(arg: string, options: CLIOptions): boolean {
+    switch (arg) {
+        case '--interactive':
+        case '-i':
+            options.interactive = true;
+            return true;
+        case '--debug':
+        case '-d':
+            options.debug = true;
+            return true;
+        case '--verbose':
+        case '-v':
+            options.verbose = true;
+            return true;
+        case '--help':
+        case '-h':
+            options.help = true;
+            return true;
+        case '--unlimited':
+        case '-u':
+            options.unlimitedSteps = true;
+            return true;
+        case '--quiet':
+        case '-q':
+            options.quiet = true;
+            return true;
+        case '--realtime':
+        case '-r':
+            options.realtime = true;
+            return true;
+        case '--show-fps':
+            options.showFPS = true;
+            return true;
+        case '--show-grid':
+        case '-g':
+            options.showGrid = true;
+            return true;
+        case '--no-grid':
+            options.noGrid = true;
+            return true;
+        case '--split-screen':
+        case '-s':
+            options.splitScreen = true;
+            return true;
+        case '--char-mode':
+        case '-c':
+            options.characterMode = true;
+            return true;
+        default:
+            return false;
+    }
+}
+
+function parseValueOption(arg: string, nextArg: string | undefined, options: CLIOptions): number {
+    switch (arg) {
+        case '--output':
+        case '-o':
+            if (nextArg) {
+                options.output = nextArg;
+                return 1;
+            }
+            return 0;
+        case '--max-steps':
+        case '-m':
+            if (nextArg) {
+                const steps = parseInt(nextArg, 10);
+                if (!isNaN(steps) && steps > 0) {
+                    options.maxSteps = steps;
+                    return 1;
+                }
+            }
+            return 0;
+        case '--fps':
+            if (nextArg) {
+                const fps = parseInt(nextArg, 10);
+                if (!isNaN(fps) && fps > 0) {
+                    options.frameRate = fps;
+                    return 1;
+                }
+            }
+            return 0;
+        case '--steps-per-frame':
+            if (nextArg) {
+                const steps = parseInt(nextArg, 10);
+                if (!isNaN(steps) && steps > 0) {
+                    options.stepsPerFrame = steps;
+                    return 1;
+                }
+            }
+            return 0;
+        case '--grid-size':
+            if (nextArg) {
+                const size = parseInt(nextArg, 10);
+                if (!isNaN(size) && size > 0) {
+                    options.gridSize = size;
+                    return 1;
+                }
+            }
+            return 0;
+        default:
+            return -1;
+    }
+}
+
+function parseSingleOption(arg: string, nextArg: string | undefined, options: CLIOptions): number {
+    if (parseBooleanOption(arg, options)) {
+        return 0;
+    }
+    
+    const valueConsumed = parseValueOption(arg, nextArg, options);
+    return valueConsumed;
+}
+
 function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | undefined } {
     const options: CLIOptions = {
         interactive: false,
@@ -248,103 +361,14 @@ function parseArgs(args: string[]): { options: CLIOptions; scriptFile: string | 
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
+        const nextArg = args[i + 1];
         
-        switch (arg) {
-            case '--interactive':
-            case '-i':
-                options.interactive = true;
-                break;
-            case '--debug':
-            case '-d':
-                options.debug = true;
-                break;
-            case '--verbose':
-            case '-v':
-                options.verbose = true;
-                break;
-            case '--output':
-            case '-o':
-                const nextArg = args[++i];
-                if (nextArg) {
-                    options.output = nextArg;
-                }
-                break;
-            case '--help':
-            case '-h':
-                options.help = true;
-                break;
-            case '--unlimited':
-            case '-u':
-                options.unlimitedSteps = true;
-                break;
-            case '--max-steps':
-            case '-m':
-                const nextStepsArg = args[++i];
-                if (nextStepsArg) {
-                    const steps = parseInt(nextStepsArg, 10);
-                    if (!isNaN(steps) && steps > 0) {
-                        options.maxSteps = steps;
-                    }
-                }
-                break;
-            case '--quiet':
-            case '-q':
-                options.quiet = true;
-                break;
-            case '--realtime':
-            case '-r':
-                options.realtime = true;
-                break;
-            case '--fps':
-                const nextFPSArg = args[++i];
-                if (nextFPSArg) {
-                    const fps = parseInt(nextFPSArg, 10);
-                    if (!isNaN(fps) && fps > 0) {
-                        options.frameRate = fps;
-                    }
-                }
-                break;
-            case '--steps-per-frame':
-                const nextStepsPerFrameArg = args[++i];
-                if (nextStepsPerFrameArg) {
-                    const steps = parseInt(nextStepsPerFrameArg, 10);
-                    if (!isNaN(steps) && steps > 0) {
-                        options.stepsPerFrame = steps;
-                    }
-                }
-                break;
-            case '--show-fps':
-                options.showFPS = true;
-                break;
-            case '--show-grid':
-            case '-g':
-                options.showGrid = true;
-                break;
-            case '--no-grid':
-                options.noGrid = true;
-                break;
-            case '--split-screen':
-            case '-s':
-                options.splitScreen = true;
-                break;
-            case '--char-mode':
-            case '-c':
-                options.characterMode = true;
-                break;
-            case '--grid-size':
-                const nextGridSizeArg = args[++i];
-                if (nextGridSizeArg) {
-                    const size = parseInt(nextGridSizeArg, 10);
-                    if (!isNaN(size) && size > 0) {
-                        options.gridSize = size;
-                    }
-                }
-                break;
-            default:
-                if (arg && !arg.startsWith('-') && !scriptFile) {
-                    scriptFile = arg;
-                }
-                break;
+        const consumed = parseSingleOption(arg, nextArg, options);
+        
+        if (consumed >= 0) {
+            i += consumed;
+        } else if (arg && !arg.startsWith('-') && !scriptFile) {
+            scriptFile = arg;
         }
     }
 
@@ -499,29 +523,86 @@ WorkerScript CLI - ${config.description}
     console.log('');
 }
 
+function buildCLIRunnerConfig(options: CLIOptions): CLIRunnerConfig {
+    return {
+        debug: options.debug,
+        verbose: options.verbose,
+        unlimitedSteps: options.unlimitedSteps,
+        quiet: options.quiet,
+        noGrid: options.noGrid,
+        ...(options.maxSteps && { maxSteps: options.maxSteps }),
+        ...(options.output && { outputFile: options.output })
+    };
+}
+
+function buildRealTimeRunnerConfig(options: CLIOptions): RealTimeCLIRunnerConfig {
+    return {
+        debug: options.debug,
+        verbose: options.verbose,
+        ...(options.frameRate && { frameRate: options.frameRate }),
+        ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
+        showFPS: options.showFPS,
+        showGrid: options.showGrid,
+        noGrid: options.noGrid,
+        splitScreen: options.splitScreen,
+        characterMode: options.characterMode,
+        ...(options.gridSize && { gridDisplaySize: options.gridSize }),
+        ...(options.output && { outputFile: options.output })
+    };
+}
+
+async function executeInteractiveMode(options: CLIOptions): Promise<void> {
+    if (options.verbose) console.log('📝 インタラクティブモードを開始します...');
+    const runnerConfig = buildCLIRunnerConfig(options);
+    const runner = new CLIRunner(runnerConfig);
+    await runner.startInteractiveMode();
+}
+
+async function executeNormalMode(script: string, scriptFile: string, options: CLIOptions): Promise<void> {
+    const runnerConfig = buildCLIRunnerConfig(options);
+    const runner = new CLIRunner(runnerConfig);
+    await runner.executeScript(script, path.basename(scriptFile));
+}
+
+async function executeRealtimeMode(script: string, scriptFile: string, options: CLIOptions): Promise<void> {
+    if (options.verbose) console.log('⚡ リアルタイムモードで実行します...');
+    const realtimeConfig = buildRealTimeRunnerConfig(options);
+    const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
+    await realtimeRunner.executeRealTime(script, path.basename(scriptFile));
+}
+
+async function executeScriptFile(scriptFile: string, options: CLIOptions): Promise<void> {
+    if (!fs.existsSync(scriptFile)) {
+        console.error(`❌ ファイルが見つかりません: ${scriptFile}`);
+        process.exit(1);
+    }
+
+    const script = fs.readFileSync(scriptFile, 'utf-8');
+    if (options.verbose) console.log(`📄 スクリプトファイルを読み込みました: ${scriptFile}`);
+    
+    if (options.realtime) {
+        await executeRealtimeMode(script, scriptFile, options);
+    } else {
+        await executeNormalMode(script, scriptFile, options);
+    }
+}
+
 async function main() {
     const args = process.argv.slice(2);
     
-    // サブコマンドをパース
     const { subcommand, remainingArgs } = parseSubcommand(args);
-    
-    // オプションをパース
     const { options: parsedOptions, scriptFile } = parseArgs(remainingArgs);
     
-    // ヘルプ表示
     if (parsedOptions.help) {
-        // サブコマンドが明示的に指定されている場合はサブコマンド別ヘルプ
         const firstArg = args[0];
         if (firstArg && !firstArg.startsWith('-') && !firstArg.endsWith('.ws') && SUBCOMMANDS[firstArg as Subcommand]) {
             showSubcommandHelp(subcommand);
         } else {
-            // それ以外はメインヘルプ
             showHelp();
         }
         process.exit(0);
     }
     
-    // サブコマンドのデフォルト値とマージ
     const subcommandConfig = SUBCOMMANDS[subcommand];
     const options = mergeOptions(subcommandConfig.defaults, parsedOptions);
 
@@ -534,61 +615,9 @@ async function main() {
 
     try {
         if (options.interactive) {
-            // インタラクティブモード
-            if (options.verbose) console.log('📝 インタラクティブモードを開始します...');
-            const runnerConfig: CLIRunnerConfig = {
-                debug: options.debug,
-                verbose: options.verbose,
-                unlimitedSteps: options.unlimitedSteps,
-                quiet: options.quiet,
-                noGrid: options.noGrid,
-                ...(options.maxSteps && { maxSteps: options.maxSteps }),
-                ...(options.output && { outputFile: options.output })
-            };
-            const runner = new CLIRunner(runnerConfig);
-            await runner.startInteractiveMode();
+            await executeInteractiveMode(options);
         } else if (scriptFile) {
-            // ファイル実行モード
-            if (!fs.existsSync(scriptFile)) {
-                console.error(`❌ ファイルが見つかりません: ${scriptFile}`);
-                process.exit(1);
-            }
-
-            const script = fs.readFileSync(scriptFile, 'utf-8');
-            if (options.verbose) console.log(`📄 スクリプトファイルを読み込みました: ${scriptFile}`);
-            
-            if (options.realtime) {
-                // リアルタイムモード
-                if (options.verbose) console.log('⚡ リアルタイムモードで実行します...');
-                const realtimeConfig: RealTimeCLIRunnerConfig = {
-                    debug: options.debug,
-                    verbose: options.verbose,
-                    ...(options.frameRate && { frameRate: options.frameRate }),
-                    ...(options.stepsPerFrame && { stepsPerFrame: options.stepsPerFrame }),
-                    showFPS: options.showFPS,
-                    showGrid: options.showGrid,
-                    noGrid: options.noGrid,
-                    splitScreen: options.splitScreen,
-                    characterMode: options.characterMode,
-                    ...(options.gridSize && { gridDisplaySize: options.gridSize }),
-                    ...(options.output && { outputFile: options.output })
-                };
-                const realtimeRunner = new RealTimeCLIRunner(realtimeConfig);
-                await realtimeRunner.executeRealTime(script, path.basename(scriptFile));
-            } else {
-                // 通常モード
-                const runnerConfig: CLIRunnerConfig = {
-                    debug: options.debug,
-                    verbose: options.verbose,
-                    unlimitedSteps: options.unlimitedSteps,
-                    quiet: options.quiet,
-                    noGrid: options.noGrid,
-                    ...(options.maxSteps && { maxSteps: options.maxSteps }),
-                    ...(options.output && { outputFile: options.output })
-                };
-                const runner = new CLIRunner(runnerConfig);
-                await runner.executeScript(script, path.basename(scriptFile));
-            }
+            await executeScriptFile(scriptFile, options);
         } else {
             console.error('❌ スクリプトファイルまたは --interactive オプションが必要です');
             showHelp();
