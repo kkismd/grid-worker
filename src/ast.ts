@@ -211,7 +211,8 @@ export type Expression =
     | CharLiteralExpression
     | IoGetExpression
     | InputNumberExpression
-    | ArrayAccessExpression;
+    | ArrayAccessExpression
+    | CompareAndSwapExpression;
 
 /**
  * 数値リテラル
@@ -338,6 +339,18 @@ export interface ArrayInitializationStatement extends ASTNode {
     values: Expression[];   // 書き込む値の配列
 }
 
+/**
+ * Compare-And-Swap式 (例: A=<&10,20>)
+ * グリッド[X,Y]の値が期待値と一致する場合のみ新値を書き込む
+ * アトミックな操作として実行され、他のワーカーとの競合を防ぐ
+ * 戻り値: 1=成功（期待値と一致し、書き込み完了）、0=失敗（値が期待値と異なった）
+ */
+export interface CompareAndSwapExpression extends ASTNode {
+    type: 'CompareAndSwapExpression';
+    expected: Expression;   // 期待値
+    newValue: Expression;   // 書き込む新値
+}
+
 // ============================================================================
 // Type Guard Functions
 // ============================================================================
@@ -391,4 +404,5 @@ export const isCharLiteralExpression = createTypeGuard<CharLiteralExpression>('C
 export const isIoGetExpression = createTypeGuard<IoGetExpression>('IoGetExpression');
 export const isInputNumberExpression = createTypeGuard<InputNumberExpression>('InputNumberExpression');
 export const isArrayAccessExpression = createTypeGuard<ArrayAccessExpression>('ArrayAccessExpression');
+export const isCompareAndSwapExpression = createTypeGuard<CompareAndSwapExpression>('CompareAndSwapExpression');
 

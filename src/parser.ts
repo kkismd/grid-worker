@@ -1378,6 +1378,78 @@ export class Parser {
             };
         }
 
+        // Compare-And-Swap式 <&expected,newValue>
+        if (token.type === TokenType.LESS_THAN) {
+            const nextToken = tokens[start + 1];
+            if (nextToken && nextToken.type === TokenType.AMPERSAND) {
+                // <& の形式を検出
+                // 対応する > を見つける
+                let depth = 1;
+                let endIndex = start + 2;
+                while (endIndex < tokens.length && depth > 0) {
+                    if (tokens[endIndex]?.type === TokenType.LESS_THAN) {
+                        depth++;
+                    } else if (tokens[endIndex]?.type === TokenType.GREATER_THAN) {
+                        depth--;
+                    }
+                    if (depth > 0) {
+                        endIndex++;
+                    }
+                }
+
+                if (depth !== 0) {
+                    throw new Error(`構文エラー: CAS式が閉じられていません (行: ${token.line + 1})`);
+                }
+
+                // <& と > の間のトークンを取得
+                const innerTokens = tokens.slice(start + 2, endIndex);
+                if (innerTokens.length === 0) {
+                    throw new Error(`構文エラー: CAS式が空です (行: ${token.line + 1})`);
+                }
+
+                // カンマで分割して期待値と新値を取得
+                let commaIndex = -1;
+                let parenDepth = 0;
+                let bracketDepth = 0;
+                for (let i = 0; i < innerTokens.length; i++) {
+                    const t = innerTokens[i];
+                    if (t!.type === TokenType.LEFT_PAREN) parenDepth++;
+                    if (t!.type === TokenType.RIGHT_PAREN) parenDepth--;
+                    if (t!.type === TokenType.LEFT_BRACKET) bracketDepth++;
+                    if (t!.type === TokenType.RIGHT_BRACKET) bracketDepth--;
+                    if (t!.type === TokenType.COMMA && parenDepth === 0 && bracketDepth === 0) {
+                        commaIndex = i;
+                        break;
+                    }
+                }
+
+                if (commaIndex === -1) {
+                    throw new Error(`構文エラー: CAS式にカンマが必要です (行: ${token.line + 1})`);
+                }
+
+                const expectedTokens = innerTokens.slice(0, commaIndex);
+                const newValueTokens = innerTokens.slice(commaIndex + 1);
+
+                if (expectedTokens.length === 0 || newValueTokens.length === 0) {
+                    throw new Error(`構文エラー: CAS式の引数が不完全です (行: ${token.line + 1})`);
+                }
+
+                const expectedExpr = this.parseBinaryExpression(expectedTokens, 0);
+                const newValueExpr = this.parseBinaryExpression(newValueTokens, 0);
+
+                return {
+                    expr: {
+                        type: 'CompareAndSwapExpression',
+                        expected: expectedExpr.expr,
+                        newValue: newValueExpr.expr,
+                        line: token.line,
+                        column: token.column,
+                    },
+                    nextIndex: endIndex + 1,
+                };
+            }
+        }
+
         // 単純な値（数値、文字列、識別子）
         const expr = this.parseExpression(token);
         return { expr, nextIndex: start + 1 };
