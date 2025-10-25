@@ -36,7 +36,6 @@ export type Statement =
     | AssignmentStatement 
     | OutputStatement 
     | NewlineStatement
-    | IfStatement
     | IfBlockStatement
     | GotoStatement
     | GosubStatement
@@ -77,19 +76,9 @@ export interface NewlineStatement extends ASTNode {
 }
 
 /**
- * IF条件分岐ステートメント (例: ;=A>100)
- * VTL仕様: 条件が偽の場合、同じ行の後続ステートメントをスキップする
- * インタプリタ側で制御フローを処理する
- */
-export interface IfStatement extends ASTNode {
-    type: 'IfStatement';
-    condition: Expression;
-    // consequentは削除：後続ステートメントは同じLine.statements[]内に独立して存在
-}
-
-/**
  * IFブロックステートメント (例: ;=A>100 ... #=;)
  * ブロック構造のIF文：条件が真の場合thenBodyを実行、偽の場合elseBodyを実行（あれば）
+ * インラインIF文（;=A>100 ?="yes"）も同じ構造で表現される。
  */
 export interface IfBlockStatement extends ASTNode {
     type: 'IfBlockStatement';

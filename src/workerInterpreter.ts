@@ -8,12 +8,11 @@ import { Parser } from './parser.js';
 
 /**
  * ステートメント実行結果を表すインターフェース。
- * ジャンプ、停止、スキップの情報を保持します。
+ * ジャンプ、停止の情報を保持します。
  */
 interface ExecutionResult {
     jump: boolean;         // GOTO/GOSUB/RETURNによるジャンプが発生したか
     halt: boolean;         // HaltStatementによるプログラム停止か
-    skipRemaining: boolean; // IF条件が偽の場合、この行の残りをスキップするか
 }
 
 /**
@@ -84,7 +83,6 @@ class WorkerInterpreter {
         this.statementExecutors.set('AssignmentStatement', (s) => this.executeAssignment(s));
         this.statementExecutors.set('OutputStatement', (s) => this.executeOutput(s));
         this.statementExecutors.set('NewlineStatement', () => this.executeNewline());
-        this.statementExecutors.set('IfStatement', (s) => this.executeIf(s));
         this.statementExecutors.set('IfBlockStatement', (s) => this.executeIfBlock(s));
         // ForBlockStatement と WhileBlockStatement は executeStatements() 内で直接 Generator 処理される
         this.statementExecutors.set('GotoStatement', (s) => this.executeGoto(s));
@@ -191,19 +189,11 @@ class WorkerInterpreter {
      * すべてのブロック構造（FOR, WHILE, IF）で共通して使用されます。
      * 
      * @param statements 実行するステートメント列
-     * @returns ExecutionResult（jump, halt, skipRemainingの情報）
+     * @returns ExecutionResult（jump, haltの情報）
      * @yields 各ステートメント実行後に制御を返す
      */
     private *executeStatements(statements: Statement[]): Generator<void, ExecutionResult, void> {
-        let skipUntilLine: number | null = null; // スキップする行番号
-        
         for (const stmt of statements) {
-            // 同じ行のステートメントをスキップ
-            if (skipUntilLine !== null && stmt.line === skipUntilLine) {
-                continue;
-            }
-            skipUntilLine = null; // 異なる行に到達したらスキップを解除
-            
             // ブロック系ステートメントは専用のGeneratorヘルパーで処理
             if (stmt.type === 'ForBlockStatement') {
                 const result = yield* this.executeForBlockGenerator(stmt);
@@ -223,12 +213,6 @@ class WorkerInterpreter {
                 if (result.jump || result.halt) {
                     return result;
                 }
-                
-                // インラインIF文が偽の場合、同じ行の残りのステートメントをスキップ
-                if (result.skipRemaining) {
-                    skipUntilLine = stmt.line;
-                    continue; // 次のステートメントへ（yieldしない）
-                }
             }
             
             // 1ステートメント実行完了、制御を返す
@@ -236,7 +220,7 @@ class WorkerInterpreter {
         }
         
         // 正常終了
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -283,7 +267,7 @@ class WorkerInterpreter {
             }
         }
         
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -311,7 +295,7 @@ class WorkerInterpreter {
             }
         }
         
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -375,7 +359,7 @@ class WorkerInterpreter {
             '変数には数値のみを代入できます'
         );
         this.variables.set(statement.variable.name, value);
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -384,7 +368,7 @@ class WorkerInterpreter {
     private executeOutput(statement: any): ExecutionResult {
         const value = this.evaluateExpression(statement.expression);
         this.logFn(value);
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -392,22 +376,7 @@ class WorkerInterpreter {
      */
     private executeNewline(): ExecutionResult {
         this.logFn('\n');
-        return { jump: false, halt: false, skipRemaining: false };
-    }
-
-    /**
-     * インラインIF文を実行します。
-     */
-    private executeIf(statement: any): ExecutionResult {
-        const condition = this.assertNumber(
-            this.evaluateExpression(statement.condition),
-            'IF条件は数値でなければなりません'
-        );
-        // 条件が0（偽）の場合、この行の残りをスキップ
-        if (condition === 0) {
-            return { jump: false, halt: false, skipRemaining: true };
-        }
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -436,7 +405,7 @@ class WorkerInterpreter {
                 }
             }
         }
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -448,7 +417,7 @@ class WorkerInterpreter {
             throw new Error(`ラベル ${statement.target} が見つかりません`);
         }
         this.currentLineIndex = targetLine;
-        return { jump: true, halt: false, skipRemaining: false };
+        return { jump: true, halt: false };
     }
 
     /**
@@ -463,7 +432,7 @@ class WorkerInterpreter {
         // NOTE: 行ベースのリターンアドレス保存。同じ行の次のステートメント位置は保存されません。
         this.callStack.push(this.currentLineIndex + 1);
         this.currentLineIndex = targetLine;
-        return { jump: true, halt: false, skipRemaining: false };
+        return { jump: true, halt: false };
     }
 
     /**
@@ -477,14 +446,14 @@ class WorkerInterpreter {
         // NOTE: 行ベースのリターン。GOSUB呼び出しがあった行の次の行に戻ります。
         // 同じ行内の特定のステートメント位置には戻れません。
         this.currentLineIndex = returnLine;
-        return { jump: true, halt: false, skipRemaining: false };
+        return { jump: true, halt: false };
     }
 
     /**
      * HALT文を実行します。
      */
     private executeHalt(): ExecutionResult {
-        return { jump: false, halt: true, skipRemaining: false };
+        return { jump: false, halt: true };
     }
 
     /**
@@ -507,7 +476,7 @@ class WorkerInterpreter {
         
         // pokeFnを呼び出し（X, Y座標と値を渡す）
         this.pokeFn(Math.floor(x), Math.floor(y), clampedValue);
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -527,7 +496,7 @@ class WorkerInterpreter {
         } else {
             throw new Error('1byte出力機能が設定されていません');
         }
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -551,7 +520,7 @@ class WorkerInterpreter {
             );
             this.memorySpace.writeArray(Math.floor(index), Math.floor(value));
         }
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**
@@ -576,7 +545,7 @@ class WorkerInterpreter {
         
         // 配列を初期化
         this.memorySpace.initializeArray(Math.floor(index), values);
-        return { jump: false, halt: false, skipRemaining: false };
+        return { jump: false, halt: false };
     }
 
     /**

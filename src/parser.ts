@@ -160,8 +160,8 @@ export class Parser {
         sourceText: string,
         lineNumber: number
     ): { line: Line; endLine: number } | null {
-        // ブロックIF検出: 1行に1つだけIfStatementがある場合
-        if (parsedStatements.length === 1 && parsedStatements[0]?.type === 'IfStatement') {
+        // 先頭がIfStatementかチェック
+        if (parsedStatements.length > 0 && parsedStatements[0]?.type === 'IfStatement') {
             const inlineIf = parsedStatements[0] as any;
             
             // IfBlockStatementに変換
@@ -173,17 +173,30 @@ export class Parser {
                 elseBody: undefined,
             };
             
-            // #=; まで本体を収集
-            const endLine = this.collectIfBlock(blockIf, lineNumber + 1);
-            
-            // ブロック全体を1つのステートメントとして追加
-            const line: Line = {
-                lineNumber: lineNumber,
-                statements: [blockIf],
-                sourceText: sourceText,
-            };
-            
-            return { line, endLine };
+            // 同じ行の残りのステートメントをthenBodyに追加
+            if (parsedStatements.length > 1) {
+                blockIf.thenBody = parsedStatements.slice(1);
+                // インライン形式（同じ行に後続ステートメント）
+                const line: Line = {
+                    lineNumber: lineNumber,
+                    statements: [blockIf],
+                    sourceText: sourceText,
+                };
+                return { line, endLine: lineNumber };
+            } else {
+                // ブロック形式（単独行）
+                // #=; まで本体を収集
+                const endLine = this.collectIfBlock(blockIf, lineNumber + 1);
+                
+                // ブロック全体を1つのステートメントとして追加
+                const line: Line = {
+                    lineNumber: lineNumber,
+                    statements: [blockIf],
+                    sourceText: sourceText,
+                };
+                
+                return { line, endLine };
+            }
         }
         
         return null;
