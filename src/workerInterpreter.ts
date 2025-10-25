@@ -195,7 +195,15 @@ class WorkerInterpreter {
      * @yields 各ステートメント実行後に制御を返す
      */
     private *executeStatements(statements: Statement[]): Generator<void, ExecutionResult, void> {
+        let skipUntilLine: number | null = null; // スキップする行番号
+        
         for (const stmt of statements) {
+            // 同じ行のステートメントをスキップ
+            if (skipUntilLine !== null && stmt.line === skipUntilLine) {
+                continue;
+            }
+            skipUntilLine = null; // 異なる行に到達したらスキップを解除
+            
             // ブロック系ステートメントは専用のGeneratorヘルパーで処理
             if (stmt.type === 'ForBlockStatement') {
                 const result = yield* this.executeForBlockGenerator(stmt);
@@ -214,6 +222,12 @@ class WorkerInterpreter {
                 // jump/haltの場合は即座に呼び出し元に伝播
                 if (result.jump || result.halt) {
                     return result;
+                }
+                
+                // インラインIF文が偽の場合、同じ行の残りのステートメントをスキップ
+                if (result.skipRemaining) {
+                    skipUntilLine = stmt.line;
+                    continue; // 次のステートメントへ（yieldしない）
                 }
             }
             
