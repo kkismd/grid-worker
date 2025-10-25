@@ -598,9 +598,8 @@ describe('Parser (TDD Cycle 2.5)', () => {
                     sourceText: ';=A>100 ?=100',
                     statements: [
                         {
-                            type: 'IfStatement',
+                            type: 'IfBlockStatement',
                             line: 0,
-                            column: 0,
                             condition: {
                                 type: 'BinaryExpression',
                                 line: 0,
@@ -608,12 +607,15 @@ describe('Parser (TDD Cycle 2.5)', () => {
                                 left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
                                 right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
                             },
-                        },
-                        {
-                            type: 'OutputStatement',
-                            line: 0,
-                            column: 0,
-                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 2 },
+                            thenBody: [
+                                {
+                                    type: 'OutputStatement',
+                                    line: 0,
+                                    column: 0,
+                                    expression: { type: 'NumericLiteral', value: 100, line: 0, column: 2 },
+                                },
+                            ],
+                            elseBody: undefined,
                         },
                     ],
                 },
@@ -633,9 +635,8 @@ describe('Parser (TDD Cycle 2.5)', () => {
                     sourceText: ';=A>100 ?=100 B=200',
                     statements: [
                         {
-                            type: 'IfStatement',
+                            type: 'IfBlockStatement',
                             line: 0,
-                            column: 0,
                             condition: {
                                 type: 'BinaryExpression',
                                 line: 0,
@@ -643,19 +644,22 @@ describe('Parser (TDD Cycle 2.5)', () => {
                                 left: { type: 'Identifier', name: 'A', line: 0, column: 2 },
                                 right: { type: 'NumericLiteral', value: 100, line: 0, column: 4 },
                             },
-                        },
-                        {
-                            type: 'OutputStatement',
-                            line: 0,
-                            column: 0,
-                            expression: { type: 'NumericLiteral', value: 100, line: 0, column: 2 },
-                        },
-                        {
-                            type: 'AssignmentStatement',
-                            line: 0,
-                            column: 0,
-                            variable: { type: 'Identifier', name: 'B', line: 0, column: 0 },
-                            value: { type: 'NumericLiteral', value: 200, line: 0, column: 2 },
+                            thenBody: [
+                                {
+                                    type: 'OutputStatement',
+                                    line: 0,
+                                    column: 0,
+                                    expression: { type: 'NumericLiteral', value: 100, line: 0, column: 2 },
+                                },
+                                {
+                                    type: 'AssignmentStatement',
+                                    line: 0,
+                                    column: 0,
+                                    variable: { type: 'Identifier', name: 'B', line: 0, column: 0 },
+                                    value: { type: 'NumericLiteral', value: 200, line: 0, column: 2 },
+                                },
+                            ],
+                            elseBody: undefined,
                         },
                     ],
                 },
@@ -1131,11 +1135,13 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
         interpreter.loadScript(';=A>10 ?="Yes" B=1');
         const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
-        expect(ast.body[0]?.statements).toHaveLength(3);
+        expect(ast.body[0]?.statements).toHaveLength(1);
         
-        expect(ast.body[0]?.statements[0]?.type).toBe('IfStatement');
-        expect(ast.body[0]?.statements[1]?.type).toBe('OutputStatement');
-        expect(ast.body[0]?.statements[2]?.type).toBe('AssignmentStatement');
+        const ifBlock = ast.body[0]?.statements[0] as any;
+        expect(ifBlock?.type).toBe('IfBlockStatement');
+        expect(ifBlock?.thenBody).toHaveLength(2);
+        expect(ifBlock?.thenBody[0]?.type).toBe('OutputStatement');
+        expect(ifBlock?.thenBody[1]?.type).toBe('AssignmentStatement');
     });
 
     test('should parse FOR loop with output and NEXT (@=I,1,10 ?=I #=@)', () => {
@@ -1174,12 +1180,14 @@ describe('WorkerInterpreter - Multiple Statements per Line (Phase 2B.7)', () => 
         interpreter.loadScript(';=X>0 #=^SKIP A=1 B=2');
         const ast = interpreter.getProgram()!;
         expect(ast.body).toHaveLength(1);
-        expect(ast.body[0]?.statements).toHaveLength(4);
+        expect(ast.body[0]?.statements).toHaveLength(1);
         
-        expect(ast.body[0]?.statements[0]?.type).toBe('IfStatement');
-        expect(ast.body[0]?.statements[1]?.type).toBe('GotoStatement');
-        expect(ast.body[0]?.statements[2]?.type).toBe('AssignmentStatement');
-        expect(ast.body[0]?.statements[3]?.type).toBe('AssignmentStatement');
+        const ifBlock = ast.body[0]?.statements[0] as any;
+        expect(ifBlock?.type).toBe('IfBlockStatement');
+        expect(ifBlock?.thenBody).toHaveLength(3);
+        expect(ifBlock?.thenBody[0]?.type).toBe('GotoStatement');
+        expect(ifBlock?.thenBody[1]?.type).toBe('AssignmentStatement');
+        expect(ifBlock?.thenBody[2]?.type).toBe('AssignmentStatement');
     });
 });
 
