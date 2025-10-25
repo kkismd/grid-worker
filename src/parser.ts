@@ -462,6 +462,20 @@ export class Parser {
                 continue;
             }
             
+            // インラインIF文を IfBlockStatement に変換
+            if (parsedStatements.length > 0 && parsedStatements[0]?.type === 'IfStatement') {
+                const inlineIf = parsedStatements[0] as any;
+                const blockIf: any = {
+                    type: 'IfBlockStatement',
+                    line: i,
+                    condition: inlineIf.condition,
+                    thenBody: parsedStatements.slice(1),
+                    elseBody: undefined,
+                };
+                currentBody.push(blockIf);
+                continue;
+            }
+            
             // 通常のステートメントを追加
             for (const stmt of parsedStatements) {
                 currentBody.push(stmt);
@@ -505,12 +519,26 @@ export class Parser {
             // 行をパースしてステートメント配列を取得
             const parsedStatements = this.parseLineStatements(sourceText, i);
             
-            // ブロック構造を検出（IFブロックは検出しない - ループ内でIF検出は不要）
-            const blockInfo = this.detectAndConvertBlockStructure(parsedStatements, i, false);
+            // ブロック構造を検出
+            const blockInfo = this.detectAndConvertBlockStructure(parsedStatements, i, true);
             if (blockInfo) {
                 body.push(blockInfo.blockStmt);
                 // ブロックの終端までスキップ
                 i = blockInfo.endLine;
+                continue;
+            }
+            
+            // インラインIF文を IfBlockStatement に変換
+            if (parsedStatements.length > 0 && parsedStatements[0]?.type === 'IfStatement') {
+                const inlineIf = parsedStatements[0] as any;
+                const blockIf: any = {
+                    type: 'IfBlockStatement',
+                    line: i,
+                    condition: inlineIf.condition,
+                    thenBody: parsedStatements.slice(1),
+                    elseBody: undefined,
+                };
+                body.push(blockIf);
                 continue;
             }
             
