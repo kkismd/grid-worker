@@ -7,24 +7,6 @@ import { MemorySpace } from './memorySpace.js';
 import { Parser } from './parser.js';
 
 /**
- * ブロック構造ループの実行状態を保持するインターフェース。
- * 
- * マルチワーカー協調動作のため、ループ内の各ステートメントごとにyieldする必要があります。
- * このインターフェースはループの実行状態を保持し、next()呼び出しごとに1ステートメントずつ実行します。
- */
-interface LoopBlockInfo {
-    type: 'for' | 'while'; // ループの種類
-    variable?: string; // ループ変数名 (FORの場合のみ)
-    start?: number; // 開始値 (FORのみ)
-    end?: number; // 終了値 (FORのみ)
-    step?: number; // ステップ値 (FORのみ)
-    condition?: Expression; // WHILE条件式 (WHILEのみ)
-    body: Statement[]; // ループ本体のステートメント配列
-    bodyIndex: number; // 現在実行中のステートメントインデックス
-    currentValue?: number; // 現在のループ変数値 (FORのみ)
-}
-
-/**
  * ステートメント実行結果を表すインターフェース。
  * ジャンプ、停止、スキップの情報を保持します。
  */
@@ -55,7 +37,6 @@ class WorkerInterpreter {
     private variables: Map<string, number> = new Map(); // 変数の状態 (A-Z)
     private currentLineIndex: number = 0; // 現在実行中の行インデックス
     private callStack: number[] = []; // GOSUBのリターンアドレススタック（行番号のみ）
-    private loopStack: LoopBlockInfo[] = []; // ループブロックの実行状態スタック
     private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     private statementExecutors: Map<string, (statement: any) => ExecutionResult> = new Map(); // ステートメントタイプと実行関数のマッピング
     private expressionEvaluators: Map<string, (expr: any) => number | string> = new Map(); // 式タイプと評価関数のマッピング
@@ -105,8 +86,7 @@ class WorkerInterpreter {
         this.statementExecutors.set('NewlineStatement', () => this.executeNewline());
         this.statementExecutors.set('IfStatement', (s) => this.executeIf(s));
         this.statementExecutors.set('IfBlockStatement', (s) => this.executeIfBlock(s));
-        this.statementExecutors.set('ForBlockStatement', (s) => this.executeForBlock(s));
-        this.statementExecutors.set('WhileBlockStatement', (s) => this.executeWhileBlock(s));
+        // ForBlockStatement と WhileBlockStatement は executeStatements() 内で直接 Generator 処理される
         this.statementExecutors.set('GotoStatement', (s) => this.executeGoto(s));
         this.statementExecutors.set('GosubStatement', (s) => this.executeGosub(s));
         this.statementExecutors.set('ReturnStatement', () => this.executeReturn());
@@ -115,12 +95,6 @@ class WorkerInterpreter {
         this.statementExecutors.set('IoPutStatement', (s) => this.executeIoPut(s));
         this.statementExecutors.set('ArrayAssignmentStatement', (s) => this.executeArrayAssignment(s));
         this.statementExecutors.set('ArrayInitializationStatement', (s) => this.executeArrayInitialization(s));
-        
-        // インラインスタイルのステートメント（loopStackで処理される）
-        const noOpResult: ExecutionResult = { jump: false, halt: false, skipRemaining: false };
-        this.statementExecutors.set('ForStatement', () => noOpResult);
-        this.statementExecutors.set('NextStatement', () => noOpResult);
-        this.statementExecutors.set('WhileStatement', () => noOpResult);
         
         // 式評価関数のマッピング
         this.expressionEvaluators.set('NumericLiteral', (e) => this.evaluateNumericLiteral(e));
@@ -340,7 +314,6 @@ class WorkerInterpreter {
         this.variables.clear();
         this.currentLineIndex = 0;
         this.callStack = [];
-        this.loopStack = [];
 
         // シンプルな行ベース実行ループ
         while (this.currentLineIndex < this.program.body.length) {
@@ -449,90 +422,6 @@ class WorkerInterpreter {
                 }
             }
         }
-        return { jump: false, halt: false, skipRemaining: false };
-    }
-
-    /**
-     * FORブロック文を実行します。
-     */
-    private executeForBlock(statement: any): ExecutionResult {
-        // NOTE: この実装は一時的なもの。実際のGenerator処理はexecuteStatementsで委譲される。
-        // ここでは旧loopStack方式を一旦残すが、run()では使われない。
-        const forStmt = statement;
-        const varName = forStmt.variable.name;
-        const startValue = this.assertNumber(
-            this.evaluateExpression(forStmt.start),
-            'FORループのパラメータは数値でなければなりません'
-        );
-        const endValue = this.assertNumber(
-            this.evaluateExpression(forStmt.end),
-            'FORループのパラメータは数値でなければなりません'
-        );
-        const stepValue = forStmt.step 
-            ? this.assertNumber(
-                this.evaluateExpression(forStmt.step),
-                'FORループのパラメータは数値でなければなりません'
-            )
-            : 1;
-        
-        // ステップ値が0の場合はエラー
-        if (stepValue === 0) {
-            throw new Error('FORループのステップ値は0にできません');
-        }
-        
-        // 条件チェック
-        const shouldExecute = stepValue > 0 
-            ? startValue <= endValue 
-            : startValue >= endValue;
-        
-        if (!shouldExecute) {
-            return { jump: false, halt: false, skipRemaining: false };
-        }
-        
-        // ループ変数に開始値を設定
-        this.variables.set(varName, startValue);
-        
-        // 旧方式（実際にはexecuteStatementsで処理される）
-        this.loopStack.push({
-            type: 'for',
-            variable: varName,
-            start: startValue,
-            end: endValue,
-            step: stepValue,
-            body: forStmt.body,
-            bodyIndex: 0,
-            currentValue: startValue,
-        });
-        
-        return { jump: false, halt: false, skipRemaining: false };
-    }
-
-    /**
-     * WHILEブロック文を実行します。
-     */
-    private executeWhileBlock(statement: any): ExecutionResult {
-        // NOTE: この実装は一時的なもの。実際のGenerator処理はexecuteStatementsで委譲される。
-        const whileStmt = statement;
-        
-        // 条件を評価
-        const condition = this.assertNumber(
-            this.evaluateExpression(whileStmt.condition),
-            'WHILEループの条件は数値でなければなりません'
-        );
-        
-        // 条件が偽ならループをスキップ
-        if (condition === 0) {
-            return { jump: false, halt: false, skipRemaining: false };
-        }
-        
-        // 旧方式（実際にはexecuteStatementsで処理される）
-        this.loopStack.push({
-            type: 'while',
-            condition: whileStmt.condition,
-            body: whileStmt.body,
-            bodyIndex: 0,
-        });
-        
         return { jump: false, halt: false, skipRemaining: false };
     }
 
