@@ -16,6 +16,20 @@ interface ExecutionResult {
 }
 
 /**
+ * デバッグモードを表す型
+ */
+type DebugMode = 'run' | 'break' | 'step-over' | 'step-in' | 'step-out';
+
+/**
+ * デバッグコンテキストを表すインターフェース
+ */
+interface DebugContext {
+    mode: DebugMode;
+    breakpoints: Set<number>;        // ブレークポイントの行番号
+    stepTargetDepth?: number;        // ステップアウト用のコールスタック深さ
+}
+
+/**
  * WorkerScriptインタプリタのコアクラス。
  * スクリプトのロード、解析、および1ステートメントごとの実行を制御します。
  */
@@ -39,6 +53,7 @@ class WorkerInterpreter {
     private memorySpace: MemorySpace; // メモリ空間（配列・スタック）
     private statementExecutors: Map<string, (statement: any) => ExecutionResult> = new Map(); // ステートメントタイプと実行関数のマッピング
     private expressionEvaluators: Map<string, (expr: any) => number | string> = new Map(); // 式タイプと評価関数のマッピング
+    private debugContext: DebugContext; // デバッグコンテキスト
     
     // NOTE: currentLineIndex と callStack は行ベースの実装です。
     // 同じ行内の複数ステートメント間でのジャンプはサポートされていません。
@@ -68,6 +83,10 @@ class WorkerInterpreter {
         this.lexer = new Lexer(); // Lexerのインスタンスを初期化
         this.parser = new Parser(); // Parserのインスタンスを初期化
         this.memorySpace = new MemorySpace(); // メモリ空間の初期化
+        this.debugContext = { // デバッグコンテキストの初期化
+            mode: 'run',
+            breakpoints: new Set<number>()
+        };
         // コンストラクタでの初期化は最小限に留め、
         // スクリプトの解析はloadScriptメソッドで行います。
         
@@ -313,9 +332,16 @@ class WorkerInterpreter {
         this.variables.clear();
         this.currentLineIndex = 0;
         this.callStack = [];
+        this.debugContext.mode = 'run'; // デバッグモードをリセット
 
         // シンプルな行ベース実行ループ
         while (this.currentLineIndex < this.program.body.length) {
+            // ブレークポイントチェック
+            if (this.shouldBreak()) {
+                yield; // ブレーク中は制御を返す
+                continue;
+            }
+
             const line = this.program.body[this.currentLineIndex];
             if (!line) break;
 
@@ -812,6 +838,152 @@ class WorkerInterpreter {
      */
     public getVariable(name: string): number {
         return this.variables.get(name) ?? 0;
+    }
+
+    // ==================== デバッグ機能 ====================
+
+    /**
+     * ブレークポイントを設定します。
+     * @param lineNumber 行番号（0-indexed）
+     */
+    public setBreakpoint(lineNumber: number): void {
+        this.debugContext.breakpoints.add(lineNumber);
+    }
+
+    /**
+     * ブレークポイントを削除します。
+     * @param lineNumber 行番号（0-indexed）
+     */
+    public removeBreakpoint(lineNumber: number): void {
+        this.debugContext.breakpoints.delete(lineNumber);
+    }
+
+    /**
+     * すべてのブレークポイントをクリアします。
+     */
+    public clearBreakpoints(): void {
+        this.debugContext.breakpoints.clear();
+    }
+
+    /**
+     * 設定されているブレークポイントの一覧を取得します。
+     * @returns ブレークポイントの行番号の配列
+     */
+    public getBreakpoints(): number[] {
+        return Array.from(this.debugContext.breakpoints).sort((a, b) => a - b);
+    }
+
+    /**
+     * 次のブレークポイントまで実行を続けます。
+     */
+    public continue(): void {
+        this.debugContext.mode = 'run';
+    }
+
+    /**
+     * 次のステートメントを実行します（ステップオーバー）。
+     * サブルーチン呼び出しは一気に実行します。
+     */
+    public stepOver(): void {
+        this.debugContext.mode = 'step-over';
+        this.debugContext.stepTargetDepth = this.callStack.length;
+    }
+
+    /**
+     * 次のステートメントを実行します（ステップイン）。
+     * サブルーチン内にも入ります。
+     */
+    public stepIn(): void {
+        this.debugContext.mode = 'step-in';
+        this.debugContext.stepTargetDepth = undefined;
+    }
+
+    /**
+     * 現在のサブルーチンから抜けるまで実行します（ステップアウト）。
+     */
+    public stepOut(): void {
+        this.debugContext.mode = 'step-out';
+        this.debugContext.stepTargetDepth = Math.max(0, this.callStack.length - 1);
+    }
+
+    /**
+     * 現在実行中の行番号を取得します。
+     * @returns 現在の行番号（0-indexed）
+     */
+    public getCurrentLine(): number {
+        return this.currentLineIndex;
+    }
+
+    /**
+     * すべての変数の現在値を取得します。
+     * @returns 変数名と値のMap
+     */
+    public getVariables(): Map<string, number> {
+        return new Map(this.variables);
+    }
+
+    /**
+     * コールスタックを取得します。
+     * @returns コールスタックの配列（リターンアドレスの行番号）
+     */
+    public getCallStack(): number[] {
+        return [...this.callStack];
+    }
+
+    /**
+     * 現在のデバッグモードを取得します。
+     * @returns デバッグモード
+     */
+    public getDebugMode(): DebugMode {
+        return this.debugContext.mode;
+    }
+
+    /**
+     * ブレークポイントチェックを行い、必要に応じて実行を一時停止します。
+     * @returns ブレークすべき場合true
+     */
+    private shouldBreak(): boolean {
+        const currentLine = this.currentLineIndex;
+
+        // ブレークポイントがある場合
+        if (this.debugContext.breakpoints.has(currentLine)) {
+            this.debugContext.mode = 'break';
+            return true;
+        }
+
+        // ステップモードの処理
+        switch (this.debugContext.mode) {
+            case 'step-in':
+                // 常にブレーク
+                this.debugContext.mode = 'break';
+                return true;
+
+            case 'step-over':
+                // 同じコールスタック深さ、または浅い場合にブレーク
+                if (this.callStack.length <= (this.debugContext.stepTargetDepth ?? 0)) {
+                    this.debugContext.mode = 'break';
+                    return true;
+                }
+                break;
+
+            case 'step-out':
+                // コールスタックが浅くなったらブレーク
+                if (this.callStack.length < (this.debugContext.stepTargetDepth ?? 0)) {
+                    this.debugContext.mode = 'break';
+                    return true;
+                }
+                break;
+
+            case 'break':
+                // ブレーク中は実行しない
+                return true;
+
+            case 'run':
+                // 通常実行
+                break;
+        }
+
+        return false;
     }
 }
 
