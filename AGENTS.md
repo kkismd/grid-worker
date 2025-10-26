@@ -20,15 +20,16 @@
 
 *   **Git操作:** `git status` で変更を確認し、必要なファイルだけを明示的に `git add` すること。
     * タスクが与えられたとき、新しくブランチを切って作業を始める
-    * ブランチ名はタスクの内容を簡潔に表す数ワードの英文から小文字のハイフン区切りで作成する
+    * ブランチ名は着手日を表す6桁の数字+タスクの内容を簡潔に表す数ワードの英文から小文字のハイフン区切りで作成する
+        * 着手日はyymmddで、yyは西暦の下2桁。（例: 2025/10/27 -> 251027）
     * ブランチ名にはタスクの種類によってプリフィックスがつけられる
         1. `feature/` -- 機能開発タスク
         2. `fix/` -- バグ修正タスク
         3. `refactor/` -- リファクタリングタスク
     * ブランチ名の例
-        1. feature/else-if-statement-enhancement
-        2. fix/oneline-if-statement-parse-error
-        3. refactor/parser-code-cleaning
+        1. feature/251027-else-if-statement-enhancement
+        2. fix/251027-oneline-if-statement-parse-error
+        3. refactor/251027-parser-code-cleaning
 *   **TDDサイクル:**
     *   **TDDサイクル開始前:** npm run lintを実行してerror, warningの数を確認すること
     *   **TDD Refactorフェーズ:** リファクタリングを行う際は、以下のステップを必ず実行すること。
