@@ -69,11 +69,10 @@ Frame N:
 /**
  * インタプリタの実行状態
  */
-enum InterpreterState {
-    Running = 'running',              // 通常実行中
-    Halted = 'halted',                // プログラム停止（#=-1）
-    WaitingForNextFrame = 'waiting'   // 次フレーム待機（#=`）
-}
+type InterpreterState = 'running' | 'halted' | 'waiting';
+// 'running': 通常実行中
+// 'halted': プログラム停止（#=-1）
+// 'waiting': 次フレーム待機（#=`）
 ```
 
 #### 1.2 状態管理フィールドの追加
@@ -86,7 +85,7 @@ class WorkerInterpreter {
     // ... 他の既存フィールド
 
     // 新規追加: 実行状態管理
-    private state: InterpreterState = InterpreterState.Running;
+    private state: InterpreterState = 'running';
 }
 ```
 
@@ -104,15 +103,15 @@ public getState(): InterpreterState {
  * 実行可能かどうかを判定
  */
 public canExecute(): boolean {
-    return this.state === InterpreterState.Running;
+    return this.state === 'running';
 }
 
 /**
  * 次フレーム待機状態から復帰
  */
 public resumeFromFrameWait(): void {
-    if (this.state === InterpreterState.WaitingForNextFrame) {
-        this.state = InterpreterState.Running;
+    if (this.state === 'waiting') {
+        this.state = 'running';
     }
 }
 ```
@@ -158,7 +157,7 @@ private parseHashAssignment(tokens: Token[]): Statement {
  * フレーム待機ステートメントを実行
  */
 private executeWaitForNextFrame(statement: any): ExecutionResult {
-    this.state = InterpreterState.WaitingForNextFrame;
+    this.state = 'waiting';
     // このステートメント自体はジャンプではないが、
     // 実行を一時停止するため、特別なフラグを返す
     return { jump: false, halt: false };
@@ -190,11 +189,11 @@ private initializeStatementExecutors(): void {
 
     while (true) {
         // 状態チェック: 停止または待機中なら終了
-        if (this.state === InterpreterState.Halted) {
+        if (this.state === 'halted') {
             break;
         }
         
-        if (this.state === InterpreterState.WaitingForNextFrame) {
+        if (this.state === 'waiting') {
             // 次フレーム待機中なので、このyieldで制御を返す
             // 外部から resumeFromFrameWait() が呼ばれるまで実行しない
             yield;
@@ -205,7 +204,7 @@ private initializeStatementExecutors(): void {
         const executableLine = this.findNextExecutableLine(this.currentLineIndex);
         
         if (executableLine === -1) {
-            this.state = InterpreterState.Halted;
+            this.state = 'halted';
             break;
         }
 
@@ -220,12 +219,12 @@ private initializeStatementExecutors(): void {
             const result = this.executeStatement(statement);
             
             if (result.halt) {
-                this.state = InterpreterState.Halted;
+                this.state = 'halted';
                 return;
             }
             
             // 待機状態になった場合も中断
-            if (this.state === InterpreterState.WaitingForNextFrame) {
+            if (this.state === 'waiting') {
                 yield;
                 continue;
             }
@@ -236,7 +235,7 @@ private initializeStatementExecutors(): void {
         }
 
         // 次の行へ進む（ジャンプがなかった場合）
-        if (this.state === InterpreterState.Running) {
+        if (this.state === 'running') {
             this.currentLineIndex++;
         }
 
@@ -843,15 +842,15 @@ X=0 Y=0
 ### 状態管理の一貫性
 
 1. **インタプリタの状態は3つだけ**
-   - Running: 通常実行
-   - Halted: 停止（`#=-1`）
-   - WaitingForNextFrame: 次フレーム待機（`#=\``）
+   - 'running': 通常実行
+   - 'halted': 停止（`#=-1`）
+   - 'waiting': 次フレーム待機（`#=\``）
 
 2. **状態遷移は明確に**
    ```
-   Running -> Halted (by #=-1, never returns)
-   Running -> WaitingForNextFrame (by #=`)
-   WaitingForNextFrame -> Running (by resumeFromFrameWait())
+   'running' -> 'halted' (by #=-1, never returns)
+   'running' -> 'waiting' (by #=`)
+   'waiting' -> 'running' (by resumeFromFrameWait())
    ```
 
 3. **ワーカー管理側はインタプリタの状態を読むだけ**
