@@ -484,145 +484,108 @@ export class RealTimeCLIRunner {
 
 ### フェーズ3: CLIインターフェースの拡張
 
-#### 3.1 マルチワーカースクリプトファイルの定義
+#### 3.1 コマンドラインオプションによる複数ワーカー指定
 
-**ファイル形式:** `.workers`
+Web版との互換性を重視するため、各ワーカーは独立したファイルとして記述し、
+コマンドラインオプション `-f` / `--file` で複数のworker scriptを指定できるようにします。
 
-```
-# マルチワーカースクリプトファイル
-# コメントは # で始まる行
+**実行例:**
 
-@worker:worker1
-: Worker 1のスクリプト
-X=0 Y=0
-@=I,1,100
-  `=~%256
-  X=X+1
-  #=`
-#=@
-#=-1
+```bash
+# マルチワーカーモード: -f オプションで複数のスクリプトファイルを指定
+npm run cli -- --real-time -f worker1.ws -f worker2.ws -f worker3.ws --steps 1000 --fps 30
 
-@worker:worker2
-: Worker 2のスクリプト
-X=50 Y=50
-@=I,1,100
-  `=~%256
-  Y=Y+1
-  #=`
-#=@
-#=-1
+# または --file でも同様
+npm run cli -- --real-time --file worker1.ws --file worker2.ws --steps 1000
 
-@worker:worker3
-: Worker 3のスクリプト
-@=(1)
-  X=~%100
-  Y=~%100
-  `=255
-  #=`
-#=@
+# シングルワーカーモード（既存の動作を維持）
+npm run cli -- --real-time script.ws --steps 1000 --fps 30
 ```
 
-#### 3.2 マルチワーカースクリプトパーサー
-
-**ファイル:** `src/cli/MultiWorkerScriptParser.ts`
-
-```typescript
-/**
- * マルチワーカースクリプトのパース結果
- */
-export interface MultiWorkerScript {
-    workers: Array<{
-        id: string;
-        script: string;
-    }>;
-}
-
-/**
- * マルチワーカースクリプトファイルをパース
- * 
- * @param content .workersファイルの内容
- * @returns パース結果
- */
-export function parseMultiWorkerScript(content: string): MultiWorkerScript {
-    const workers: Array<{ id: string; script: string }> = [];
-    const lines = content.split('\n');
-    
-    let currentWorkerId: string | null = null;
-    let currentScript: string[] = [];
-    
-    for (const line of lines) {
-        const trimmed = line.trim();
-        
-        // コメント行をスキップ
-        if (trimmed.startsWith('#')) {
-            continue;
-        }
-        
-        // ワーカー定義
-        if (trimmed.startsWith('@worker:')) {
-            // 前のワーカーを保存
-            if (currentWorkerId !== null) {
-                workers.push({
-                    id: currentWorkerId,
-                    script: currentScript.join('\n')
-                });
-            }
-            
-            // 新しいワーカーを開始
-            currentWorkerId = trimmed.substring('@worker:'.length).trim();
-            currentScript = [];
-            continue;
-        }
-        
-        // ワーカー定義の中にいる場合
-        if (currentWorkerId !== null) {
-            currentScript.push(line);
-        }
-    }
-    
-    // 最後のワーカーを保存
-    if (currentWorkerId !== null) {
-        workers.push({
-            id: currentWorkerId,
-            script: currentScript.join('\n')
-        });
-    }
-    
-    return { workers };
-}
-```
-
-#### 3.3 CLIコマンドの拡張
+#### 3.2 CLIコマンドの拡張
 
 **ファイル:** `src/cli.ts`
 
-```typescript
-import { parseMultiWorkerScript } from './cli/MultiWorkerScriptParser.js';
+コマンドライン引数のパース部分を拡張:
 
-// 既存のコマンド処理に追加
-if (scriptFile.endsWith('.workers')) {
-    // マルチワーカーモード
-    const content = fs.readFileSync(scriptFile, 'utf-8');
-    const multiScript = parseMultiWorkerScript(content);
-    
-    console.log(`📦 ${multiScript.workers.length}個のワーカーを読み込みました`);
-    
-    const runner = new RealTimeCLIRunner({
-        frameRate: options.fps || 30,
-        stepsPerFrame: options.steps || 1000,
-        showFPS: options.showFps,
-        showGrid: options.showGrid,
-        // ...
+```typescript
+import { Command } from 'commander';
+import * as fs from 'fs';
+import * as path from 'path';
+
+const program = new Command();
+
+program
+    .name('workerscript')
+    .description('WorkerScript CLI')
+    .argument('[script]', 'スクリプトファイル（シングルワーカーモード）')
+    .option('-f, --file <file>', 'ワーカースクリプトファイル（複数指定可）', (value, previous) => {
+        return previous ? previous.concat([value]) : [value];
+    }, undefined)
+    .option('--real-time', 'リアルタイム実行モード')
+    .option('--fps <number>', 'フレームレート', '30')
+    .option('--steps <number>', 'フレームあたりのステップ数', '1000')
+    .option('--show-fps', 'FPSを表示')
+    .option('--show-grid', 'グリッドを表示')
+    .option('--verbose', '詳細なログを表示')
+    .action(async (scriptFile, options) => {
+        // マルチワーカーモードのチェック
+        const workerFiles: string[] = options.file || [];
+        
+        if (workerFiles.length > 0) {
+            // マルチワーカーモード
+            console.log(`🎮 マルチワーカーモード: ${workerFiles.length}個のワーカー`);
+            
+            // 各ワーカースクリプトを読み込み
+            const workers = workerFiles.map((file, index) => {
+                const script = fs.readFileSync(file, 'utf-8');
+                const workerId = path.basename(file, path.extname(file));
+                return { id: workerId, script };
+            });
+            
+            const runner = new RealTimeCLIRunner({
+                frameRate: parseInt(options.fps),
+                stepsPerFrame: parseInt(options.steps),
+                showFPS: options.showFps,
+                showGrid: options.showGrid,
+                verbose: options.verbose,
+            });
+            
+            await runner.executeMultiWorker(workers, {
+                displayName: workerFiles.join(', ')
+            });
+            
+        } else if (scriptFile) {
+            // シングルワーカーモード（既存）
+            const script = fs.readFileSync(scriptFile, 'utf-8');
+            
+            const runner = new RealTimeCLIRunner({
+                frameRate: parseInt(options.fps),
+                stepsPerFrame: parseInt(options.steps),
+                showFPS: options.showFps,
+                showGrid: options.showGrid,
+                verbose: options.verbose,
+            });
+            
+            await runner.executeRealTime(script, scriptFile);
+            
+        } else {
+            console.error('エラー: スクリプトファイルを指定してください');
+            console.error('  シングルワーカー: npm run cli -- script.ws');
+            console.error('  マルチワーカー: npm run cli -- -f worker1.ws -f worker2.ws');
+            process.exit(1);
+        }
     });
-    
-    await runner.executeMultiWorker(multiScript.workers, {
-        displayName: scriptFile
-    });
-} else {
-    // シングルワーカーモード（既存）
-    // ...
-}
+
+program.parse();
 ```
+
+**設計の利点:**
+
+1. **Web版との互換性**: 各ワーカーが独立したファイルとして存在するため、Web版でも同じファイル構成を使用できる
+2. **ファイルの再利用**: 個別のワーカースクリプトを異なる組み合わせで実行可能
+3. **段階的な開発**: ワーカーを1つずつ開発・テストし、後から組み合わせられる
+4. **既存の動作を維持**: 引数でスクリプトを指定する従来の方法も継続サポート
 
 ### フェーズ4: テストとドキュメント
 
@@ -711,10 +674,9 @@ describe('WorkerManager', () => {
 
 #### 4.2 統合テスト
 
-**ファイル:** `examples/multi-worker-test.workers`
+**ファイル:** `examples/multi-worker/writer.ws`
 
-```
-@worker:writer
+```workerscript
 : グリッドに値を書き込むワーカー
 X=10 Y=10
 @=I,1,100
@@ -723,8 +685,11 @@ X=10 Y=10
   #=`
 #=@
 #=-1
+```
 
-@worker:reader
+**ファイル:** `examples/multi-worker/reader.ws`
+
+```workerscript
 : 書き込まれた値を読み取るワーカー
 X=10 Y=10
 @=I,1,100
@@ -738,7 +703,7 @@ X=10 Y=10
 
 実行テスト:
 ```bash
-npm run cli -- examples/multi-worker-test.workers --real-time --steps 100
+npm run cli -- --real-time -f examples/multi-worker/writer.ws -f examples/multi-worker/reader.ws --steps 100
 ```
 
 #### 4.3 ドキュメント更新
@@ -794,28 +759,58 @@ npm run cli -- examples/multi-worker-test.workers --real-time --steps 100
 
 複数のワーカースクリプトを同時実行し、同じグリッド上で相互作用させることができます。
 
-#### .workersファイル形式
+#### 実行方法
 
-```
-@worker:worker1
-: Worker 1のスクリプト
-...
-
-@worker:worker2
-: Worker 2のスクリプト
-...
-```
-
-#### 実行例
+`-f` または `--file` オプションを複数回指定することで、複数のワーカースクリプトを実行できます。
 
 ```bash
-npm run cli -- examples/multi-worker.workers --real-time --steps 1000 --fps 30
+# 3つのワーカーを同時実行
+npm run cli -- --real-time -f worker1.ws -f worker2.ws -f worker3.ws --steps 1000 --fps 30
+
+# または --file でも同様
+npm run cli -- --real-time --file worker1.ws --file worker2.ws --steps 1000
+```
+
+#### ワーカースクリプトの記述
+
+各ワーカーは独立した `.ws` ファイルとして記述します。Web版との互換性を保つため、
+各ワーカーは個別のファイルとして管理されます。
+
+**worker1.ws:**
+```workerscript
+: Worker 1 - 値を書き込む
+X=0 Y=0
+@=I,1,100
+  `=~%256
+  X=X+1
+  #=`
+#=@
+#=-1
+```
+
+**worker2.ws:**
+```workerscript
+: Worker 2 - 値を読み取る
+X=0 Y=0
+@=I,1,100
+  A=`
+  ?=A /
+  X=X+1
+  #=`
+#=@
+#=-1
 ```
 
 #### フレーム待機（#=`）
 
 各ワーカーは `#=\`` を使って現在のフレームの実行を終了し、次のフレームまで待機できます。
 これにより、全ワーカーが協調して動作するアニメーションやシミュレーションが実現できます。
+
+#### Web版との互換性
+
+コマンドラインで `-f` オプションで指定するワーカースクリプトは、Web版でも
+同じファイルをそのまま使用できます。各ワーカーが独立したファイルとして存在するため、
+開発・テスト・デプロイの各段階で一貫性が保たれます。
 ```
 
 ## 実装の優先順位と段階的ロールアウト
@@ -833,9 +828,9 @@ npm run cli -- examples/multi-worker.workers --real-time --steps 1000 --fps 30
 3. 簡単なマルチワーカーテストスクリプトでの動作確認
 
 ### ステップ3: マルチワーカー機能（拡張）
-1. `.workers` ファイルフォーマットの定義とパーサー
-2. CLI引数の拡張
-3. マルチワーカー実行の統合テスト
+1. CLI引数の拡張（`-f` / `--file` オプションの複数指定対応）
+2. マルチワーカー実行の統合テスト
+3. サンプルワーカースクリプトの作成
 
 ### ステップ4: ドキュメントと例（完成）
 1. `worker.md` の更新
