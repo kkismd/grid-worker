@@ -11,9 +11,10 @@ const GRID_AREA = GRID_WIDTH * GRID_HEIGHT;
 const SPEED_PRESETS = [
     { name: 'Very Slow', stepsPerFrame: 1 },
     { name: 'Slow', stepsPerFrame: 10 },
+    { name: 'Normal', stepsPerFrame: 500 },
     { name: 'Fast', stepsPerFrame: 1000 },
-    { name: 'Very Fast', stepsPerFrame: 10000 },
-    { name: 'Maximum', stepsPerFrame: 100000 },
+    { name: 'Very Fast', stepsPerFrame: 5000 },
+    { name: 'Turbo', stepsPerFrame: 8000 },
 ];
 
 // --- Worker Management ---
@@ -700,7 +701,7 @@ function getKeyInput(): number {
 drawGrid(); // Draw the initial grid on load.
 
 // Initialize speed display
-const defaultPreset = SPEED_PRESETS[2]; // "Fast"
+const defaultPreset = SPEED_PRESETS[3]; // "Fast"
 if (defaultPreset) {
     speedInfo.textContent = `${defaultPreset.name} (${defaultPreset.stepsPerFrame} steps/frame)`;
 }
